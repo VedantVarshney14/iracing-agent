@@ -1,1 +1,1 @@
-# iracing-agent
+iRacing Agent
