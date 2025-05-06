@@ -46,7 +46,7 @@ def main():
     messages = agent.invoke(
         {
             "messages": [
-                ("human", "What's my speed?")
+                ("human", "What's the air temperature right now?")
             ]
         }
     )

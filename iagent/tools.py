@@ -1,10 +1,12 @@
 import functools
 import json
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import irsdk
+import numpy as np
 from langchain_core import tools
+from sentence_transformers import SentenceTransformer
 
 from iagent import utils
 
@@ -50,10 +52,30 @@ class IRacingTools(StatefulTools):
     def __init__(self, ir: irsdk.IRSDK):
         super().__init__()
         self._ir = ir
+        with open(utils.get_data_path() / "vars.json", "rb") as f:
+            telemetry_defs = json.load(f)
+
+        self._telemetry_defs = {
+            "keys": [],
+            "definitions": []
+        }
+        for k, v in telemetry_defs.items():
+            self._telemetry_defs["keys"].append(k)
+            self._telemetry_defs["definitions"].append(v)
+
+        logger.info("Setting up sentence transformer.")
+        self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        self._telemetry_def_embed = self._embed(
+            self._telemetry_defs["definitions"],
+            normalize=True
+        )
 
     @property
     def is_alive(self) -> bool:
         return self._ir.is_initialized and self._ir.is_connected
+
+    def _embed(self, texts: Union[str, list[str]], normalize: bool = True):
+        return self._embedder.encode(texts, normalize_embeddings=normalize)
 
     @StatefulTools.register_tool
     def get_current_telemetry_data(self, key: str) -> Optional[Any]:
@@ -65,36 +87,64 @@ class IRacingTools(StatefulTools):
         key : str
             Telemetry item key.
 
+        Notes
+        -----
+        Common telemetry keys:
+        - Speed - GPS vehicle speed, m/s
+        - Throttle - 0=off throttle to 1=full throttle, %
+        - Brake - 0=brake released to 1=max pedal force, %
+        - Gear - -1=reverse  0=neutral  1..n=current gear
+        - LapBestLapTime - Players best lap time, s
+        - LapCurrentLapTime - Estimate of players current lap time as shown in F3 box, s
+
         Examples
         --------
         >>> get_current_telemetry_data("Speed")
         >>> get_current_telemetry_data("AirDensity")
 
+        Raises
+        ------
+        RuntimeError if an invalid telemetry key is encountered.
+
         Returns
         -------
         Optional[Any]
-            Current telemetry data for specified key. If not available, value
-            will be None.
+            Current telemetry data for specified key.
         """
 
         if not self.is_alive:
-            return None
+            raise RuntimeError("iRacing is not initialised. Please ensure the sim is running.")
 
-        try:
-            return self._ir[key]
-        except (ValueError, RuntimeError):
-            logger.exception(f"Error getting telemetry data. Requested item '{key}'.")
-            return None
+        data = self._ir[key]
+        if data is None:
+            raise RuntimeError(f"No such telemetry key '{key}'. Please ensure that the key is valid.")
+        return data
 
-    @staticmethod
     @StatefulTools.register_tool
-    def get_telemetry_definitions() -> dict[str, str]:
+    def telemetry_key_lookup(self, text: str) -> list[dict[str, str]]:
         """
-        Get the definition of all telemetry items/keys.
+        Perform an embedding look-up to find the telemetry keys/headings most closely associated with the
+        provided text. This utility is useful for finding telemetry keys which can then be
+        subsequently used to retrieve telemetry data using `get_current_telemetry_data`.
+
+        Parameters
+        ----------
+        text : str
+            Look-up text
 
         Returns
         -------
-        dict[str, str]
+        list[dict[str, str]]
+            Closest matching telemetry keys - list of dictionaries.where the keys are the telemetry keys and
+            the values are the corresponding telemetry values.
         """
-        with open(utils.get_data_path() / "vars.json", "rb") as f:
-            return json.load(f)
+        k = 5
+        text_embed = self._embed(text, normalize=True)
+        top_similarities_indices = np.argpartition(
+            self._telemetry_def_embed.dot(text_embed),
+            -k
+        )[-k:]
+        return [
+            {self._telemetry_defs["keys"][i]: self._telemetry_defs["definitions"][i]}
+            for i in top_similarities_indices
+        ]
