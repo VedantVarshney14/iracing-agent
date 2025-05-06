@@ -1,7 +1,7 @@
 import functools
 import json
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import irsdk
 from langchain_core import tools
@@ -56,39 +56,41 @@ class IRacingTools(StatefulTools):
         return self._ir.is_initialized and self._ir.is_connected
 
     @StatefulTools.register_tool
-    def get_current_telemetry_data(self) -> dict[str, Any]:
+    def get_current_telemetry_data(self, key: str) -> Optional[Any]:
         """
         Get current iRacing telemetry data.
 
-        Notes
-        -----
-        If a telemetry item cannot be retrieved, the key will be included
-        in the response but the value will be `None`.
+        Parameters
+        ----------
+        key : str
+            Telemetry item key.
 
+        Examples
+        --------
+        >>> get_current_telemetry_data("Speed")
+        >>> get_current_telemetry_data("AirDensity")
 
         Returns
         -------
-        dict[str, Any]
-            Current telemetry data.
+        Optional[Any]
+            Current telemetry data for specified key. If not available, value
+            will be None.
         """
-        telemetry = {}
 
         if not self.is_alive:
-            return telemetry
+            return None
 
-        for key in self._ir.var_headers_names:
-            try:
-                telemetry[key] = self._ir[key]
-            except (ValueError, RuntimeError):
-                logger.exception("Error getting telemetry data")
-                telemetry[key] = None
-        return telemetry
+        try:
+            return self._ir[key]
+        except (ValueError, RuntimeError):
+            logger.exception(f"Error getting telemetry data. Requested item '{key}'.")
+            return None
 
     @staticmethod
     @StatefulTools.register_tool
     def get_telemetry_definitions() -> dict[str, str]:
         """
-        Get the definition of all telemetry items as JSON.
+        Get the definition of all telemetry items/keys.
 
         Returns
         -------
