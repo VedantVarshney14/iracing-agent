@@ -22,7 +22,11 @@ def itools(ir):
 
 def test_get_current_telemetry_data(itools):
     built_tools = itools.build_tools()
-    data = built_tools["get_current_telemetry_data"].invoke({})
+    telemetry_tool = built_tools["get_current_telemetry_data"]
+
+    assert telemetry_tool.name == "get_current_telemetry_data"
+    assert telemetry_tool.description.startswith("Get current iRacing telemetry")
+
+    data = telemetry_tool.invoke({})
     assert isinstance(data, dict)
-    assert "Speed" in data
     assert isinstance(data["Speed"], float)

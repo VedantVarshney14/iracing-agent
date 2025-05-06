@@ -9,9 +9,14 @@ logger = logging.getLogger(__name__)
 
 
 class StatefulTools:
+    """
+    A utility class to create langchain tools that are stateful (i.e.
+    are instance methods which reference `self`.
+    """
 
     @staticmethod
     def _make_tool(func: Callable) -> tools.Tool:
+        """Build a langchain tool from an instance method."""
         @tools.tool
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -20,6 +25,7 @@ class StatefulTools:
         return wrapper
 
     def build_tools(self) -> dict[str, tools.Tool]:
+        """Build all registered tools."""
         built_tools = {}
         for name in dir(self):
             attr = getattr(self, name)
@@ -30,6 +36,7 @@ class StatefulTools:
 
     @staticmethod
     def register_tool(func: Callable):
+        """Mark an instance method as a tool (to be built later)."""
         func._is_registered_tool = True
         return func
 
@@ -72,6 +79,3 @@ class IRacingTools(StatefulTools):
                 logger.exception("Error getting telemetry data")
                 telemetry[key] = None
         return telemetry
-
-    def get_tools(self):
-        return [self.get_current_telemetry_data]

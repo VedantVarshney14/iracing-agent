@@ -11,7 +11,9 @@ logger = logging.getLogger(__name__)
 
 def main():
     ir = irsdk.IRSDK()
+    ir.startup()
     itools = IRacingTools(ir)
+    built_tools = itools.build_tools()
 
 
 
