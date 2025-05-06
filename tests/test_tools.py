@@ -20,7 +20,7 @@ def ir():
 def itools(ir):
     return IRacingTools(ir)
 
-def test_get_current_telemetry_data(itools):
+def test_build_tools(itools):
     built_tools = itools.build_tools()
     telemetry_tool = built_tools["get_current_telemetry_data"]
 
@@ -30,3 +30,8 @@ def test_get_current_telemetry_data(itools):
     data = telemetry_tool.invoke({})
     assert isinstance(data, dict)
     assert isinstance(data["Speed"], float)
+
+    telemetry_defs_tool = built_tools["get_telemetry_definitions"]
+    data = telemetry_defs_tool.invoke({})
+    assert isinstance(data, dict)
+    assert data["Speed"] == "GPS vehicle speed, m/s"

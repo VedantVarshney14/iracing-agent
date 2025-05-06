@@ -1,9 +1,12 @@
 import functools
+import json
 import logging
 from typing import Any, Callable
 
 import irsdk
 from langchain_core import tools
+
+from iagent import utils
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,7 @@ class StatefulTools:
     @staticmethod
     def _make_tool(func: Callable) -> tools.Tool:
         """Build a langchain tool from an instance method."""
+
         @tools.tool
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -79,3 +83,16 @@ class IRacingTools(StatefulTools):
                 logger.exception("Error getting telemetry data")
                 telemetry[key] = None
         return telemetry
+
+    @staticmethod
+    @StatefulTools.register_tool
+    def get_telemetry_definitions() -> dict[str, str]:
+        """
+        Get the definition of all telemetry items as JSON.
+
+        Returns
+        -------
+        dict[str, str]
+        """
+        with open(utils.get_data_path() / "vars.json", "rb") as f:
+            return json.load(f)

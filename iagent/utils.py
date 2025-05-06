@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 
 class LoggingFormatter(logging.Formatter):
@@ -17,3 +18,8 @@ def setup_logger(name, level: int = logging.INFO):
     handler.setFormatter(LoggingFormatter())
     logger.addHandler(handler)
     return logger
+
+
+def get_data_path() -> Path:
+    """Get path to reference data directory."""
+    return (Path(__file__).parent / "data").absolute()
