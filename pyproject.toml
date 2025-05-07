@@ -13,7 +13,9 @@ dependencies = [
     "ollama (>=0.4.8,<0.5.0)",
     "langchain-ollama (>=0.3.2,<0.4.0)",
     "langgraph (>=0.4.1,<0.5.0)",
-    "sentence-transformers (>=4.1.0,<5.0.0)"
+    "sentence-transformers (>=4.1.0,<5.0.0)",
+    "tinyflux (>=1.0.0,<2.0.0)",
+    "pytz (>=2025.2,<2026.0)"
 ]
 
 [tool.poetry]
