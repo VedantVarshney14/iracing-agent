@@ -28,6 +28,7 @@ def main():
     ir.startup(
         test_file="data.bin"
     )
+    logger.info("Setting up tools.")
     itools = IRacingTools(ir)
     built_tools = list(itools.build_tools().values())
 

@@ -1692,6 +1692,18 @@ pluggy = ">=1.5,<2"
 dev = ["argcomplete", "attrs (>=19.2)", "hypothesis (>=3.56)", "mock", "pygments (>=2.7.2)", "requests", "setuptools", "xmlschema"]
 
 [[package]]
+name = "pytz"
+version = "2025.2"
+description = "World timezone definitions, modern and historical"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "pytz-2025.2-py2.py3-none-any.whl", hash = "sha256:5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00"},
+    {file = "pytz-2025.2.tar.gz", hash = "sha256:360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3"},
+]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.2"
 description = "YAML parser and emitter for Python"
@@ -2257,6 +2269,18 @@ files = [
 ]
 
 [[package]]
+name = "tinyflux"
+version = "1.0.0"
+description = "The Tiny Time-Series Database Optimized for Your Happiness"
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+files = [
+    {file = "tinyflux-1.0.0-py3-none-any.whl", hash = "sha256:0d191d5a11bb86f01d3b015ccc3130713abaa21cbc8f85d79066cd34a3650490"},
+    {file = "tinyflux-1.0.0.tar.gz", hash = "sha256:a7aea4648d50cdcee4bb7904c37b2eedf27df39a3eb68f1ff22b77e9c30f1447"},
+]
+
+[[package]]
 name = "tokenizers"
 version = "0.21.1"
 description = ""
@@ -2765,4 +2789,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12.4,<4.0"
-content-hash = "560622a176fa07b96e8217dd6ccead7416865549a47e1772ede871d3df1da3aa"
+content-hash = "ca7e412e98f206894fe04cc69d6c3f4cf3bf158fee4fcd23432fbb0589d3741c"

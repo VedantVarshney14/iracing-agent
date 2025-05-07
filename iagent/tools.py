@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class StatefulTools:
     """
     A utility class to create langchain tools that are stateful (i.e.
-    are instance methods which reference `self`.
+    are instance methods which reference `self`).
     """
 
     @staticmethod
@@ -52,14 +52,15 @@ class IRacingTools(StatefulTools):
     def __init__(self, ir: irsdk.IRSDK):
         super().__init__()
         self._ir = ir
-        with open(utils.get_data_path() / "vars.json", "rb") as f:
-            telemetry_defs = json.load(f)
-
         self._telemetry_defs = {
             "keys": [],
-            "definitions": []
+            "definitions": [],
+            "map": {}
         }
-        for k, v in telemetry_defs.items():
+        with open(utils.get_data_path() / "vars.json", "rb") as f:
+            self._telemetry_defs["map"] = json.load(f)
+
+        for k, v in self._telemetry_defs["map"].items():
             self._telemetry_defs["keys"].append(k)
             self._telemetry_defs["definitions"].append(v)
 
@@ -121,7 +122,7 @@ class IRacingTools(StatefulTools):
         return data
 
     @StatefulTools.register_tool
-    def telemetry_key_lookup(self, text: str) -> list[dict[str, str]]:
+    def telemetry_key_embedding_lookup(self, text: str) -> list[dict[str, str]]:
         """
         Perform an embedding look-up to find the telemetry keys/headings most closely associated with the
         provided text. This utility is useful for finding telemetry keys which can then be
@@ -147,4 +148,25 @@ class IRacingTools(StatefulTools):
         return [
             {self._telemetry_defs["keys"][i]: self._telemetry_defs["definitions"][i]}
             for i in top_similarities_indices
+        ]
+
+    @StatefulTools.register_tool
+    def get_telemetry_definition(self, keys: list[str]) -> list[str]:
+        """
+        Look-up the definition of telemetry keys. Note that the exact telemetry key must be
+        known. If not, use `telemetry_key_embedding_lookup`.
+
+        Parameters
+        ----------
+        keys : str, list[str]
+            Telemetry key(s), e.g. ['Speed']
+
+        Returns
+        -------
+        str, list[str]
+            Telemetry definition(s), e.g. ['GPS vehicle speed, m/s']. If a key is not valid, `None` is returned
+            at the relevant index.
+        """
+        return [
+            self._telemetry_defs["map"].get(k) for k in keys
         ]
