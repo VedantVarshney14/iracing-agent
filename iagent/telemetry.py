@@ -1,24 +1,13 @@
 import logging
 import time
-from datetime import datetime
-from pathlib import Path
-from types import NoneType
+from threading import Event
 
 import irsdk
-import pytz
-from tinyflux import TinyFlux, Point
+import sqlalchemy
+from sqlalchemy.orm import Session
 
-# Focus in on some specific telemetry items
-TELEMETRY_KEYS = (
-    "AirDensity", "AirPressure", "AirTemp", "Brake", "Throttle",
-    "Clutch", "Gear", "IsOnTrack", "Lap", "LapBestLap",
-    "LapDeltaToBestLap", "LRtempCL", "LRtempCM", "LRtempCR",
-    "OilLevel", "OilPress", "OilTemp",
-    "PlayerTireCompound", "RRtempCL", "RRtempCM", "RRtempCR", "IsInGarage", "LapDist",
-    "LapDistPct", "Pitch", "PitchRate", "PlayerCarClass",
-    "RelativeHumidity", "RPM", "Roll", "TrackTemp", "WaterTemp",
-    "WindVel"
-)
+from iagent.db.tables import Telemetry
+
 
 COLLECTION_RATE = 60
 
@@ -26,27 +15,28 @@ logger = logging.getLogger(__name__)
 
 
 class TelemetryCollectionClient:
-    def __init__(self, db_path: Path, ir: irsdk.IRSDK):
-        assert db_path.suffix == ".csv"
-        self.db = TinyFlux(db_path)
+    def __init__(self, engine: sqlalchemy.Engine, ir: irsdk.IRSDK):
+        self.engine = engine
         self.ir = ir
+
+        self._telem_cols =  [
+            col.name for col in Telemetry.__table__.columns
+            if col.name[0].isupper()
+        ]
 
     def insert_frame(self):
         self.ir.freeze_var_buffer_latest()
-        data = {}
-        for key in TELEMETRY_KEYS:
-            val = self.ir[key]
-            if isinstance(val, bool):
-                val = int(val)
-            data[key] = val
-        point = Point(
-            time=datetime.now(tz=pytz.utc),
-            fields=data
-        )
-        self.db.insert(point)
+        with Session(self.engine) as session:
+            record = Telemetry(
+                **{k: self.ir[k] for k in self._telem_cols}
+            )
+            session.add(record)
+            session.commit()
 
-    def collect(self):
+
+    def collect(self, stop: Event):
         logger.info("Collecting telemetry")
-        while True:
+        while not stop.is_set():
             self.insert_frame()
             time.sleep(1 / COLLECTION_RATE)
+        logger.info("Stopped collecting telemetry")

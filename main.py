@@ -1,18 +1,21 @@
 import logging
+from threading import Thread, Event
 
 import irsdk
 from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
 import iagent
-from iagent import utils
+from iagent import utils, db
+from iagent.db.tables import Base
+from iagent.telemetry import TelemetryCollectionClient
 from iagent.tools import IRacingTools
 
 logger = logging.getLogger(__name__)
 
 
 LLM_PROMPT = (
-    "You are simracing coach named Steve. Your job is to coach "
+    "You are sim-racing coach named Steve. Your job is to coach "
     "Vedant improve at the racing simulator iRacing. You will "
     "have access to his live telemetry and session data. Reply to Vedant's "
     "questions and advise him so he can be the best racing "
@@ -23,13 +26,24 @@ LLM_PROMPT = (
 
 
 def main():
+    # Note engine is threadsafe
+    engine = db.get_engine()
+    Base.metadata.create_all(engine, checkfirst=True)
+
     ir = irsdk.IRSDK()
     # TODO - remove data load
     ir.startup(
         test_file="data.bin"
     )
+
+    tclient = TelemetryCollectionClient(
+        engine=engine,
+        ir=ir
+    )
+
+
     logger.info("Setting up tools.")
-    itools = IRacingTools(ir)
+    itools = IRacingTools(ir, engine)
     built_tools = list(itools.build_tools().values())
 
     model = ChatOllama(
@@ -44,14 +58,29 @@ def main():
         debug=True
     )
 
-    messages = agent.invoke(
-        {
-            "messages": [
-                ("human", "What's the air temperature right now?")
-            ]
+    stop_telem_event = Event()
+    telem_thread = Thread(
+        target=tclient.collect,
+        kwargs={
+            "stop": stop_telem_event
         }
     )
-    pass
+
+    logger.info("Starting telemetry collection.")
+    telem_thread.start()
+
+    try:
+        messages = agent.invoke(
+            {
+                "messages": [
+                    ("human", "What's the air temperature right now?")
+                ]
+            }
+        )
+        pass
+    except KeyboardInterrupt:
+        stop_telem_event.set()
+        telem_thread.join()
 
 
 
