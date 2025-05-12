@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional, Union
 
 import irsdk
 import numpy as np
+import pandas as pd
 import pytz
 import sqlalchemy
 from langchain_core import tools
@@ -184,7 +185,7 @@ class IRacingTools(StatefulTools):
             delta: Optional[int] = None,
             start_time: Optional[datetime] = None,
             end_time: Optional[datetime] = None
-    ) -> dict[str, Any]:
+    ) -> list[dict]:
         """
         Get telemetry history within specified time range.
         Must provide either `delta` or `start_time` and `end_time`.
@@ -200,7 +201,8 @@ class IRacingTools(StatefulTools):
 
         Returns
         -------
-        dict[str, Any]
+        list[dict]
+            List of telemetry history records sorted by time.
         """
         start_end_time_given = all(x is not None for x in (start_time, end_time))
         msg = "Invalid timerange specified. Must provide either `delta` or `start_time` and `end_time`."
@@ -214,12 +216,13 @@ class IRacingTools(StatefulTools):
                 raise ValueError(msg)
 
         with self._engine.connect() as conn:
-            result = conn.execute(
+            stmt = (
                 sqlalchemy.select(Telemetry)
                 .where(
                     Telemetry.time > start_time,
                     Telemetry.time <= end_time
                 )
+                .order_by(Telemetry.time)
             )
-            # TODO - output response
-            pass
+            res = pd.read_sql(stmt, conn)
+        return res.to_dict(orient="records")
