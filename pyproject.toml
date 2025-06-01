@@ -21,6 +21,7 @@ dependencies = [
     "pandas (>=2.2.3,<3.0.0)",
     "sounddevice (>=0.5.1,<0.6.0)",
     "nari-tts @ git+https://github.com/nari-labs/dia.git",
+    "fastmcp (>=2.5.2,<3.0.0)",
 ]
 
 [tool.poetry]
@@ -30,6 +31,7 @@ pytest = "^8.3.5"
 black = "^25.1.0"
 jupyterlab = "^4.4.2"
 ipywidgets = "^8.1.7"
+pytest-asyncio = "^1.0.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
