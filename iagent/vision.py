@@ -1,3 +1,4 @@
+import functools
 import io
 from pathlib import Path
 from typing import AsyncGenerator, Optional, Union
@@ -8,7 +9,7 @@ from ollama import AsyncClient
 
 
 class VisionModel:
-    def __init__(self, model_name):
+    def __init__(self, model_name: str = "gemma3:12b"):
         self.model_name = model_name
         self.client = AsyncClient()
 
@@ -40,11 +41,8 @@ class VisionModel:
             )
         return ollama.Message(role=role, content=content, images=decoded_imgs)
 
-    async def chat(self, messages: list[ollama.Message]) -> AsyncGenerator[str, None]:
-        resp = await self.client.chat(
-            model=self.model_name,
-            messages=messages,
-            stream=True
-        )
-        async for part in resp:
-            yield part["message"]["content"]
+    @functools.wraps(AsyncClient.chat)
+    async def chat(self, **kwargs):
+        """Wrapper over AsyncClient.chat to set the model name."""
+        kwargs["model"] = self.model_name
+        return await self.client.chat(**kwargs)
