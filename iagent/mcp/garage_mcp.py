@@ -59,7 +59,6 @@ async def analyse_last_lap(
         )
     ]
     resp: ollama.ChatResponse = await state.vision.chat(
-        model=state.vision.model_name,
         messages=messages,
         stream=False
     )
