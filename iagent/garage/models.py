@@ -50,3 +50,13 @@ class Lap(pydantic.BaseModel):
     ghostAvailable: bool | None = None  # Assuming ghostAvailable can be None
     canViewTelemetry: bool | None = Field(None, alias="can_view_telemetry")
     canViewSetup: bool | None = Field(None, alias="can_view_setup")
+
+    def description(self) -> str:
+        """
+        Returns a string representation of the lap, including car and track information.
+        """
+        if self.track_variant:
+            variant_desc = f"({self.track_variant}) "
+        else:
+            variant_desc = ""
+        return f"Car {self.car_name} on track {self.track_name} {variant_desc}- Lap {self.lapNumber} ({self.lapTime:.3f}s)"
