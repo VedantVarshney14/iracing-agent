@@ -39,7 +39,7 @@ def main():
     ir = irsdk.IRSDK()
     if DEBUG:
         ir.startup(
-            test_file="data.bin"
+            test_file="misc-data/data.bin"
         )
     else:
         ir.startup()
