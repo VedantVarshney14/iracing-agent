@@ -22,6 +22,8 @@ dependencies = [
     "sounddevice (>=0.5.1,<0.6.0)",
     "nari-tts @ git+https://github.com/nari-labs/dia.git",
     "fastmcp (>=2.5.2,<3.0.0)",
+    "langchain-mcp-adapters (>=0.1.7,<0.2.0)",
+    "mcpo (>=0.0.15,<0.0.16)",
 ]
 
 [tool.poetry]
