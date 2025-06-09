@@ -1,3 +1,8 @@
+"""
+An MCP server for interacting with the iRacing Garage61 platform.
+"""
+import os
+import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -66,4 +71,6 @@ async def analyse_last_lap(
 
 
 if __name__ == '__main__':
-    mcp.run()
+    if len(sys.argv) > 1:
+        os.environ["GARAGE61_PAT"] = sys.argv[1]
+    mcp.run(transport="stdio")

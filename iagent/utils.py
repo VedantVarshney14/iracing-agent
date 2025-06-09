@@ -23,3 +23,8 @@ def setup_logger(name, level: int = logging.INFO):
 def get_data_path() -> Path:
     """Get path to reference data directory."""
     return (Path(__file__).parent / "data").absolute()
+
+# TODO - should remove this....
+def get_misc_data_path() -> Path:
+    """Get path to miscellaneous data directory."""
+    return (Path(__file__).parents[1] / "misc-data").absolute()
