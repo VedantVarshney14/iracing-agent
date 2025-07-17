@@ -22,7 +22,7 @@ LLM_PROMPT = (
     "driver possible! Remember to keep your answers short "
     "(as though you are speaking over the radio while he is "
     "in the car). "
-    "You can assume all generated audio is relayed to Vedant via radio."
+    "Your final *non-thinking* response will be relayed to Vedant via radio."
 )
 
 
@@ -58,7 +58,8 @@ async def main():
         messages = await agent.ainvoke(
             {
                 "messages": [
-                    ("human", "Analyse my last lap?"),
+                    # ("human", "Analyse my last lap?"),
+                    ("human", "I'm understeering too much in T1. Any tips?")
                 ]
             }
         )
