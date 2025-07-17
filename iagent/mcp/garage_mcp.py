@@ -38,7 +38,7 @@ mcp = fastmcp.FastMCP(
 )
 
 
-@mcp.resource("setup-guide")
+@mcp.resource("resource://setup-guide")
 async def get_setup_guide():
     """Returns a guide on common car setup adjustment tips."""
     with open(utils.get_data_path() / "driver-61-setup-guide.txt", "r") as file:
