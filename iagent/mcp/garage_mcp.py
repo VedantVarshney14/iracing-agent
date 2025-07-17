@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import fastmcp
 import ollama
 
+from iagent import utils
 from iagent.garage import plot
 from iagent.garage.garage_client import GarageClient
 from iagent.vision import VisionModel
@@ -35,6 +36,14 @@ mcp = fastmcp.FastMCP(
     "Garage61 MCP Server 🚗",
     lifespan=lifespan
 )
+
+
+@mcp.resource("setup-guide")
+async def get_setup_guide():
+    """Returns a guide on common car setup adjustment tips."""
+    with open(utils.get_data_path() / "driver-61-setup-guide.txt", "r") as file:
+        guide = file.read()
+    return guide
 
 
 @mcp.tool()

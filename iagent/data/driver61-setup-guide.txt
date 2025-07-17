@@ -1,0 +1,182 @@
+# 🏁 SIM RACING SETUP GUIDE (Driver61)
+
+Use this guide to fine-tune your car and maximize your on-track performance with clear and simple tweaks.
+
+---
+
+## 🌀 CORNERS
+
+### ⚡ Corner Entry (Braking + Initial Turn-In)
+
+#### **Understeer (Car won’t turn enough)**
+
+* Increase front negative camber
+* Increase front toe-out
+* Increase rear toe-out
+* Soften front suspension OR stiffen rear
+* Soften front anti-roll bar OR stiffen rear bar
+* Raise front ride height OR lower rear ride height
+* Increase front wing aero
+* Decrease front tire pressures
+* Increase differential **off-throttle**
+* Move brake bias backwards
+
+#### **Oversteer (Car turns too much or spins)**
+
+* Increase rear negative camber
+* Increase front toe-in
+* Decrease rear toe-out
+* Stiffen front suspension OR soften rear
+* Stiffen front anti-roll bar OR soften rear bar
+* Raise rear ride height OR lower front
+* Increase rear wing aero
+* Decrease rear tire pressures
+* Decrease differential **off-throttle**
+* Move brake bias forwards
+
+#### **Instability (Car is twitchy or unpredictable)**
+
+* Reduce front and rear camber (closer to 0)
+* Increase front toe-in and rear toe-in
+* Soften both front and rear suspension and ARBs
+* Raise rear ride height
+* Increase rear wing aero
+* Reduce rear tire pressure
+* Reduce differential **off-throttle**
+* Move brake bias forwards
+
+---
+
+### 🏁 Corner Exit (Acceleration Out of Turn)
+
+#### **Understeer**
+
+* Increase front toe-out
+* Increase rear toe-out
+* Soften front suspension OR stiffen rear
+* Soften front ARB OR stiffen rear ARB
+* Raise front ride height OR lower rear
+* Increase front wing aero
+* Decrease front tire pressures
+* Increase differential **on-throttle**
+
+#### **Oversteer**
+
+* Increase rear negative camber
+* Increase rear toe-in
+* Stiffen front suspension OR soften rear
+* Stiffen front ARB OR soften rear
+* Lower front ride height OR raise front
+* Increase rear wing aero
+* Decrease rear tire pressures
+* Decrease differential **on-throttle**
+
+#### **Instability**
+
+* Reduce rear camber (closer to 0)
+* More rear toe-in
+* Soften rear suspension
+* Soften rear ARB
+* Raise rear ride height
+* Increase rear wing aero
+* Reduce front & rear tire pressures
+* Reduce differential **on-throttle**
+* Move brake bias away from rear tires
+* Increase brake pressure
+
+---
+
+## 🛣️ STRAIGHTS
+
+### 🐢 Low End Acceleration
+
+* Reduce front and rear toe
+* Reduce front and rear ride height
+* Reduce front and rear wing aero
+* Reduce front and rear tire pressures
+* Increase differential **on-throttle**
+
+### 🚀 Top Speed (Top End)
+
+* Reduce camber (closer to 0)
+* Reduce toe
+* Reduce ride height
+* Reduce wing aero
+* Reduce tire pressures
+* Increase differential **on-throttle**
+
+---
+
+## 🛞 TYRES
+
+### 🔥 Overheating
+
+* Reduce camber
+* Reduce toe
+* Decrease tire pressure (if too high)
+* Increase pressure (if too low)
+* Reduce differential (on- and off-throttle)
+* Move brake bias away from overheating tires
+* Reduce brake pressure
+
+### 🧊 Overcooling
+
+* Increase camber
+* Increase toe-out/in
+* Increase tire pressure (if low)
+* Decrease pressure (if high)
+* Increase differential (on- and off-throttle)
+* Increase brake pressure
+
+---
+
+## 🛑 BRAKES
+
+### 🔓 Locking Under Braking
+
+* Reduce brake pressure
+* Move brake bias rearward
+* Reduce front wing aero
+* Reduce front tire pressure
+
+### 😬 Instability While Braking
+
+* Increase front toe-in
+* Decrease front camber
+* Increase front wing aero
+* Reduce rear ride height
+* Reduce brake pressure
+* Move brake bias forward
+
+---
+
+## 🚧 OTHER HANDLING ISSUES
+
+### ⬇️ Excessive Scraping / Bottoming Out
+
+* Reduce ride height
+* Reduce brake pressure
+* Move brake bias forward
+
+### ⛽ High Fuel Consumption
+
+* Reduce toe
+* Reduce wing aero
+* Increase tire pressure
+
+---
+
+## 🌤️ RACE CONDITIONS
+
+### 🔥 Excessive Tyre Degradation
+
+* Reduce camber
+* Reduce toe
+* Increase ride height (lift tires off the road more)
+* Reduce wing aero
+* Increase tire pressures (if low)
+* Move brake bias away from overheating tires
+
+---
+
+Each section offers targeted changes to optimize performance for specific symptoms you may experience during a race. Mix and match settings based on the track and your driving style!
