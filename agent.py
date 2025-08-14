@@ -79,7 +79,10 @@ async def main():
 
         langfuse_handler = CallbackHandler()
 
-        base_prompt = langfuse.get_prompt("Agent-Base-Prompt")
+        base_prompt = langfuse.get_prompt(
+            "Agent-Base-Prompt",
+            fallback=DEFAULT_LLM_PROMPT
+        )
 
         state: State = {
             "messages": [
