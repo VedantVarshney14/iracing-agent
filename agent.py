@@ -2,6 +2,8 @@ import asyncio
 import logging
 import os
 
+from jedi.inference.gradual.typing import TypedDict
+from langchain_core.messages import HumanMessage, SystemMessage, AnyMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_ollama import ChatOllama
@@ -30,6 +32,9 @@ DEFAULT_LLM_PROMPT = (
 
 DEBUG = True
 
+class State(MessagesState):
+    pass
+
 
 async def main():
     langfuse = Langfuse()
@@ -55,11 +60,11 @@ async def main():
 
         model_with_tools = model.bind_tools(tools)
 
-        async def call_model(state: MessagesState):
-            response_message = await model_with_tools.ainvoke(state["messages"])
+        async def call_model(_state: State):
+            response_message = await model_with_tools.ainvoke(_state["messages"])
             return {"messages": response_message}
 
-        builder = StateGraph(MessagesState)
+        builder = StateGraph(State)
         builder.add_node("agent", call_model)
         builder.add_node("tools", ToolNode(tools))
         builder.add_edge(START, "agent")
@@ -68,25 +73,47 @@ async def main():
 
         graph = builder.compile()
 
-        question = (
+        default_question = (
             "How was my last lap?"
         )
 
         langfuse_handler = CallbackHandler()
 
-        result = await graph.ainvoke(
-            {
-                "messages": [
-                    {"role": "system", "content": langfuse.get_prompt("Agent-Base-Prompt").get_langchain_prompt()},
-                    {"role": "user", "content": question}
-                ],
-            },
-            config={
-                "callbacks": [langfuse_handler],
-            }
-        )
+        base_prompt = langfuse.get_prompt("Agent-Base-Prompt")
 
-        print(result["messages"][-1].content)
+        state: State = {
+            "messages": [
+                SystemMessage(content=base_prompt.get_langchain_prompt())
+            ]
+        }
+
+        while True:
+            try:
+                question = input(
+                    "Enter your question (press [enter] for default, 'exit' to exit.): "
+                )
+                if question.lower() == "exit":
+                    break
+                if not question:
+                    question = default_question
+                state["messages"].append(
+                    HumanMessage(content=question)
+                )
+                logger.info("Invoking agent...")
+                result = await graph.ainvoke(
+                    state,
+                    config={
+                        "callbacks": [langfuse_handler]
+                    }
+                )
+
+                reply = result["messages"][-1]
+                state["messages"].append(reply)
+                # TODO - Trim state?
+                print(result["messages"][-1].content)
+            except KeyboardInterrupt:
+                break
+
 
 
 if __name__ == '__main__':
