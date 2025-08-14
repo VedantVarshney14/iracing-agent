@@ -47,6 +47,16 @@ async def get_setup_guide():
 
 
 @mcp.tool()
+async def get_lap_details(ctx: fastmcp.Context) -> dict:
+    """
+    Get details about the last user lap. Details include track name, lap time, car name, track temperature etc.
+    """
+    state: State = ctx.fastmcp.state
+    lap = await state.client.get_user_lap()
+    return lap.model_dump()
+
+
+@mcp.tool()
 async def analyse_last_lap(
         ctx: fastmcp.Context,
 ) -> str:
