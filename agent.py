@@ -5,10 +5,11 @@ import os
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_ollama import ChatOllama
+from langfuse import Langfuse
+from langfuse.langchain import CallbackHandler
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
-from langfuse.langchain import CallbackHandler
 
 import iagent
 from iagent import utils
@@ -16,7 +17,7 @@ from iagent.mcp import garage_mcp
 
 logger = logging.getLogger(__name__)
 
-LLM_PROMPT = (
+DEFAULT_LLM_PROMPT = (
     "You are sim-racing coach named Steve. Your job is to coach "
     "Vedant (the user) improve at the racing simulator iRacing. You will "
     "have access to his session data. Reply to Vedant's "
@@ -31,6 +32,8 @@ DEBUG = True
 
 
 async def main():
+    langfuse = Langfuse()
+
     logger.info("Setting up tools.")
     client = MultiServerMCPClient(
         {
@@ -65,8 +68,6 @@ async def main():
 
         graph = builder.compile()
 
-        mermaid = graph.get_graph().draw_mermaid()
-
         question = (
             "How was my last lap?"
         )
@@ -75,7 +76,10 @@ async def main():
 
         result = await graph.ainvoke(
             {
-                "messages": [{"role": "user", "content": question}],
+                "messages": [
+                    {"role": "system", "content": langfuse.get_prompt("Agent-Base-Prompt").get_langchain_prompt()},
+                    {"role": "user", "content": question}
+                ],
             },
             config={
                 "callbacks": [langfuse_handler],

@@ -4,7 +4,6 @@ An MCP server for iRacing telemetry analysis.
 import functools
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional, Any
 
 import fastmcp
@@ -45,7 +44,7 @@ async def lifespan(_app):
 
 
 mcp = fastmcp.FastMCP(
-    "Garage61 MCP Server 🚗",
+    "iRacing MCP Server 🚗",
     lifespan=lifespan
 )
 
@@ -55,6 +54,7 @@ mcp = fastmcp.FastMCP(
 def get_current_telemetry_data(ctx: fastmcp.Context, key: str) -> Optional[Any]:
     state: State = ctx.fastmcp.state
     return state.client.get_current_telemetry_data(key)
+
 
 if __name__ == '__main__':
     mcp.run()
