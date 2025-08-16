@@ -15,7 +15,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 import iagent
 from iagent import utils
-from iagent.mcp import garage_mcp
+from iagent.mcp import garage_mcp, iracing_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,12 @@ async def main():
                 "command": "python",
                 "args": [garage_mcp.__file__, os.environ["GARAGE61_PAT"]],
                 "transport": "stdio",
-            }
+            },
+            "iracing": {
+                "command": "python",
+                "args": [iracing_mcp.__file__],
+                "transport": "stdio",
+            },
         }
     )
 
