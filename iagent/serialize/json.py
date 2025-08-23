@@ -12,5 +12,5 @@ class CustomJSONEncoder(json.JSONEncoder):
         return None
 
 @functools.wraps(_dumps)
-def dumps(obj):
-    return json.dumps(obj, cls=CustomJSONEncoder)
+def dumps(obj, **kwargs):
+    return json.dumps(obj, cls=CustomJSONEncoder, **kwargs)

@@ -1,12 +1,14 @@
 import asyncio
 import logging
 import os
-from typing import Optional
+from json import JSONDecodeError
+from typing import Optional, Literal, Any
 
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AnyMessage, AIMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_ollama import ChatOllama
+from langgraph import constants as lc
 from langgraph.graph import MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -19,21 +21,54 @@ from iagent.serialize import json
 logger = logging.getLogger(__name__)
 
 
+class DriverMessage(HumanMessage):
+    def __init__(
+            self, content: str, **kwargs: Any
+    ) -> None:
+        super().__init__(
+            f"Driver Message:\n{content}",
+            **kwargs
+        )
+
+
+class AssistantCoachMessage(HumanMessage):
+    def __init__(
+            self, content: str, **kwargs: Any
+    ) -> None:
+        super().__init__(
+            f"Assistant Coach Message:\n{content}",
+            **kwargs
+        )
+
+
 class AgentState(MessagesState):
     """State for the agentic system"""
     current_events: list[EventStamp]
-    # agent_memory: dict[str, Any]
-    # current_goal: Optional[str]
-    # action_plan: list[str]
-    reasoning: Optional[str]
-    confidence: Optional[float]
-    tools_used: list[str]
+    trigger: Optional[Literal["driver", "events"]]
+    assistant_coach_messages: list[type[AnyMessage]]
+    driver_messages: list[type[AnyMessage]]
+    # Combination of assistant and driver messages - both useful to race engineer when considered
+    # together
+    race_engineer_messages: list[type[AnyMessage]]
+    # Flag to output message to driver before ending graph
+    send_driver_message: bool
+
+
+def get_initial_state() -> AgentState:
+    return {
+        "current_events": [],
+        "trigger": None,
+        "assistant_coach_messages": [],
+        "driver_messages": [],
+        "race_engineer_messages": [],
+        "send_driver_message": False,
+    }
 
 
 class Agent:
     def __init__(self, tools):
         self._model = ChatOllama(
-            model="qwen3:4b",
+            model="qwen3:8b",
             temperature=0
         ).bind_tools(tools)
         self.graph = self._build_graph(tools).compile()
@@ -41,42 +76,125 @@ class Agent:
     def _build_graph(self, tools) -> StateGraph:
         graph = StateGraph(AgentState)
 
-        # Agent reasoning nodes
-        graph.add_node("analyze_events", self._analyze_events)
-        graph.add_node("plan_response", self._plan_response)
-        graph.add_node("tools", ToolNode(tools))  # Use the ToolNode
-        graph.add_node("reflect_and_learn", self._reflect_and_learn)
-        graph.add_node("update_memory", self._update_memory)
-
-        # Decision flow
-        # graph.add_edge("analyze_events", "plan_response")
+        # Determine whether to start graph via a driver message or an event batch
         graph.add_conditional_edges(
-            "analyze_events",
-            self._should_use_tools,
+            lc.START,
+            self._trigger_check,
+        )
+
+        graph.add_node("race_engineer", self._race_engineer)
+        graph.add_node(
+            "race_engineer_tools",
+            ToolNode(
+                tools,
+                name="race_engineer_tools",
+                messages_key="race_engineer_messages"
+            )
+        )
+
+        # Loop race engineer and tools until a non-tools final message is achieved
+        graph.add_conditional_edges(
+            "race_engineer",
+            lambda state: self.contains_tool_calls(state["race_engineer_messages"][-1]),
             {
-                "use_tools": "tools",
-                "skip_tools": "reflect_and_learn"
+                True: "race_engineer_tools",
+                False: "reconcile"
             }
         )
-        graph.add_edge("tools", "reflect_and_learn")
-        graph.add_edge("reflect_and_learn", "update_memory")
-        graph.add_edge("update_memory", "__end__")
+        graph.add_edge("race_engineer_tools", "race_engineer")
 
-        graph.set_entry_point("analyze_events")
+        graph.add_node("assistant_coach", self._assistant_coach)
+        graph.add_node(
+            "assistant_coach_tools",
+            ToolNode(
+                tools,
+                name="assistant_coach_tools",
+                messages_key="assistant_coach_messages"
+            )
+        )
+        graph.add_conditional_edges(
+            "assistant_coach",
+            lambda state: self.contains_tool_calls(state["assistant_coach_messages"][-1]),
+            {
+                True: "assistant_coach_tools",
+                False: "race_engineer",
+            }
+        )
+        graph.add_edge("assistant_coach_tools", "assistant_coach")
+
+        graph.add_node("reconcile", self._reconcile)
+        graph.add_edge("reconcile", lc.END)
+
         return graph
 
-    async def _analyze_events(self, state: AgentState) -> AgentState:
-        """Agent analyzes the events using reasoning and pattern recognition"""
-        response_format = {
-            "DistinctEventsAnalysed": ["PotentialLockUp"],
-            "PatternsIdentified": "A description of the patterns you've identified with the events data.",
-            "Confidence": "Estimate for confidence in conclusions, e.g. 0.8",
-            "Urgency": "One of LOW, MEDIUM, HIGH",
-            "SuggestedActions": [
-                "A list of suggested actions to take, including driver radio and collecting further data using "
-                "available tools."
-            ]
+    @staticmethod
+    async def _trigger_check(state: AgentState) -> Literal["race_engineer", "assistant_coach"]:
+        if state["trigger"] == "driver":
+            return "race_engineer"
+        elif state["trigger"] == "events":
+            return "assistant_coach"
+        else:
+            raise ValueError("Unknown trigger")
+
+    async def _race_engineer(self, state: AgentState) -> AgentState:
+        resp_example = {
+            "assistant_coach": "Thanks - keep an eye on the tyre wear for now.",
+            "driver": "Vedant - try to take care of the tyres going into turn 1. Seeing some locking..."
         }
+        messages = [
+            SystemMessage(
+                "You are a sim-racing race engineer for Vedant - an iRacing enthusiast "
+                "looking to improve on track. You will need to be able to talk to two people - "
+                "Vedant directly (via driver radio) and the assistant coach working in the garage. "
+                "The assistant coach's job is to help you in your role as engineer. They have access "
+                "to recent session events as well as Vedant's telemetry and will routinely provide you with "
+                "updates and analysis. Remember - you need to be able to maintain two independent "
+                "conversations at the same time. When responding to the driver, remember to keep "
+                "your answers short and useful. When responding to the assistant coach, provide a set "
+                "of remarks. This could be what you want them to focus on, how you want them to change their "
+                "analysis, or even just a simple thank you! "
+                "Remember you too have access to a set of tools to perform quick checks yourself rather than "
+                "relying on the assistant coach. "
+                "Do NOT hallucinate any findings. Make sure any data presented to the driver is directly supported "
+                "by tools data or assistant coach messages."
+                "Below is an example response (to the driver and/or coach). Note the JSON-structure; strictly keep to "
+                "this format. Use `null` for any particular message if you don't want to send a message to that person.\n"
+                f"{json.dumps(resp_example, indent=2)}"
+            ),
+            # TODO - truncate.
+            # Includes labelled driver and assistant coach messages (both human messages)
+            *state["race_engineer_messages"]
+        ]
+
+        resp = await self._model.ainvoke(
+            messages,
+            reasoning=True,
+            # format="json"
+        )
+
+        state["race_engineer_messages"].append(
+            resp
+        )
+
+        if self.contains_tool_calls(resp):
+            return state
+
+        try:
+            resp_content = json.loads(resp.content)
+        except JSONDecodeError as err:
+            raise RuntimeError("Encountered bad message from race engineer.") from err
+
+        if "assistant_coach" in resp_content and resp_content["assistant_coach"]:
+            state["assistant_coach_messages"].append(
+                HumanMessage(resp_content["assistant_coach"])
+            )
+        if "driver" in resp_content  and resp_content["driver"]:
+            state["driver_messages"].append(
+                AIMessage(resp_content["driver"])
+            )
+        return state
+
+    async def _assistant_coach(self, state: AgentState) -> AgentState:
         example_events = [
             [
                 EventStamp(
@@ -106,73 +224,53 @@ class Agent:
             "Urgency": "MEDIUM",
             "Confidence": 0.8,
             "SuggestedActions": [
-                "Check tyre wear to gauge depth of damage caused by lock-ups.",
-                "Communicate tips to driver."
+                "Advise driver to lower peak braking or move brake bias rearwards."
             ]
         }
-        response = await self._model.ainvoke(
-            [
-                SystemMessage(
-                    "You are a sim-racing analysis agent. You will be provided with some "
-                    "recent session events and it is your job to determine a response strategy. "
-                    "Use the below as an example of how to format your response. You must strictly "
-                    "conform to this format.\n"
-                    f"{json.dumps(response_format)}"
-                ),
-                HumanMessage(
-                    json.dumps(example_events)
-                ),
-                AIMessage(
-                    json.dumps(response_example)
-                ),
-                HumanMessage(
-                    json.dumps(state["current_events"][-100:]),
-                )
-            ],
-            format="json",
-            reasoning=True
+        messages = [
+            SystemMessage(
+                "You are a sim-racing assistant coach. You will be provided with event data "
+                "from a live iRacing session and it your job to perform an analysis and put "
+                "forward a report (set of structured remarks) to the race engineer, who will then "
+                "ultimately determine what to relay to the driver. The user in this case "
+                "is the race engineer who, in their messages, may offer some remarks on your "
+                "analysis, which you should consider in future analyses.\n"
+                "An example is included below. Remember to strictly stick to the response format.\n"
+                f"Events:\n{json.dumps(example_events)}\n\n"
+                f"Example Response:\n{json.dumps(response_example)}"
+            ),
+            # TODO - truncate
+            *state["assistant_coach_messages"]
+        ]
+
+        resp = await self._model.ainvoke(
+            messages,
+            reasoning=True,
+            format="json"
         )
-        return {
-            **state,
-            # Don't parse JSON - allow for small mistakes
-            "reasoning": response.content
-        }
 
-    def _plan_response(self, state: AgentState) -> AgentState:
-        """Agent creates an action plan based on analysis"""
+        try:
+            _ = json.loads(resp.content)
+        except JSONDecodeError as err:
+            raise RuntimeError("Got invalid message from assistant coach.") from err
+
+        state["race_engineer_messages"].append(
+            AssistantCoachMessage(resp.content)
+        )
         return state
 
-    def _should_take_action(self, state: AgentState) -> str:
-        """Agent decides whether to take action or wait for more information"""
+    def _reconcile(self, state: AgentState) -> AgentState:
+        if state["send_driver_message"]:
+            msg = state["driver_messages"][-1].content
+            # TODO - output via TTS
+            print(msg)
+            state["send_driver_message"] = False
+        #     TODO - other scratchpad activity
         return state
 
-    def _execute_actions(self, state: AgentState) -> AgentState:
-        """Agent executes the planned actions"""
-        return state
-
-    def _reflect_and_learn(self, state: AgentState) -> AgentState:
-        """Agent reflects on its actions and learns from the outcomes"""
-        return state
-
-    def _update_memory(self, state: AgentState) -> AgentState:
-        """Agent updates its long-term memory"""
-        return state
-
-    def _should_use_tools(self, state: AgentState) -> str:
-        """Agent decides whether to use tools based on the situation"""
-        events = state["current_events"]
-        messages = state.get("messages", [])
-
-        # Use tools if we have tool calls planned, or if we have significant events
-        has_tool_calls = any(msg.get("tool_calls") for msg in messages)
-        has_significant_events = any(e.priority in [EventPriority.HIGH] for e in events)
-
-        if has_tool_calls or has_significant_events:
-            print("🔧 Agent deciding to use tools")
-            return "use_tools"
-        else:
-            print("⏭️ Agent skipping tools for low priority events")
-            return "skip_tools"
+    @staticmethod
+    def contains_tool_calls(message: AnyMessage) -> bool:
+        return hasattr(message, "tool_calls") and len(message.tool_calls) > 0
 
 
 async def main():
@@ -192,35 +290,21 @@ async def main():
         agent = Agent(tools)
 
         # Initial state
-        state = AgentState(
-            current_events=[
-                EventStamp(
-                    priority=EventPriority.HIGH,
-                    lap_dist=0.22,
-                    session_tick=200,
-                    event=Event.POSSIBLE_LOCK_UP
-                ),
-                EventStamp(
-                    priority=EventPriority.LOW,
-                    lap_dist=0.01,
-                    session_tick=1000,
-                    event=Event.POSSIBLE_LOCK_UP
-                ),
-                EventStamp(
-                    priority=EventPriority.HIGH,
-                    lap_dist=0.18,
-                    session_tick=1200,
-                    event=Event.POSSIBLE_LOCK_UP
-                )
-            ],
-            messages=[],
-            reasoning=None,
-            confidence=None,
-            tools_used=None
+        state = get_initial_state()
+        state["trigger"] = "driver"
+
+        msg = "Hey - how was my last lap?"
+
+        state["driver_messages"].append(
+            HumanMessage(msg)
+        )
+        state["race_engineer_messages"].append(
+            DriverMessage(msg)
         )
 
         # TODO - loop
         resp = await agent.graph.ainvoke(state)
+        pass
 
 
 if __name__ == '__main__':
