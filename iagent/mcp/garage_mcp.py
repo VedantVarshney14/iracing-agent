@@ -1,6 +1,7 @@
 """
 An MCP server for interacting with the iRacing Garage61 platform.
 """
+import json
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -26,7 +27,7 @@ async def lifespan(_app):
     """Context manager for MCP server lifecycle."""
     state = State(
         client=GarageClient(),
-        vision=VisionModel(),
+        vision=VisionModel(model_name="gemma3:4b"),
     )
     _app.state = state
     yield
@@ -64,7 +65,7 @@ async def analyse_last_lap(
     state: State = ctx.fastmcp.state
     lap = await state.client.get_user_lap()
     telemetry = await state.client.get_lap_telemetry(lap.id)
-    telemetry_fig = plot.plot_lap(
+    telemetry_fig = plot.plot_lap_telemetry(
         lap, telemetry
     )
     messages = [
