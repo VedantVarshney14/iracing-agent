@@ -8,7 +8,7 @@ from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
 import iagent
-from iagent.mcp import garage_mcp
+from iagent.mcp_servers import garage_mcp
 from iagent import utils
 
 logger = logging.getLogger(__name__)

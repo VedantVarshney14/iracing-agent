@@ -15,8 +15,9 @@ from langgraph.prebuilt import ToolNode
 import iagent
 from iagent import utils
 from iagent.events.events import EventStamp, EventPriority, Event
-from iagent.mcp import garage_mcp
+from iagent.mcp_servers import garage_mcp
 from iagent.serialize import json
+from mcp_servers import composite_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class Agent:
             lambda state: self.contains_tool_calls(state["race_engineer_messages"][-1]),
             {
                 True: "race_engineer_tools",
-                False: "reconcile"
+                False: lc.END
             }
         )
         graph.add_edge("race_engineer_tools", "race_engineer")
@@ -121,9 +122,6 @@ class Agent:
             }
         )
         graph.add_edge("assistant_coach_tools", "assistant_coach")
-
-        graph.add_node("reconcile", self._reconcile)
-        graph.add_edge("reconcile", lc.END)
 
         return graph
 
@@ -189,6 +187,7 @@ class Agent:
                 HumanMessage(resp_content["assistant_coach"])
             )
         if "driver" in resp_content  and resp_content["driver"]:
+            state["send_driver_message"] = True
             state["driver_messages"].append(
                 AIMessage(resp_content["driver"])
             )
@@ -259,14 +258,6 @@ class Agent:
         )
         return state
 
-    def _reconcile(self, state: AgentState) -> AgentState:
-        if state["send_driver_message"]:
-            msg = state["driver_messages"][-1].content
-            # TODO - output via TTS
-            print(msg)
-            state["send_driver_message"] = False
-        #     TODO - other scratchpad activity
-        return state
 
     @staticmethod
     def contains_tool_calls(message: AnyMessage) -> bool:
@@ -277,34 +268,42 @@ async def main():
     logger.info("Setting up tools.")
     client = MultiServerMCPClient(
         {
-            "garage": {
+            "iracing": {
                 "command": "python",
-                "args": [garage_mcp.__file__, os.environ["GARAGE61_PAT"]],
+                "args": [composite_mcp.__file__, os.environ["GARAGE61_PAT"]],
                 "transport": "stdio",
             }
         }
     )
 
-    async with (client.session("garage") as session):
-        tools = await load_mcp_tools(session)
+    async with (
+        client.session("iracing") as iracing_session
+    ):
+        tools = await load_mcp_tools(iracing_session)
         agent = Agent(tools)
 
         # Initial state
         state = get_initial_state()
         state["trigger"] = "driver"
 
-        msg = "Hey - how was my last lap?"
+        default_msg = "Hey - how was my last lap?"
 
-        state["driver_messages"].append(
-            HumanMessage(msg)
-        )
-        state["race_engineer_messages"].append(
-            DriverMessage(msg)
-        )
-
-        # TODO - loop
-        resp = await agent.graph.ainvoke(state)
-        pass
+        while True:
+            msg = input("Driver message ([Enter] to use the default: ")
+            if not msg:
+                msg = default_msg
+            logger.info(f"Driver Message: {msg}")
+            state["driver_messages"].append(
+                HumanMessage(msg)
+            )
+            state["race_engineer_messages"].append(
+                DriverMessage(msg)
+            )
+            state: AgentState = await agent.graph.ainvoke(state)
+            if state["send_driver_message"]:
+                logger.info(f"AI Message: {state['driver_messages'][-1].content}")
+                state["send_driver_message"] = False
+            pass
 
 
 if __name__ == '__main__':

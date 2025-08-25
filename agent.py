@@ -14,7 +14,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 import iagent
 from iagent import utils
-from iagent.mcp import garage_mcp, iracing_mcp
+from iagent.mcp_servers import garage_mcp, iracing_mcp
 
 logger = logging.getLogger(__name__)
 
