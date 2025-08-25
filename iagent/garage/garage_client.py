@@ -27,7 +27,7 @@ class GarageClient:
         laps["startTime"] = pd.to_datetime(laps["startTime"], utc=True)
         laps = laps.sort_values(
             "startTime", ascending=False
-        )
+        ).reset_index(drop=True)
         return laps
 
     async def get_user_lap(self, unclean: bool = False) -> Lap:
