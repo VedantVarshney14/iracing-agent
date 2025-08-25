@@ -17,7 +17,7 @@ from iagent import utils
 from iagent.events.events import EventStamp, EventPriority, Event
 from iagent.mcp_servers import garage_mcp
 from iagent.serialize import json
-from mcp_servers import composite_mcp
+from mcp_servers import iracing_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +69,9 @@ def get_initial_state() -> AgentState:
 class Agent:
     def __init__(self, tools):
         self._model = ChatOllama(
-            model="qwen3:8b",
-            temperature=0
+            model="qwen3:8b"
+            # model="gpt-oss:20b",
+            # temperature=0
         ).bind_tools(tools)
         self.graph = self._build_graph(tools).compile()
 
@@ -152,9 +153,12 @@ class Agent:
                 "of remarks. This could be what you want them to focus on, how you want them to change their "
                 "analysis, or even just a simple thank you! "
                 "Remember you too have access to a set of tools to perform quick checks yourself rather than "
-                "relying on the assistant coach. "
-                "Do NOT hallucinate any findings. Make sure any data presented to the driver is directly supported "
-                "by tools data or assistant coach messages."
+                "relying on the assistant coach.\n"
+                "Important Notes:\n"
+                "- Do **NOT** hallucinate any findings. Make sure any data presented to the driver is directly supported "
+                "by tools data or assistant coach messages.\n"
+                "- Expect 'small talk' messages, e.g. 'thanks', 'will do' etc. from the driver. Here, **consider** "
+                "replying casually to the driver with no comment to the assistant coach.\n"
                 "Below is an example response (to the driver and/or coach). Note the JSON-structure; strictly keep to "
                 "this format. Use `null` for any particular message if you don't want to send a message to that person.\n"
                 f"{json.dumps(resp_example, indent=2)}"
@@ -270,16 +274,23 @@ async def main():
         {
             "iracing": {
                 "command": "python",
-                "args": [composite_mcp.__file__, os.environ["GARAGE61_PAT"]],
+                "args": [iracing_mcp.__file__],
+                "transport": "stdio",
+            },
+            "garage": {
+                "command": "python",
+                "args": [garage_mcp.__file__, os.environ["GARAGE61_PAT"]],
                 "transport": "stdio",
             }
         }
     )
 
     async with (
-        client.session("iracing") as iracing_session
+        client.session("iracing") as iracing_session,
+        client.session("garage") as garage_session
     ):
         tools = await load_mcp_tools(iracing_session)
+        tools += await load_mcp_tools(garage_session)
         agent = Agent(tools)
 
         # Initial state
