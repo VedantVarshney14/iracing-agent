@@ -13,6 +13,7 @@ from langgraph.graph import MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
 import iagent
+from audio.tts import TTS
 from iagent import utils
 from iagent.events.events import EventStamp, EventPriority, Event
 from iagent.mcp_servers import garage_mcp
@@ -269,6 +270,12 @@ class Agent:
 
 
 async def main():
+    logger.info("Setting up TTS")
+    tts = TTS(
+        phonetics={
+            "Vedant": "/ˈvɪdænt/"
+        }
+    )
     logger.info("Setting up tools.")
     client = MultiServerMCPClient(
         {
@@ -300,6 +307,7 @@ async def main():
         default_msg = "Hey - how was my last lap?"
 
         while True:
+            # TODO - replace with audio parsing
             msg = input("Driver message ([Enter] to use the default: ")
             if not msg:
                 msg = default_msg
@@ -312,9 +320,10 @@ async def main():
             )
             state: AgentState = await agent.graph.ainvoke(state)
             if state["send_driver_message"]:
-                logger.info(f"AI Message: {state['driver_messages'][-1].content}")
+                ai_msg = state['driver_messages'][-1].content
+                logger.info(f"AI Message: {ai_msg}")
+                tts.generate(ai_msg)
                 state["send_driver_message"] = False
-            pass
 
 
 if __name__ == '__main__':

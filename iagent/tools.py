@@ -62,11 +62,13 @@ class IRacingTools:
         - Gear - -1=reverse  0=neutral  1..n=current gear
         - LapBestLapTime - Players best lap time, s
         - LapCurrentLapTime - Estimate of players current lap time as shown in F3 box, s
+        - TrackTempCrew - Temperature of track measured by crew around track, C
+        - LFtempCM - LF tire middle carcass temperature, C
+        - LFwearM - LF tire middle percent tread worn / used, %
+        - FuelLevel - Liters of fuel remaining, l
 
-        Examples
-        --------
-        >>> get_current_telemetry_data("Speed")
-        >>> get_current_telemetry_data("AirDensity")
+        Common tyre-prefixes:
+        LF = left front, LR = left rear, RF = right front, RR = right rear
 
         Raises
         ------
@@ -84,6 +86,10 @@ class IRacingTools:
         data = self._ir[key]
         if data is None:
             raise RuntimeError(f"No such telemetry key '{key}'. Please ensure that the key is valid.")
+        # Raw telemetry for tyre wear is for tread **remaining**. The key name implies it's tread used so we're
+        # sticking to that here. Makes it easier for LLMs to interpret the data point.
+        if "wear" in key:
+            return 1 - data
         return data
 
     def telemetry_key_embedding_lookup(self, text: str) -> list[dict[str, str]]:

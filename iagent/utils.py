@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from typing import Callable
 
 
 class LoggingFormatter(logging.Formatter):
@@ -28,3 +29,10 @@ def get_data_path() -> Path:
 def get_misc_data_path() -> Path:
     """Get path to miscellaneous data directory."""
     return (Path(__file__).parents[1] / "misc-data").absolute()
+
+def wrap_docs(wrapping_fun: Callable):
+    """Gives the wrapping callable the same docstring as a specified callable. Useful for building LLM tools."""
+    def decorator(fun: Callable):
+        fun.__doc__ = wrapping_fun.__doc__
+        return fun
+    return decorator

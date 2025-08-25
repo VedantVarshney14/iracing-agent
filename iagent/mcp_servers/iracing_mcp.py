@@ -1,7 +1,6 @@
 """
 An MCP server for iRacing telemetry analysis.
 """
-import functools
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Optional, Any
@@ -50,10 +49,10 @@ mcp = fastmcp.FastMCP(
 
 
 @mcp.tool()
-@functools.wraps(IRacingTools.get_current_telemetry_data)
+@utils.wrap_docs(IRacingTools.get_current_telemetry_data)
 def get_current_telemetry_data(ctx: fastmcp.Context, key: str) -> Optional[Any]:
     state: State = ctx.fastmcp.state
-    return state.client.get_current_telemetry_data(key)
+    return {key: state.client.get_current_telemetry_data(key)}
 
 
 if __name__ == '__main__':
