@@ -19,14 +19,12 @@ class State:
     vision: VisionModel
 
 
-DEBUG = True  # Set to False in production
-
 
 @asynccontextmanager
 async def lifespan(_app):
     """Context manager for MCP server lifecycle."""
     ir = irsdk.IRSDK()
-    if DEBUG:
+    if utils.in_debug():
         ir.startup(
             test_file=str(utils.get_misc_data_path() / "data.bin")
         )
