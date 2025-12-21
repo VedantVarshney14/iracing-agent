@@ -27,7 +27,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "black>=25.1.0",
+    "black[d]>=25.1.0",
     "jupyterlab>=4.4.5",
     "pip>=25.2",
     "pytest>=8.4.1",

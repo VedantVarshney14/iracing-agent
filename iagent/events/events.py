@@ -24,8 +24,9 @@ class Event(Field, Enum):
 
 
 class EventPriority(int, Enum):
-    LOW = 0
-    HIGH = 1
+    # Lower number for a higher priority
+    HIGH = 0
+    LOW = 1
 
 
 @dataclass

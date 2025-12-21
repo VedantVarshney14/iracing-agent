@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from iagent.db.tables import Telemetry
 
-
 COLLECTION_RATE = 60
 
 logger = logging.getLogger(__name__)
@@ -19,7 +18,7 @@ class TelemetryCollectionClient:
         self.engine = engine
         self.ir = ir
 
-        self._telem_cols =  [
+        self._telem_cols = [
             col.name for col in Telemetry.__table__.columns
             if col.name[0].isupper()
         ]
@@ -32,7 +31,6 @@ class TelemetryCollectionClient:
             )
             session.add(record)
             session.commit()
-
 
     def collect(self, stop: Event):
         logger.info("Collecting telemetry")
