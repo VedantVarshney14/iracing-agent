@@ -1,15 +1,15 @@
 """
 An MCP server for iRacing telemetry analysis.
 """
-import functools
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Optional, Any
 
 import fastmcp
 import irsdk
 
 from iagent import utils
+from iagent.models import IRSDKVars
 from iagent.tools import IRacingTools
 from iagent.vision import VisionModel
 
@@ -20,14 +20,11 @@ class State:
     vision: VisionModel
 
 
-DEBUG = True  # Set to False in production
-
-
 @asynccontextmanager
 async def lifespan(_app):
     """Context manager for MCP server lifecycle."""
     ir = irsdk.IRSDK()
-    if DEBUG:
+    if utils.in_debug():
         ir.startup(
             test_file=str(utils.get_misc_data_path() / "data.bin")
         )
@@ -50,10 +47,24 @@ mcp = fastmcp.FastMCP(
 
 
 @mcp.tool()
-@functools.wraps(IRacingTools.get_current_telemetry_data)
+@utils.wrap_docs(IRacingTools.get_current_telemetry_data)
 def get_current_telemetry_data(ctx: fastmcp.Context, key: str) -> Optional[Any]:
-    state: State = ctx.fastmcp.state
-    return state.client.get_current_telemetry_data(key)
+    state = ctx.fastmcp.state
+    return {key: state.client.get_current_telemetry_data(key)}
+
+
+# The telemetry keys resource (only exposed as an MCP resource, not a tool)
+@mcp.resource("resource://telemetry-keys")
+def get_telemetry_keys_resource() -> dict:
+    """Resource: telemetry key names -> description.
+
+    Returns a mapping of telemetry key string to human-readable description.
+    """
+    keys = {}
+    for f in fields(IRSDKVars):
+        desc = f.metadata.get("desc") if f.metadata else None
+        keys[f.name] = desc
+    return keys
 
 
 if __name__ == '__main__':

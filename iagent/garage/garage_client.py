@@ -27,16 +27,19 @@ class GarageClient:
         laps["startTime"] = pd.to_datetime(laps["startTime"], utc=True)
         laps = laps.sort_values(
             "startTime", ascending=False
-        )
+        ).reset_index(drop=True)
         return laps
 
-    async def get_user_lap(self) -> Lap:
+    async def get_user_lap(self, unclean: bool = False) -> Lap:
         resp = await self._client.get(
             self.BASE_URL + "/laps",
             params={
                 "drivers": "me",
-                # Full laps only
-                "lapTypes": 1
+                # Full laps only (no joker or in/out laps)
+                "lapTypes": 1,
+                # Include all laps
+                "group": "none",
+                "unclean": unclean,
             }
         )
         laps = self._post_process_lap_response(resp).loc[:1]
