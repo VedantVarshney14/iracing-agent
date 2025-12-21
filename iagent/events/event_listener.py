@@ -1,20 +1,18 @@
 import asyncio
-import queue
 import threading
-from typing import Sequence
+from typing import Callable, Sequence
 
 import irsdk
 
+from events.events import EventStamp
 from iagent import utils
 from iagent.events.detectors.base import DetectorBase
 from iagent.events.detectors.lockup import LockUpDetector
-from iagent.events.events import EventPriority
 
 
 class EventListener:
-    def __init__(self, fps: int = 20):
-        self.low_priority_queue = queue.Queue()
-        self.high_priority_queue = queue.Queue()
+    def __init__(self, enqueue_callback: Callable[[EventStamp], None], fps: int = 20):
+        self._enqueue_callback = enqueue_callback
 
         self._ir = irsdk.IRSDK()
         self._intersample_time = float(1 / fps)
@@ -45,8 +43,5 @@ class EventListener:
             event = detector.detect(self._ir)
             if event is None:
                 continue
-            if event.priority == EventPriority.LOW:
-                self.low_priority_queue.put(event)
-            else:
-                self.high_priority_queue.put(event)
+            self._enqueue_callback(event)
         return None
