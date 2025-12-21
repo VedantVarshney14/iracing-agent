@@ -10,8 +10,6 @@ from iagent.events.detectors.base import DetectorBase
 from iagent.events.detectors.lockup import LockUpDetector
 from iagent.events.events import EventPriority
 
-DEBUG = True
-
 
 class EventListener:
     def __init__(self, fps: int = 20):
@@ -25,7 +23,7 @@ class EventListener:
         )
 
     async def listen(self, stop_event: threading.Event):
-        if DEBUG:
+        if utils.in_debug():
             self._ir.startup(
                 test_file=str(utils.get_misc_data_path() / "data.bin")
             )

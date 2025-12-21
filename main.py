@@ -8,11 +8,10 @@ from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
 import iagent
-from iagent.mcp_servers import garage_mcp
 from iagent import utils
+from iagent.mcp_servers import garage_mcp
 
 logger = logging.getLogger(__name__)
-
 
 LLM_PROMPT = (
     "You are sim-racing coach named Steve. Your job is to coach "
@@ -25,8 +24,6 @@ LLM_PROMPT = (
     "Your final *non-thinking* response will be relayed to Vedant via radio."
 )
 
-
-DEBUG = True
 
 async def main():
     logger.info("Setting up tools.")
@@ -65,7 +62,6 @@ async def main():
         )
 
         return messages
-
 
 
 if __name__ == '__main__':

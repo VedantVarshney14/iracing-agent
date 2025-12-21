@@ -29,7 +29,9 @@ dependencies = [
 dev = [
     "black>=25.1.0",
     "jupyterlab>=4.4.5",
+    "pip>=25.2",
     "pytest>=8.4.1",
+    "pandas-stubs~=2.3.1",
 ]
 
 [tool.setuptools]
