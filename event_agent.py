@@ -5,7 +5,7 @@ import queue
 import threading
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from langchain_core.messages import HumanMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -63,15 +63,30 @@ def driver_input_thread(
         return
 
 
-async def invoke_graph(state: AgentState, agent: Agent, tts: TTS) -> AgentState:
+def env_flag_true(name: str) -> bool:
+    """Return True if environment variable `name` is set to a truthy value.
+
+    Accepts: 1, true, yes, y, on (case-insensitive).
+    """
+    val = os.environ.get(name)
+    return bool(val and val.strip().lower() in {"1", "true", "yes", "y", "on"})
+
+
+async def invoke_graph(state: AgentState, agent: Agent, tts: Optional[TTS]) -> AgentState:
     """Run agent.graph.ainvoke and handle send_driver_message consistently."""
-    state = await agent.graph.ainvoke(state)
+    state = await agent.graph.ainvoke(
+        state
+    )
     if state.get("send_driver_message"):
         if state.get("driver_messages"):
             ai_msg = state["driver_messages"][-1].content
             logger.info(f"AI Message: {ai_msg}")
             try:
-                tts.generate(ai_msg)
+                # Only attempt TTS if we actually have a TTS instance
+                if tts is not None:
+                    tts.generate(ai_msg)
+                else:
+                    logger.debug("NO_TTS set - skipping TTS generation")
             except Exception:
                 logger.exception("TTS generation failed")
         state["send_driver_message"] = False
@@ -79,7 +94,7 @@ async def invoke_graph(state: AgentState, agent: Agent, tts: TTS) -> AgentState:
 
 
 async def process_trigger(
-        trigger: Trigger, state: AgentState, agent: Agent, tts: TTS
+        trigger: Trigger, state: AgentState, agent: Agent, tts: Optional[TTS]
 ) -> AgentState:
     """Process a trigger by modifying state and running graph"""
     if trigger.trigger_type == TriggerType.DRIVER_MESSAGE:
@@ -117,9 +132,12 @@ async def queue_get_async(pqueue: ThreadPriorityQueue) -> Any:
 
 
 async def main():
-    logger.info("Setting up TTS")
-    # TODO - load as config
-    tts = TTS(phonetics={"Vedant": "/ˈvɪdænt/"})
+    if env_flag_true("NO_TTS"):
+        logger.info("Skipping TTS")
+        tts = None
+    else:
+        logger.info("Setting up TTS")
+        tts = TTS(phonetics={"Vedant": "/ˈvɪdænt/"})
 
     logger.info("Setting up Event Listener and unified priority queue")
     stop_event = threading.Event()
@@ -157,7 +175,7 @@ async def main():
         daemon=True,
     )
 
-    logger.info("Setting up tools.")
+    logger.info("Setting up tools")
     client = MultiServerMCPClient(
         {
             "iracing": {
