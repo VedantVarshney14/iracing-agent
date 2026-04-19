@@ -64,7 +64,7 @@ def get_initial_state() -> AgentState:
 class Agent:
     def __init__(self, tools):
         self._model = ChatOllama(
-            model=os.environ.get("TEXT_MODEL", "qwen3:8b")
+            model=os.environ.get("TEXT_MODEL", "gemma4:e4b")
         ).bind_tools(tools)
         self.graph = self._build_graph(tools).compile()
 

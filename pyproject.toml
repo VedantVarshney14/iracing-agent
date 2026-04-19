@@ -39,6 +39,7 @@ dev = [
 
 [project.scripts]
 iracing-agent = "iagent.scripts.event_agent:cli"
+composite-mcp = "iagent.mcp_servers.composite_mcp:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
