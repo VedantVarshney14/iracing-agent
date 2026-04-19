@@ -28,20 +28,19 @@ iRacing Agent acts as a virtual race engineer and coaching team monitoring your 
 │                                                           │
 │  START ──► trigger_check                                  │
 │                   │                                       │
-│          ┌────────┴────────┐                              │
-│          ▼                 ▼                              │
-│    race_engineer     assistant_coach                      │
-│    (driver msgs)     (session events)                     │
-│          │                 │                              │
-│          ▼                 ▼                              │
-│      re_tools          ac_tools                           │
-│          │                 │                              │
-│          │    (coach → engineer handoff)                  │
-│          ▼                 │                              │
-│         END ◄──────────────┘                              │
-│          │                                                │
-│          ▼                                                │
-│     TTS Radio Output                                      │
+│         ┌─────────┴──────────┐                            │
+│         ▼                    ▼                            │
+│   race_engineer ◄────── assistant_coach                   │
+│   (driver msgs)  handoff (session events)                 │
+│      │  ▲                    │  ▲                         │
+│      ▼  │                    ▼  │                         │
+│   re_tools                ac_tools                        │
+│         │                                                 │
+│         ▼                                                 │
+│        END                                                │
+│         │                                                 │
+│         ▼                                                 │
+│   TTS Radio Output                                        │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -71,8 +70,8 @@ iRacing Agent acts as a virtual race engineer and coaching team monitoring your 
 ## Prerequisites
 
 - Python 3.12+
-- [Ollama](https://ollama.ai) with `qwen3:8b` or similar pulled: `ollama pull qwen3:8b`
-- iRacing running on the same machine
+- [Ollama](https://ollama.ai) with `gemma4:e4b` pulled: `ollama pull gemma4:e4b`
+- iRacing running on the same machine (not required in debug mode)
 - (Optional) [Garage61](https://garage61.net) account + personal access token for lap analysis
 - (Optional) PostgreSQL instance for telemetry logging
 
@@ -90,29 +89,79 @@ Environment variables (can also be supplied via a `.env` file passed to `--env`)
 
 | Variable | Required | Description |
 | --- | --- | --- |
+| `TEXT_MODEL` | No | Ollama model name to use (default: `gemma4:e4b`) |
+| `DRIVER_NAME` | No | Driver's name, used by the agents when addressing the driver |
 | `GARAGE61_PAT` | No | Garage61 personal access token for lap analysis tools |
 | `NO_TTS` | No | Set to `1` to disable text-to-speech output |
 | `DEBUG` | No | Set to `1` to use a recorded telemetry snapshot instead of live iRacing (also set by `--debug`) |
-| `DB_USERNAME` | No | PostgreSQL username for background telemetry logging |
-| `DB_PASSWORD` | No | PostgreSQL password for background telemetry logging |
+
+### Testing locally (debug mode)
+
+To test without iRacing running, create a `.env` file:
+
+```dotenv
+NO_TTS=TRUE
+DEBUG=TRUE
+GARAGE61_PAT=<your_garage61_pat>
+TEXT_MODEL=gemma4:e4b
+DRIVER_NAME=<your_name>
+```
+
+Debug mode expects a `data/` directory in the current working directory containing:
+
+- `data.bin` — iRacing shared memory binary snapshot (used in place of live iRacing data)
 
 ## Usage
 
+The MCP server must be running before you start the agent. Start it in a separate terminal:
+
 ```bash
-# Start the agent (iRacing must be running)
-uv run iagent
+# Start the composite MCP server (iRacing must be running)
+uv run composite-mcp
+
+# Pass a Garage61 personal access token directly (alternative to setting GARAGE61_PAT env var)
+uv run composite-mcp <GARAGE61_PAT>
+
+# Override the default port (8000)
+MCP_PORT=9000 uv run composite-mcp
+```
+
+Then, in another terminal, start the agent:
+
+```bash
+# Start the agent
+uv run iracing-agent
 
 # Load environment variables from a .env file
-uv run iagent --env .env
+uv run iracing-agent --env .env
 
 # Enable debug mode — uses recorded telemetry, no live iRacing needed
-uv run iagent --debug
+uv run iracing-agent --debug
 
 # Disable TTS
-NO_TTS=1 uv run iagent
+NO_TTS=1 uv run iracing-agent
 
 # Supply a phonetics file for TTS pronunciation overrides
-uv run iagent --phonetics phonetics.yaml
+uv run iracing-agent --phonetics phonetics.yaml
+```
+
+**Example session:**
+
+```shell
+$ uv run iracing-agent --env .env
+[16:57:40] [INFO] Skipping TTS
+[16:57:40] [INFO] Setting up Event Listener and unified priority queue
+[16:57:40] [INFO] Setting up tools
+Driver message ([Enter] to use the default): Hey!
+Driver Message received: Hey!
+AI Message: Hey Vedant! Good to hear from you. Let me know if you need anything.
+Driver message ([Enter] to use the default): How was my last lap?
+Driver Message received: How was my last lap?
+AI Message: Vedant - Thanks. Focus on smoother throttle input and managing the slide through Turns 1 and 2.
+Driver message ([Enter] to use the default): What was my last lap time?
+Driver Message received: What was my last lap time?
+AI Message: Vedant - Your last lap time was 1:24.894. Keep an eye on balancing the times between sectors 2 and 3 for better consistency.
+Driver message ([Enter] to use the default):
 ```
 
 The phonetics file is a YAML dict mapping words to their phonetic strings, e.g.:
@@ -138,7 +187,6 @@ Once running, press **Enter** at any prompt to send a message via the driver rad
 
 ```text
 iracing-agent/
-├── event_agent.py                    # Entry point — multi-threaded event loop
 ├── iagent/
 │   ├── agent.py                      # LangGraph agent (Race Engineer + Assistant Coach)
 │   ├── models.py                     # IRSDKVars dataclass (300+ telemetry fields)
@@ -162,13 +210,13 @@ iracing-agent/
 │   ├── mcp_servers/
 │   │   ├── iracing_mcp.py            # Live telemetry MCP server
 │   │   ├── garage_mcp.py             # Lap analysis MCP server
-│   │   └── composite_mcp.py          # Combined MCP mount
+│   │   └── composite_mcp.py          # Combined MCP server (entry: composite-mcp)
+│   ├── scripts/
+│   │   └── event_agent.py            # Agent entry point (entry: iracing-agent)
 │   └── serialize/
 │       └── json.py                   # Dataclass-aware JSON encoder
-├── scripts/
-│   └── corner_mapper.py              # Interactive track corner mapping utility
 ├── tests/                            # Test suite
-└── track-data/                       # Track corner reference data (JSON)
+└── data/                             # Track corner reference data and phonetics
 ```
 
 ## Extending the Agent

@@ -25,8 +25,11 @@ async def lifespan(_app):
     """Context manager for MCP server lifecycle."""
     ir = irsdk.IRSDK()
     if utils.in_debug():
+        data_fpath = utils.get_debug_data_path() / "data.bin"
+        if not data_fpath.exists():
+            raise ValueError(f"Expected iRacing shared memory dump at {data_fpath.resolve()} in DEBUG mode.")
         ir.startup(
-            test_file=str(utils.get_debug_data_path() / "data.bin")
+            test_file=str(data_fpath)
         )
     else:
         ir.startup()
