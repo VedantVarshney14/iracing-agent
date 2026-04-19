@@ -23,7 +23,7 @@ class EventListener:
     async def listen(self, stop_event: threading.Event):
         if utils.in_debug():
             self._ir.startup(
-                test_file=str(utils.get_misc_data_path() / "data.bin")
+                test_file=str(utils.get_debug_data_path() / "data.bin")
             )
         else:
             self._ir.startup()
