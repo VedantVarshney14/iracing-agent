@@ -183,6 +183,12 @@ Once running, press **Enter** at any prompt to send a message via the driver rad
    - *Session event* → Assistant Coach node first (analyses the batch, hands structured report to Race Engineer)
 5. **Race Engineer** decides what to relay to the driver. If a driver-facing message is produced, it is spoken via TTS.
 
+## Tests
+
+> **Note:** The test suite is designed for local development and manual verification — not CI/CD pipelines. Tests require a real iRacing telemetry snapshot to run.
+>
+> Place a `.bin` telemetry file (recorded from an iRacing session) at `tests/data/iracing-telemetry.bin` before running `pytest`.
+
 ## Project Structure
 
 ```text
@@ -229,7 +235,7 @@ Subclass `iagent.events.detectors.base.BaseDetector`, implement `detect(telemetr
 
 Add tools to `iagent/mcp_servers/iracing_mcp.py` or `garage_mcp.py`, or create a new FastMCP server and mount it in `event_agent.py`.
 
-# License
+## License
 
 All rights reserved.
 (I may change my mind later. If you are keen to contribute - let me know!)
