@@ -180,3 +180,5 @@ notebooks/
 misc-data/
 
 .vscode/
+
+*.http
