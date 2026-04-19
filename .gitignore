@@ -178,3 +178,5 @@ notebooks/
 .idea/
 
 misc-data/
+
+.vscode/
