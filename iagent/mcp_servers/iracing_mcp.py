@@ -26,7 +26,7 @@ async def lifespan(_app):
     ir = irsdk.IRSDK()
     if utils.in_debug():
         ir.startup(
-            test_file=str(utils.get_misc_data_path() / "data.bin")
+            test_file=str(utils.get_debug_data_path() / "data.bin")
         )
     else:
         ir.startup()

@@ -86,11 +86,13 @@ uv sync
 
 ## Configuration
 
+Environment variables (can also be supplied via a `.env` file passed to `--env`):
+
 | Variable | Required | Description |
 | --- | --- | --- |
 | `GARAGE61_PAT` | No | Garage61 personal access token for lap analysis tools |
 | `NO_TTS` | No | Set to `1` to disable text-to-speech output |
-| `DEBUG` | No | Set to `1` to use a recorded test telemetry snapshot instead of live iRacing |
+| `DEBUG` | No | Set to `1` to use a recorded telemetry snapshot instead of live iRacing (also set by `--debug`) |
 | `DB_USERNAME` | No | PostgreSQL username for background telemetry logging |
 | `DB_PASSWORD` | No | PostgreSQL password for background telemetry logging |
 
@@ -98,13 +100,26 @@ uv sync
 
 ```bash
 # Start the agent (iRacing must be running)
-python event_agent.py
+uv run iagent
 
-# Disable TTS — useful for development
-NO_TTS=1 python event_agent.py
+# Load environment variables from a .env file
+uv run iagent --env .env
 
-# Run against test data without iRacing open
-DEBUG=1 NO_TTS=1 python event_agent.py
+# Enable debug mode — uses recorded telemetry, no live iRacing needed
+uv run iagent --debug
+
+# Disable TTS
+NO_TTS=1 uv run iagent
+
+# Supply a phonetics file for TTS pronunciation overrides
+uv run iagent --phonetics phonetics.yaml
+```
+
+The phonetics file is a YAML dict mapping words to their phonetic strings, e.g.:
+
+```yaml
+Vedant: "/ˈvɪdænt/"
+Spa: "/spɑː/"
 ```
 
 Once running, press **Enter** at any prompt to send a message via the driver radio. The Race Engineer agent will respond and speak the reply aloud (unless `NO_TTS=1`).
