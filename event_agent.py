@@ -148,7 +148,7 @@ async def main():
         if event.priority == EventPriority.HIGH:
             trigger_type = TriggerType.HIGH_PRIORITY_EVENT
         elif event.priority == EventPriority.LOW:
-            trigger_type = TriggerType.HIGH_PRIORITY_EVENT
+            trigger_type = TriggerType.LOW_PRIORITY_EVENT_THRESHOLD
         else:
             raise ValueError(f"Unknown priority event {event.priority}")
         prioritized_queue.put(event.priority, Trigger(trigger_type, event))
