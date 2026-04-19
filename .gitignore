@@ -182,3 +182,4 @@ misc-data/
 .vscode/
 
 *.http
+*.bin
