@@ -6,6 +6,14 @@ import pandas as pd
 
 from iagent.garage.models import Lap
 
+# Map Track ID in Garage61 to its common name
+# TODO - Note that this is required since we cannot pull the current track from pyirsdk and the Garage61 API requires a track list to filter on. We should try to pull
+# the active track from elsewhere in iRacing shared memory and map it to Garage61 track ID
+TRACK_MAP = {
+    "523": "Circuit de Spa-Francorchamps",
+    "77": "Autodromo Nazionale Monza",
+    "80": "Silverstone Circuit"
+}
 
 class GarageClient:
     BASE_URL = "https://garage61.net/api/v1"
@@ -37,9 +45,8 @@ class GarageClient:
                 "drivers": "me",
                 # Full laps only (no joker or in/out laps)
                 "lapTypes": 1,
-                # Include all laps
-                "group": "none",
                 "unclean": unclean,
+                "tracks": ",".join(str(t) for t in TRACK_MAP)
             }
         )
         laps = self._post_process_lap_response(resp).loc[:1]
@@ -52,8 +59,7 @@ class GarageClient:
 
     async def get_lap_telemetry(self, lap_id: str) -> pd.DataFrame:
         resp = await self._client.get(
-            self.BASE_URL + f"/laps/{lap_id}/csv",
-            headers={"Authorization": f"Bearer {os.environ['GARAGE61_PAT']}"}
+            self.BASE_URL + f"/laps/{lap_id}/csv"
         )
         resp.raise_for_status()
         return pd.read_csv(

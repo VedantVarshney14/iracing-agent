@@ -27,10 +27,12 @@ def get_data_path() -> Path:
     return (Path(__file__).parent / "data").absolute()
 
 
-# TODO - should remove this....
-def get_misc_data_path() -> Path:
-    """Get path to miscellaneous data directory."""
-    return (Path(__file__).parents[1] / "misc-data").absolute()
+def get_debug_data_path() -> Path:
+    """Get path to debug data directory."""
+    fpath = (Path(__file__).parents[1] / "data").absolute()
+    if not fpath.exists():
+        raise ValueError(f"Debug data path {fpath} does not exist. Please create it and add any necessary files for debugging.")
+    return fpath
 
 
 def wrap_docs(wrapping_fun: Callable):
@@ -44,4 +46,4 @@ def wrap_docs(wrapping_fun: Callable):
 
 
 def in_debug() -> bool:
-    return os.environ.get("DEBUG", "TRUE").upper() == "TRUE"
+    return os.environ.get("DEBUG", "false").upper() in {"1", "TRUE", "YES", "Y", "ON"}

@@ -4,7 +4,7 @@ from typing import Callable, Sequence
 
 import irsdk
 
-from events.events import EventStamp
+from iagent.events.events import EventStamp
 from iagent import utils
 from iagent.events.detectors.base import DetectorBase
 from iagent.events.detectors.lockup import LockUpDetector
@@ -23,7 +23,7 @@ class EventListener:
     async def listen(self, stop_event: threading.Event):
         if utils.in_debug():
             self._ir.startup(
-                test_file=str(utils.get_misc_data_path() / "data.bin")
+                test_file=str(utils.get_debug_data_path() / "data.bin")
             )
         else:
             self._ir.startup()
