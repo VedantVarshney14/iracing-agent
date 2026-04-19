@@ -4,7 +4,7 @@ from typing import Callable, Sequence
 
 import irsdk
 
-from events.events import EventStamp
+from iagent.events.events import EventStamp
 from iagent import utils
 from iagent.events.detectors.base import DetectorBase
 from iagent.events.detectors.lockup import LockUpDetector

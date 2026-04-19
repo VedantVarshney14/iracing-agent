@@ -29,7 +29,7 @@ def get_data_path() -> Path:
 
 def get_debug_data_path() -> Path:
     """Get path to debug data directory."""
-    fpath = (Path(__file__).parents[1] / "misc-data").absolute()
+    fpath = (Path(__file__).parents[1] / "data").absolute()
     if not fpath.exists():
         raise ValueError(f"Debug data path {fpath} does not exist. Please create it and add any necessary files for debugging.")
     return fpath

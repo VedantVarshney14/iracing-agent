@@ -38,10 +38,11 @@ dev = [
 ]
 
 [project.scripts]
-iagent = "event_agent:cli"
+iracing-agent = "iagent.scripts.event_agent:cli"
 
-[tool.setuptools]
-packages = ["iagent"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["iagent*"]
 
 [tool.uv]
 package = true

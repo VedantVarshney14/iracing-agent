@@ -3,12 +3,14 @@ Sim-racing engineer agent responds to driver comments and session/driving events
 """
 
 from json import JSONDecodeError
-from typing import Any, Optional, Literal
+import os
+from typing import Annotated, Any, Optional, Literal, TypedDict
 
 from langchain_core.messages import HumanMessage, AnyMessage, SystemMessage, AIMessage
 from langchain_ollama import ChatOllama
 from langgraph import constants as lc
-from langgraph.graph import MessagesState, StateGraph
+from langgraph.graph import StateGraph
+from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from iagent.events.events import EventStamp, EventPriority, Event
@@ -35,15 +37,15 @@ class AssistantCoachMessage(HumanMessage):
         )
 
 
-class AgentState(MessagesState):
+class AgentState(TypedDict):
     """State for the agentic system"""
     current_events: list[EventStamp]
     trigger: Optional[Literal["driver", "events"]]
-    assistant_coach_messages: list[type[AnyMessage]]
-    driver_messages: list[type[AnyMessage]]
+    assistant_coach_messages: Annotated[list[AnyMessage], add_messages]
+    driver_messages: Annotated[list[AnyMessage], add_messages]
     # Combination of assistant and driver messages - both useful to race engineer when considered
     # together
-    race_engineer_messages: list[type[AnyMessage]]
+    race_engineer_messages: Annotated[list[AnyMessage], add_messages]
     # Flag to output message to driver before ending graph
     send_driver_message: bool
 
@@ -62,9 +64,7 @@ def get_initial_state() -> AgentState:
 class Agent:
     def __init__(self, tools):
         self._model = ChatOllama(
-            model="qwen3:8b"
-            # model="gpt-oss:20b",
-            # temperature=0
+            model=os.environ.get("TEXT_MODEL", "qwen3:8b")
         ).bind_tools(tools)
         self.graph = self._build_graph(tools).compile()
 
@@ -129,17 +129,18 @@ class Agent:
             raise ValueError("Unknown trigger")
 
     async def _race_engineer(self, state: AgentState) -> AgentState:
+        driver_name = os.environ.get("DRIVER_NAME", "Driver")
         resp_example = {
             "assistant_coach": "Thanks - keep an eye on the tyre wear for now.",
-            "driver": "Vedant - try to take care of the tyres going into turn 1. Seeing some locking..."
+            "driver": f"{driver_name} - try to take care of the tyres going into turn 1. Seeing some locking..."
         }
         messages = [
             SystemMessage(
-                "You are a sim-racing race engineer for Vedant - an iRacing enthusiast "
+                f"You are a sim-racing race engineer for {driver_name} - an iRacing enthusiast "
                 "looking to improve on track. You will need to be able to talk to two people - "
-                "Vedant directly (via driver radio) and the assistant coach working in the garage. "
-                "The assistant coach's job is to help you in your role as engineer. They have access "
-                "to recent session events as well as Vedant's telemetry and will routinely provide you with "
+                f"{driver_name} directly (via driver radio) and the assistant coach working in the garage. "
+                f"The assistant coach's job is to help you in your role as engineer. They have access "
+                f"to recent session events as well as {driver_name}'s telemetry and will routinely provide you with "
                 "updates and analysis. Remember - you need to be able to maintain two independent "
                 "conversations at the same time. When responding to the driver, remember to keep "
                 "your answers short and useful. When responding to the assistant coach, provide a set "
@@ -150,6 +151,8 @@ class Agent:
                 "Important Notes:\n"
                 "- Do **NOT** hallucinate any findings. Make sure any data presented to the driver is directly supported "
                 "by tools data or assistant coach messages.\n"
+                "- When the most recent message is a Driver Message, you **must always** set the driver field — never null. "
+                "This applies even after tool calls: if you used tools to answer a driver's question, relay that answer directly to the driver.\n"
                 "- Expect 'small talk' messages, e.g. 'thanks', 'will do' etc. from the driver. Here, **consider** "
                 "replying casually to the driver with no comment to the assistant coach.\n"
                 "Below is an example response (to the driver and/or coach). Note the JSON-structure; strictly keep to "
@@ -164,31 +167,26 @@ class Agent:
         resp = await self._model.ainvoke(
             messages,
             reasoning=True,
-            # format="json"
-        )
-
-        state["race_engineer_messages"].append(
-            resp
+            format="json"
         )
 
         if self.contains_tool_calls(resp):
-            return state
+            return {"race_engineer_messages": [resp]}
 
         try:
             resp_content = json.loads(resp.content)
         except JSONDecodeError as err:
             raise RuntimeError("Encountered bad message from race engineer.") from err
 
+        delta: dict = {"race_engineer_messages": [resp]}
+
         if "assistant_coach" in resp_content and resp_content["assistant_coach"]:
-            state["assistant_coach_messages"].append(
-                HumanMessage(resp_content["assistant_coach"])
-            )
-        if "driver" in resp_content  and resp_content["driver"]:
-            state["send_driver_message"] = True
-            state["driver_messages"].append(
-                AIMessage(resp_content["driver"])
-            )
-        return state
+            delta["assistant_coach_messages"] = [HumanMessage(resp_content["assistant_coach"])]
+        if "driver" in resp_content and resp_content["driver"]:
+            delta["send_driver_message"] = True
+            delta["driver_messages"] = [AIMessage(resp_content["driver"])]
+
+        return delta
 
     async def _assistant_coach(self, state: AgentState) -> AgentState:
         example_events = [
@@ -250,10 +248,7 @@ class Agent:
         except JSONDecodeError as err:
             raise RuntimeError("Got invalid message from assistant coach.") from err
 
-        state["race_engineer_messages"].append(
-            AssistantCoachMessage(resp.content)
-        )
-        return state
+        return {"race_engineer_messages": [AssistantCoachMessage(resp.content)]}
 
 
     @staticmethod
