@@ -30,7 +30,10 @@ def get_data_path() -> Path:
 # TODO - should remove this....
 def get_misc_data_path() -> Path:
     """Get path to miscellaneous data directory."""
-    return (Path(__file__).parents[1] / "misc-data").absolute()
+    fpath = (Path(__file__).parents[1] / "misc-data").absolute()
+    if not fpath.exists():
+        raise ValueError(f"Misc data path {fpath} does not exist. Please create it and add any necessary files for debugging.")
+    return fpath
 
 
 def wrap_docs(wrapping_fun: Callable):
