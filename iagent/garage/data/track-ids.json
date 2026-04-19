@@ -1,0 +1,3260 @@
+{
+  "items": [
+    {
+      "id": 498,
+      "name": "Adelaide Street Circuit",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "580"
+    },
+    {
+      "id": 425,
+      "name": "Algarve International Circuit",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "509"
+    },
+    {
+      "id": 428,
+      "name": "Algarve International Circuit",
+      "variant": "Grand Prix - Chicanes",
+      "platform": "iracing",
+      "platform_id": "510"
+    },
+    {
+      "id": 431,
+      "name": "Algarve International Circuit",
+      "variant": "Moto",
+      "platform": "iracing",
+      "platform_id": "511"
+    },
+    {
+      "id": 434,
+      "name": "Algarve International Circuit",
+      "variant": "Moto - Chicanes",
+      "platform": "iracing",
+      "platform_id": "512"
+    },
+    {
+      "id": 297,
+      "name": "Auto Club Speedway",
+      "variant": "Competition",
+      "platform": "iracing",
+      "platform_id": "226"
+    },
+    {
+      "id": 298,
+      "name": "Auto Club Speedway",
+      "variant": "Interior",
+      "platform": "iracing",
+      "platform_id": "228"
+    },
+    {
+      "id": 323,
+      "name": "Auto Club Speedway",
+      "variant": "Moto",
+      "platform": "iracing",
+      "platform_id": "227"
+    },
+    {
+      "id": 184,
+      "name": "Auto Club Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "225"
+    },
+    {
+      "id": 489,
+      "name": "Autódromo Hermanos Rodríguez",
+      "variant": "EV Circuit",
+      "platform": "iracing",
+      "platform_id": "576"
+    },
+    {
+      "id": 485,
+      "name": "Autódromo Hermanos Rodríguez",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "572"
+    },
+    {
+      "id": 486,
+      "name": "Autódromo Hermanos Rodríguez",
+      "variant": "Grand Prix Historic",
+      "platform": "iracing",
+      "platform_id": "573"
+    },
+    {
+      "id": 487,
+      "name": "Autódromo Hermanos Rodríguez",
+      "variant": "National",
+      "platform": "iracing",
+      "platform_id": "574"
+    },
+    {
+      "id": 488,
+      "name": "Autódromo Hermanos Rodríguez",
+      "variant": "National Historic",
+      "platform": "iracing",
+      "platform_id": "575"
+    },
+    {
+      "id": 490,
+      "name": "Autódromo Hermanos Rodríguez",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "577"
+    },
+    {
+      "id": 491,
+      "name": "Autódromo Hermanos Rodríguez",
+      "variant": "Oval Stadium",
+      "platform": "iracing",
+      "platform_id": "578"
+    },
+    {
+      "id": 418,
+      "name": "Autodromo Internazionale del Mugello",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "498"
+    },
+    {
+      "id": 419,
+      "name": "Autodromo Internazionale del Mugello",
+      "variant": "Short",
+      "platform": "iracing",
+      "platform_id": "499"
+    },
+    {
+      "id": 53,
+      "name": "Autodromo Internazionale Enzo e Dino Ferrari",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "266"
+    },
+    {
+      "id": 287,
+      "name": "Autodromo Internazionale Enzo e Dino Ferrari",
+      "variant": "Moto",
+      "platform": "iracing",
+      "platform_id": "267"
+    },
+    {
+      "id": 67,
+      "name": "Autódromo José Carlos Pace",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "212"
+    },
+    {
+      "id": 267,
+      "name": "Autódromo José Carlos Pace",
+      "variant": "Moto",
+      "platform": "iracing",
+      "platform_id": "213"
+    },
+    {
+      "id": 232,
+      "name": "Autodromo Nazionale Monza",
+      "variant": "Combined",
+      "platform": "iracing",
+      "platform_id": "247"
+    },
+    {
+      "id": 266,
+      "name": "Autodromo Nazionale Monza",
+      "variant": "Combined without chicanes",
+      "platform": "iracing",
+      "platform_id": "240"
+    },
+    {
+      "id": 185,
+      "name": "Autodromo Nazionale Monza",
+      "variant": "Combined without first chicane",
+      "platform": "iracing",
+      "platform_id": "246"
+    },
+    {
+      "id": 234,
+      "name": "Autodromo Nazionale Monza",
+      "variant": "GP without chicanes",
+      "platform": "iracing",
+      "platform_id": "242"
+    },
+    {
+      "id": 128,
+      "name": "Autodromo Nazionale Monza",
+      "variant": "GP without first chicane",
+      "platform": "iracing",
+      "platform_id": "244"
+    },
+    {
+      "id": 77,
+      "name": "Autodromo Nazionale Monza",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "239"
+    },
+    {
+      "id": 150,
+      "name": "Autodromo Nazionale Monza",
+      "variant": "Junior",
+      "platform": "iracing",
+      "platform_id": "241"
+    },
+    {
+      "id": 120,
+      "name": "Autodromo Nazionale Monza",
+      "variant": "Oval - Left turning",
+      "platform": "iracing",
+      "platform_id": "245"
+    },
+    {
+      "id": 200,
+      "name": "Autodromo Nazionale Monza",
+      "variant": "Oval - Right turning",
+      "platform": "iracing",
+      "platform_id": "243"
+    },
+    {
+      "id": 503,
+      "name": "Barber Motorsports Park",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "585"
+    },
+    {
+      "id": 116,
+      "name": "Barber Motorsports Park",
+      "variant": "Full Course",
+      "platform": "iracing",
+      "platform_id": "46"
+    },
+    {
+      "id": 250,
+      "name": "Barber Motorsports Park",
+      "variant": "Short A",
+      "platform": "iracing",
+      "platform_id": "99"
+    },
+    {
+      "id": 351,
+      "name": "Barber Motorsports Park",
+      "variant": "Short B",
+      "platform": "iracing",
+      "platform_id": "100"
+    },
+    {
+      "id": 174,
+      "name": "Bark River International Raceway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "396"
+    },
+    {
+      "id": 36,
+      "name": "Brands Hatch Circuit",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "145"
+    },
+    {
+      "id": 153,
+      "name": "Brands Hatch Circuit",
+      "variant": "Indy",
+      "platform": "iracing",
+      "platform_id": "146"
+    },
+    {
+      "id": 186,
+      "name": "Brands Hatch Circuit",
+      "variant": "Rallycross",
+      "platform": "iracing",
+      "platform_id": "290"
+    },
+    {
+      "id": 374,
+      "name": "Bristol Motor Speedway",
+      "variant": "Dirt",
+      "platform": "iracing",
+      "platform_id": "442"
+    },
+    {
+      "id": 170,
+      "name": "Bristol Motor Speedway",
+      "variant": "Dirt - 2021",
+      "platform": "iracing",
+      "platform_id": "287"
+    },
+    {
+      "id": 219,
+      "name": "Bristol Motor Speedway",
+      "variant": "Dual Pit Roads",
+      "platform": "iracing",
+      "platform_id": "101"
+    },
+    {
+      "id": 197,
+      "name": "Bristol Motor Speedway",
+      "variant": "Single Pit Roads",
+      "platform": "iracing",
+      "platform_id": "365"
+    },
+    {
+      "id": 449,
+      "name": "Cadwell Park Circuit",
+      "variant": "Club",
+      "platform": "iracing",
+      "platform_id": "528"
+    },
+    {
+      "id": 448,
+      "name": "Cadwell Park Circuit",
+      "variant": "Full",
+      "platform": "iracing",
+      "platform_id": "527"
+    },
+    {
+      "id": 450,
+      "name": "Cadwell Park Circuit",
+      "variant": "Moto",
+      "platform": "iracing",
+      "platform_id": "529"
+    },
+    {
+      "id": 451,
+      "name": "Cadwell Park Circuit",
+      "variant": "Woodlands",
+      "platform": "iracing",
+      "platform_id": "530"
+    },
+    {
+      "id": 83,
+      "name": "Canadian Tire Motorsports Park",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "144"
+    },
+    {
+      "id": 227,
+      "name": "Cedar Lake Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "387"
+    },
+    {
+      "id": 58,
+      "name": "Centripetal Circuit",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "143"
+    },
+    {
+      "id": 467,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Infield Road Course",
+      "platform": "iracing",
+      "platform_id": "552"
+    },
+    {
+      "id": 466,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Infield Road Course Long",
+      "platform": "iracing",
+      "platform_id": "551"
+    },
+    {
+      "id": 472,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Legends Oval",
+      "platform": "iracing",
+      "platform_id": "557"
+    },
+    {
+      "id": 161,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Legends Oval - 2018",
+      "platform": "iracing",
+      "platform_id": "335"
+    },
+    {
+      "id": 202,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Legends RC Long - 2018",
+      "platform": "iracing",
+      "platform_id": "336"
+    },
+    {
+      "id": 275,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Legends RC Medium - 2018",
+      "platform": "iracing",
+      "platform_id": "337"
+    },
+    {
+      "id": 224,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Legends RC Short - 2018",
+      "platform": "iracing",
+      "platform_id": "338"
+    },
+    {
+      "id": 465,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Legends Road Course 2025",
+      "platform": "iracing",
+      "platform_id": "550"
+    },
+    {
+      "id": 471,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "556"
+    },
+    {
+      "id": 43,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Oval - 2018",
+      "platform": "iracing",
+      "platform_id": "339"
+    },
+    {
+      "id": 112,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Rallycross",
+      "platform": "iracing",
+      "platform_id": "385"
+    },
+    {
+      "id": 473,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Rallyx",
+      "platform": "iracing",
+      "platform_id": "558"
+    },
+    {
+      "id": 78,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Roval",
+      "platform": "iracing",
+      "platform_id": "350"
+    },
+    {
+      "id": 103,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Roval - 2018",
+      "platform": "iracing",
+      "platform_id": "330"
+    },
+    {
+      "id": 468,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Roval 2019",
+      "platform": "iracing",
+      "platform_id": "553"
+    },
+    {
+      "id": 469,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Roval 2025",
+      "platform": "iracing",
+      "platform_id": "554"
+    },
+    {
+      "id": 249,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Roval Long - 2018",
+      "platform": "iracing",
+      "platform_id": "340"
+    },
+    {
+      "id": 470,
+      "name": "Charlotte Motor Speedway",
+      "variant": "Roval No Chicanes",
+      "platform": "iracing",
+      "platform_id": "555"
+    },
+    {
+      "id": 308,
+      "name": "Charlotte Motor Speedway - 2008",
+      "variant": "Infield Road Course",
+      "platform": "iracing",
+      "platform_id": "38"
+    },
+    {
+      "id": 296,
+      "name": "Charlotte Motor Speedway - 2008",
+      "variant": "Legends Oval",
+      "platform": "iracing",
+      "platform_id": "39"
+    },
+    {
+      "id": 72,
+      "name": "Charlotte Motor Speedway - 2008",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "40"
+    },
+    {
+      "id": 182,
+      "name": "Charlotte Motor Speedway - 2008",
+      "variant": "Road Course",
+      "platform": "iracing",
+      "platform_id": "37"
+    },
+    {
+      "id": 124,
+      "name": "Chicagoland Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "123"
+    },
+    {
+      "id": 408,
+      "name": "Chicago Street Course",
+      "variant": "2023 Cup",
+      "platform": "iracing",
+      "platform_id": "483"
+    },
+    {
+      "id": 245,
+      "name": "Chicago Street Course",
+      "variant": "Prototype",
+      "platform": "iracing",
+      "platform_id": "405"
+    },
+    {
+      "id": 319,
+      "name": "Chili Bowl",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "331"
+    },
+    {
+      "id": 313,
+      "name": "Circuit de Barcelona Catalunya",
+      "variant": "Club",
+      "platform": "iracing",
+      "platform_id": "347"
+    },
+    {
+      "id": 76,
+      "name": "Circuit de Barcelona Catalunya",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "345"
+    },
+    {
+      "id": 101,
+      "name": "Circuit de Barcelona Catalunya",
+      "variant": "Historic",
+      "platform": "iracing",
+      "platform_id": "349"
+    },
+    {
+      "id": 126,
+      "name": "Circuit de Barcelona Catalunya",
+      "variant": "Moto",
+      "platform": "iracing",
+      "platform_id": "348"
+    },
+    {
+      "id": 236,
+      "name": "Circuit de Barcelona Catalunya",
+      "variant": "National",
+      "platform": "iracing",
+      "platform_id": "346"
+    },
+    {
+      "id": 196,
+      "name": "Circuit de Barcelona Catalunya",
+      "variant": "Rallycross",
+      "platform": "iracing",
+      "platform_id": "386"
+    },
+    {
+      "id": 413,
+      "name": "Circuit de Lédenon",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "489"
+    },
+    {
+      "id": 389,
+      "name": "Circuit de Nevers Magny-Cours",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "463"
+    },
+    {
+      "id": 95,
+      "name": "Circuit des 24 Heures du Mans",
+      "variant": "24 Heures du Mans",
+      "platform": "iracing",
+      "platform_id": "268"
+    },
+    {
+      "id": 195,
+      "name": "Circuit des 24 Heures du Mans",
+      "variant": "Historic",
+      "platform": "iracing",
+      "platform_id": "269"
+    },
+    {
+      "id": 447,
+      "name": "Circuit de Spa-Francorchamps",
+      "variant": "Bike",
+      "platform": "iracing",
+      "platform_id": "526"
+    },
+    {
+      "id": 445,
+      "name": "Circuit de Spa-Francorchamps",
+      "variant": "Classic Pits",
+      "platform": "iracing",
+      "platform_id": "524"
+    },
+    {
+      "id": 59,
+      "name": "Circuit de Spa-Francorchamps",
+      "variant": "Classic Pits - 2010",
+      "platform": "iracing",
+      "platform_id": "164"
+    },
+    {
+      "id": 446,
+      "name": "Circuit de Spa-Francorchamps",
+      "variant": "Endurance",
+      "platform": "iracing",
+      "platform_id": "525"
+    },
+    {
+      "id": 52,
+      "name": "Circuit de Spa-Francorchamps",
+      "variant": "Endurance - 2010",
+      "platform": "iracing",
+      "platform_id": "165"
+    },
+    {
+      "id": 444,
+      "name": "Circuit de Spa-Francorchamps",
+      "variant": "Grand Prix Pits",
+      "platform": "iracing",
+      "platform_id": "523"
+    },
+    {
+      "id": 65,
+      "name": "Circuit de Spa-Francorchamps",
+      "variant": "Grand Prix Pits - 2010",
+      "platform": "iracing",
+      "platform_id": "163"
+    },
+    {
+      "id": 90,
+      "name": "Circuit Gilles Villeneuve",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "218"
+    },
+    {
+      "id": 398,
+      "name": "Circuito de Jerez - Ángel Nieto",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "473"
+    },
+    {
+      "id": 399,
+      "name": "Circuito de Jerez - Ángel Nieto",
+      "variant": "Moto",
+      "platform": "iracing",
+      "platform_id": "474"
+    },
+    {
+      "id": 436,
+      "name": "Circuito de Navarra",
+      "variant": "Speed Circuit",
+      "platform": "iracing",
+      "platform_id": "515"
+    },
+    {
+      "id": 437,
+      "name": "Circuito de Navarra",
+      "variant": "Speed Circuit - Medium",
+      "platform": "iracing",
+      "platform_id": "516"
+    },
+    {
+      "id": 438,
+      "name": "Circuito de Navarra",
+      "variant": "Speed Circuit - Short",
+      "platform": "iracing",
+      "platform_id": "517"
+    },
+    {
+      "id": 317,
+      "name": "Circuit of the Americas",
+      "variant": "East",
+      "platform": "iracing",
+      "platform_id": "230"
+    },
+    {
+      "id": 175,
+      "name": "Circuit of the Americas",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "229"
+    },
+    {
+      "id": 492,
+      "name": "Circuit of the Americas",
+      "variant": "NASCAR West",
+      "platform": "iracing",
+      "platform_id": "579"
+    },
+    {
+      "id": 204,
+      "name": "Circuit of the Americas",
+      "variant": "West",
+      "platform": "iracing",
+      "platform_id": "231"
+    },
+    {
+      "id": 348,
+      "name": "Circuit Park Zandvoort",
+      "variant": "Chicane - 2009",
+      "platform": "iracing",
+      "platform_id": "147"
+    },
+    {
+      "id": 312,
+      "name": "Circuit Park Zandvoort",
+      "variant": "Club - 2009",
+      "platform": "iracing",
+      "platform_id": "148"
+    },
+    {
+      "id": 71,
+      "name": "Circuit Park Zandvoort",
+      "variant": "Grand Prix - 2009",
+      "platform": "iracing",
+      "platform_id": "149"
+    },
+    {
+      "id": 263,
+      "name": "Circuit Park Zandvoort",
+      "variant": "Nationaal - 2009",
+      "platform": "iracing",
+      "platform_id": "150"
+    },
+    {
+      "id": 310,
+      "name": "Circuit Park Zandvoort",
+      "variant": "Oostelijk - 2009",
+      "platform": "iracing",
+      "platform_id": "151"
+    },
+    {
+      "id": 409,
+      "name": "Circuit Zandvoort",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "485"
+    },
+    {
+      "id": 410,
+      "name": "Circuit Zandvoort",
+      "variant": "Grand Prix w/chicane",
+      "platform": "iracing",
+      "platform_id": "486"
+    },
+    {
+      "id": 411,
+      "name": "Circuit Zandvoort",
+      "variant": "Nationaal",
+      "platform": "iracing",
+      "platform_id": "487"
+    },
+    {
+      "id": 412,
+      "name": "Circuit Zandvoort",
+      "variant": "Oostelijk",
+      "platform": "iracing",
+      "platform_id": "488"
+    },
+    {
+      "id": 70,
+      "name": "Circuit Zolder",
+      "variant": "Alternate",
+      "platform": "iracing",
+      "platform_id": "200"
+    },
+    {
+      "id": 61,
+      "name": "Circuit Zolder",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "199"
+    },
+    {
+      "id": 87,
+      "name": "Concord Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "15"
+    },
+    {
+      "id": 143,
+      "name": "Crandon International Raceway",
+      "variant": "Full",
+      "platform": "iracing",
+      "platform_id": "382"
+    },
+    {
+      "id": 181,
+      "name": "Crandon International Raceway",
+      "variant": "Short",
+      "platform": "iracing",
+      "platform_id": "383"
+    },
+    {
+      "id": 141,
+      "name": "Darlington Raceway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "115"
+    },
+    {
+      "id": 246,
+      "name": "Daytona International Speedway",
+      "variant": "Moto",
+      "platform": "iracing",
+      "platform_id": "193"
+    },
+    {
+      "id": 211,
+      "name": "Daytona International Speedway",
+      "variant": "Moto - 2008",
+      "platform": "iracing",
+      "platform_id": "28"
+    },
+    {
+      "id": 152,
+      "name": "Daytona International Speedway",
+      "variant": "NASCAR Road",
+      "platform": "iracing",
+      "platform_id": "381"
+    },
+    {
+      "id": 39,
+      "name": "Daytona International Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "191"
+    },
+    {
+      "id": 85,
+      "name": "Daytona International Speedway",
+      "variant": "Oval - 2008",
+      "platform": "iracing",
+      "platform_id": "27"
+    },
+    {
+      "id": 105,
+      "name": "Daytona International Speedway",
+      "variant": "Road Course",
+      "platform": "iracing",
+      "platform_id": "192"
+    },
+    {
+      "id": 51,
+      "name": "Daytona International Speedway",
+      "variant": "Road Course - 2008",
+      "platform": "iracing",
+      "platform_id": "26"
+    },
+    {
+      "id": 282,
+      "name": "Daytona International Speedway",
+      "variant": "Short",
+      "platform": "iracing",
+      "platform_id": "194"
+    },
+    {
+      "id": 295,
+      "name": "Daytona International Speedway",
+      "variant": "Short - 2008",
+      "platform": "iracing",
+      "platform_id": "29"
+    },
+    {
+      "id": 390,
+      "name": "Daytona Rallycross and Dirt Road",
+      "variant": "Dirt Road Long",
+      "platform": "iracing",
+      "platform_id": "470"
+    },
+    {
+      "id": 391,
+      "name": "Daytona Rallycross and Dirt Road",
+      "variant": "Dirt Road Short",
+      "platform": "iracing",
+      "platform_id": "471"
+    },
+    {
+      "id": 41,
+      "name": "Daytona Rallycross and Dirt Road",
+      "variant": "Rallycross Long",
+      "platform": "iracing",
+      "platform_id": "293"
+    },
+    {
+      "id": 97,
+      "name": "Daytona Rallycross and Dirt Road",
+      "variant": "Rallycross Short",
+      "platform": "iracing",
+      "platform_id": "296"
+    },
+    {
+      "id": 131,
+      "name": "Detroit Grand Prix at Belle Isle",
+      "variant": "Belle Isle",
+      "platform": "iracing",
+      "platform_id": "319"
+    },
+    {
+      "id": 64,
+      "name": "Donington Park Racing Circuit",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "233"
+    },
+    {
+      "id": 86,
+      "name": "Donington Park Racing Circuit",
+      "variant": "National",
+      "platform": "iracing",
+      "platform_id": "234"
+    },
+    {
+      "id": 226,
+      "name": "Dover Motor Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "162"
+    },
+    {
+      "id": 285,
+      "name": "EchoPark Speedway (Atlanta)",
+      "variant": "Legends Oval - 2008",
+      "platform": "iracing",
+      "platform_id": "52"
+    },
+    {
+      "id": 379,
+      "name": "EchoPark Speedway (Atlanta)",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "447"
+    },
+    {
+      "id": 166,
+      "name": "EchoPark Speedway (Atlanta)",
+      "variant": "Oval - 2008",
+      "platform": "iracing",
+      "platform_id": "53"
+    },
+    {
+      "id": 206,
+      "name": "EchoPark Speedway (Atlanta)",
+      "variant": "Rallycross Long",
+      "platform": "iracing",
+      "platform_id": "323"
+    },
+    {
+      "id": 233,
+      "name": "EchoPark Speedway (Atlanta)",
+      "variant": "Rallycross Short",
+      "platform": "iracing",
+      "platform_id": "322"
+    },
+    {
+      "id": 294,
+      "name": "EchoPark Speedway (Atlanta)",
+      "variant": "Road - 2008",
+      "platform": "iracing",
+      "platform_id": "51"
+    },
+    {
+      "id": 155,
+      "name": "Eldora Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "273"
+    },
+    {
+      "id": 307,
+      "name": "Fairbury Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "344"
+    },
+    {
+      "id": 358,
+      "name": "Federated Auto Parts Raceway at I-55",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "438"
+    },
+    {
+      "id": 242,
+      "name": "Firebird Motorsports Park",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "334"
+    },
+    {
+      "id": 208,
+      "name": "Five Flags Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "248"
+    },
+    {
+      "id": 376,
+      "name": "Fuji International Speedway",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "444"
+    },
+    {
+      "id": 377,
+      "name": "Fuji International Speedway",
+      "variant": "No Chicane",
+      "platform": "iracing",
+      "platform_id": "445"
+    },
+    {
+      "id": 293,
+      "name": "Hickory Motor Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "414"
+    },
+    {
+      "id": 171,
+      "name": "Hockenheimring Baden-Württemberg",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "390"
+    },
+    {
+      "id": 177,
+      "name": "Hockenheimring Baden-Württemberg",
+      "variant": "National A",
+      "platform": "iracing",
+      "platform_id": "391"
+    },
+    {
+      "id": 179,
+      "name": "Hockenheimring Baden-Württemberg",
+      "variant": "National B",
+      "platform": "iracing",
+      "platform_id": "392"
+    },
+    {
+      "id": 194,
+      "name": "Hockenheimring Baden-Württemberg",
+      "variant": "Outer",
+      "platform": "iracing",
+      "platform_id": "395"
+    },
+    {
+      "id": 330,
+      "name": "Hockenheimring Baden-Württemberg",
+      "variant": "Porsche Experience Center - East",
+      "platform": "iracing",
+      "platform_id": "428"
+    },
+    {
+      "id": 327,
+      "name": "Hockenheimring Baden-Württemberg",
+      "variant": "Porsche Experience Center - Handling",
+      "platform": "iracing",
+      "platform_id": "431"
+    },
+    {
+      "id": 328,
+      "name": "Hockenheimring Baden-Württemberg",
+      "variant": "Porsche Experience Center - Outer",
+      "platform": "iracing",
+      "platform_id": "429"
+    },
+    {
+      "id": 331,
+      "name": "Hockenheimring Baden-Württemberg",
+      "variant": "Porsche Experience Center - West",
+      "platform": "iracing",
+      "platform_id": "430"
+    },
+    {
+      "id": 180,
+      "name": "Hockenheimring Baden-Württemberg",
+      "variant": "Short A",
+      "platform": "iracing",
+      "platform_id": "393"
+    },
+    {
+      "id": 290,
+      "name": "Hockenheimring Baden-Württemberg",
+      "variant": "Short B",
+      "platform": "iracing",
+      "platform_id": "394"
+    },
+    {
+      "id": 271,
+      "name": "Homestead Miami Speedway",
+      "variant": "Open Wheel Oval",
+      "platform": "iracing",
+      "platform_id": "362"
+    },
+    {
+      "id": 138,
+      "name": "Homestead Miami Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "20"
+    },
+    {
+      "id": 264,
+      "name": "Homestead Miami Speedway",
+      "variant": "Road Course A",
+      "platform": "iracing",
+      "platform_id": "21"
+    },
+    {
+      "id": 162,
+      "name": "Homestead Miami Speedway",
+      "variant": "Road Course B",
+      "platform": "iracing",
+      "platform_id": "22"
+    },
+    {
+      "id": 291,
+      "name": "Hungaroring",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "413"
+    },
+    {
+      "id": 452,
+      "name": "Huset's Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "531"
+    },
+    {
+      "id": 316,
+      "name": "Indianapolis Motor Speedway",
+      "variant": "Bike - 2009",
+      "platform": "iracing",
+      "platform_id": "135"
+    },
+    {
+      "id": 442,
+      "name": "Indianapolis Motor Speedway",
+      "variant": "NASCAR Oval",
+      "platform": "iracing",
+      "platform_id": "522"
+    },
+    {
+      "id": 149,
+      "name": "Indianapolis Motor Speedway",
+      "variant": "NASCAR Oval - 2009",
+      "platform": "iracing",
+      "platform_id": "133"
+    },
+    {
+      "id": 384,
+      "name": "Indianapolis Motor Speedway",
+      "variant": "Open Wheel Oval",
+      "platform": "iracing",
+      "platform_id": "453"
+    },
+    {
+      "id": 210,
+      "name": "Indianapolis Motor Speedway",
+      "variant": "Open Wheel Oval - 2009",
+      "platform": "iracing",
+      "platform_id": "178"
+    },
+    {
+      "id": 380,
+      "name": "Indianapolis Motor Speedway",
+      "variant": "Road Course",
+      "platform": "iracing",
+      "platform_id": "448"
+    },
+    {
+      "id": 189,
+      "name": "Indianapolis Motor Speedway",
+      "variant": "Road Course - 2009",
+      "platform": "iracing",
+      "platform_id": "134"
+    },
+    {
+      "id": 368,
+      "name": "Iowa Speedway",
+      "variant": "Infield Legends - 2011",
+      "platform": "iracing",
+      "platform_id": "172"
+    },
+    {
+      "id": 367,
+      "name": "Iowa Speedway",
+      "variant": "Legends - 2011",
+      "platform": "iracing",
+      "platform_id": "171"
+    },
+    {
+      "id": 463,
+      "name": "Iowa Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "559"
+    },
+    {
+      "id": 191,
+      "name": "Iowa Speedway",
+      "variant": "Rallycross - 2017",
+      "platform": "iracing",
+      "platform_id": "295"
+    },
+    {
+      "id": 340,
+      "name": "Iowa Speedway",
+      "variant": "Road Course - 2011",
+      "platform": "iracing",
+      "platform_id": "170"
+    },
+    {
+      "id": 117,
+      "name": "Iowa Speedway - Oval - 2011",
+      "variant": "Oval - 2011",
+      "platform": "iracing",
+      "platform_id": "169"
+    },
+    {
+      "id": 198,
+      "name": "iRacing Superspeedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "384"
+    },
+    {
+      "id": 251,
+      "name": "Irwindale Speedway",
+      "variant": "Figure Eight",
+      "platform": "iracing",
+      "platform_id": "217"
+    },
+    {
+      "id": 173,
+      "name": "Irwindale Speedway",
+      "variant": "Figure Eight Jump",
+      "platform": "iracing",
+      "platform_id": "388"
+    },
+    {
+      "id": 346,
+      "name": "Irwindale Speedway",
+      "variant": "Inner",
+      "platform": "iracing",
+      "platform_id": "19"
+    },
+    {
+      "id": 212,
+      "name": "Irwindale Speedway",
+      "variant": "Outer",
+      "platform": "iracing",
+      "platform_id": "23"
+    },
+    {
+      "id": 300,
+      "name": "Irwindale Speedway",
+      "variant": "Outer - Inner",
+      "platform": "iracing",
+      "platform_id": "30"
+    },
+    {
+      "id": 347,
+      "name": "Kansas Speedway",
+      "variant": "Infield Road Course",
+      "platform": "iracing",
+      "platform_id": "216"
+    },
+    {
+      "id": 214,
+      "name": "Kansas Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "214"
+    },
+    {
+      "id": 256,
+      "name": "Kansas Speedway",
+      "variant": "Road Course",
+      "platform": "iracing",
+      "platform_id": "215"
+    },
+    {
+      "id": 286,
+      "name": "Kentucky Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "371"
+    },
+    {
+      "id": 314,
+      "name": "Kentucky Speedway - 2011",
+      "variant": "Legends",
+      "platform": "iracing",
+      "platform_id": "189"
+    },
+    {
+      "id": 145,
+      "name": "Kentucky Speedway - 2011",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "188"
+    },
+    {
+      "id": 414,
+      "name": "Kevin Harvick's Kern Raceway",
+      "variant": "Asphalt Track",
+      "platform": "iracing",
+      "platform_id": "493"
+    },
+    {
+      "id": 417,
+      "name": "Kevin Harvick's Kern Raceway",
+      "variant": "Dirt Mini Oval",
+      "platform": "iracing",
+      "platform_id": "497"
+    },
+    {
+      "id": 415,
+      "name": "Kevin Harvick's Kern Raceway",
+      "variant": "Dirt Track",
+      "platform": "iracing",
+      "platform_id": "494"
+    },
+    {
+      "id": 416,
+      "name": "Kevin Harvick's Kern Raceway",
+      "variant": "Legends",
+      "platform": "iracing",
+      "platform_id": "496"
+    },
+    {
+      "id": 325,
+      "name": "Knockhill Racing Circuit",
+      "variant": "International",
+      "platform": "iracing",
+      "platform_id": "423"
+    },
+    {
+      "id": 334,
+      "name": "Knockhill Racing Circuit",
+      "variant": "International Reverse",
+      "platform": "iracing",
+      "platform_id": "424"
+    },
+    {
+      "id": 335,
+      "name": "Knockhill Racing Circuit",
+      "variant": "National",
+      "platform": "iracing",
+      "platform_id": "425"
+    },
+    {
+      "id": 345,
+      "name": "Knockhill Racing Circuit",
+      "variant": "National Reverse",
+      "platform": "iracing",
+      "platform_id": "426"
+    },
+    {
+      "id": 332,
+      "name": "Knockhill Racing Circuit",
+      "variant": "Rallycross",
+      "platform": "iracing",
+      "platform_id": "427"
+    },
+    {
+      "id": 341,
+      "name": "Knockhill Racing Circuit",
+      "variant": "Tri-Oval",
+      "platform": "iracing",
+      "platform_id": "436"
+    },
+    {
+      "id": 157,
+      "name": "Knoxville Raceway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "305"
+    },
+    {
+      "id": 231,
+      "name": "Kokomo Speedway",
+      "variant": "Tires in",
+      "platform": "iracing",
+      "platform_id": "320"
+    },
+    {
+      "id": 429,
+      "name": "Kokomo Speedway",
+      "variant": "Tires out",
+      "platform": "iracing",
+      "platform_id": "514"
+    },
+    {
+      "id": 349,
+      "name": "LA Coliseum Raceway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "437"
+    },
+    {
+      "id": 129,
+      "name": "Langley Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "201"
+    },
+    {
+      "id": 46,
+      "name": "Lanier National Speedway",
+      "variant": "Asphalt",
+      "platform": "iracing",
+      "platform_id": "17"
+    },
+    {
+      "id": 38,
+      "name": "Lanier National Speedway",
+      "variant": "Dirt",
+      "platform": "iracing",
+      "platform_id": "288"
+    },
+    {
+      "id": 289,
+      "name": "Lånkebanen (Hell RX)",
+      "variant": "Club",
+      "platform": "iracing",
+      "platform_id": "359"
+    },
+    {
+      "id": 123,
+      "name": "Lånkebanen (Hell RX)",
+      "variant": "Hell Rallycross",
+      "platform": "iracing",
+      "platform_id": "358"
+    },
+    {
+      "id": 342,
+      "name": "Lånkebanen (Hell RX)",
+      "variant": "Rallycross Short",
+      "platform": "iracing",
+      "platform_id": "360"
+    },
+    {
+      "id": 169,
+      "name": "Lånkebanen (Hell RX)",
+      "variant": "Road Long",
+      "platform": "iracing",
+      "platform_id": "363"
+    },
+    {
+      "id": 369,
+      "name": "Lånkebanen (Hell RX)",
+      "variant": "Road Short",
+      "platform": "iracing",
+      "platform_id": "361"
+    },
+    {
+      "id": 363,
+      "name": "Las Vegas Motor Speedway",
+      "variant": "Infield Legends Oval",
+      "platform": "iracing",
+      "platform_id": "113"
+    },
+    {
+      "id": 355,
+      "name": "Las Vegas Motor Speedway",
+      "variant": "Legends Oval",
+      "platform": "iracing",
+      "platform_id": "110"
+    },
+    {
+      "id": 167,
+      "name": "Las Vegas Motor Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "103"
+    },
+    {
+      "id": 343,
+      "name": "Las Vegas Motor Speedway",
+      "variant": "Road Course Combined",
+      "platform": "iracing",
+      "platform_id": "114"
+    },
+    {
+      "id": 252,
+      "name": "Las Vegas Motor Speedway",
+      "variant": "Road Course Long",
+      "platform": "iracing",
+      "platform_id": "111"
+    },
+    {
+      "id": 364,
+      "name": "Las Vegas Motor Speedway",
+      "variant": "Road Course Short",
+      "platform": "iracing",
+      "platform_id": "112"
+    },
+    {
+      "id": 217,
+      "name": "Lernerville Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "351"
+    },
+    {
+      "id": 98,
+      "name": "Limaland Motorsports Park",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "303"
+    },
+    {
+      "id": 176,
+      "name": "Lime Rock Park",
+      "variant": "Chicanes",
+      "platform": "iracing",
+      "platform_id": "354"
+    },
+    {
+      "id": 31,
+      "name": "Lime Rock Park",
+      "variant": "Classic",
+      "platform": "iracing",
+      "platform_id": "352"
+    },
+    {
+      "id": 60,
+      "name": "Lime Rock Park",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "353"
+    },
+    {
+      "id": 426,
+      "name": "Lime Rock Park",
+      "variant": "School",
+      "platform": "iracing",
+      "platform_id": "508"
+    },
+    {
+      "id": 187,
+      "name": "Lime Rock Park",
+      "variant": "West Bend Chicane",
+      "platform": "iracing",
+      "platform_id": "355"
+    },
+    {
+      "id": 273,
+      "name": "Lime Rock Park - 2008",
+      "variant": "Chicane",
+      "platform": "iracing",
+      "platform_id": "34"
+    },
+    {
+      "id": 154,
+      "name": "Lime Rock Park - 2008",
+      "variant": "Full Course",
+      "platform": "iracing",
+      "platform_id": "1"
+    },
+    {
+      "id": 237,
+      "name": "Lime Rock Park - 2008",
+      "variant": "School",
+      "platform": "iracing",
+      "platform_id": "160"
+    },
+    {
+      "id": 388,
+      "name": "Lincoln Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "462"
+    },
+    {
+      "id": 104,
+      "name": "Long Beach Street Circuit",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "179"
+    },
+    {
+      "id": 305,
+      "name": "Lucas Oil Indianapolis Raceway Park",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "232"
+    },
+    {
+      "id": 228,
+      "name": "Lucas Oil Indianapolis Raceway Park",
+      "variant": "Rallycross",
+      "platform": "iracing",
+      "platform_id": "304"
+    },
+    {
+      "id": 383,
+      "name": "Lucas Oil Speedway",
+      "variant": "Dirt Oval",
+      "platform": "iracing",
+      "platform_id": "452"
+    },
+    {
+      "id": 499,
+      "name": "Lucas Oil Speedway",
+      "variant": "Dirt Road",
+      "platform": "iracing",
+      "platform_id": "581"
+    },
+    {
+      "id": 142,
+      "name": "Martinsville Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "33"
+    },
+    {
+      "id": 496,
+      "name": "Miami International Autodrome",
+      "variant": "Extended Marina Loop",
+      "platform": "iracing",
+      "platform_id": "538"
+    },
+    {
+      "id": 495,
+      "name": "Miami International Autodrome",
+      "variant": "Extended MIA Loop",
+      "platform": "iracing",
+      "platform_id": "535"
+    },
+    {
+      "id": 497,
+      "name": "Miami International Autodrome",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "539"
+    },
+    {
+      "id": 493,
+      "name": "Miami International Autodrome",
+      "variant": "Marina Loop",
+      "platform": "iracing",
+      "platform_id": "533"
+    },
+    {
+      "id": 494,
+      "name": "Miami International Autodrome",
+      "variant": "MIA Loop",
+      "platform": "iracing",
+      "platform_id": "534"
+    },
+    {
+      "id": 222,
+      "name": "Michigan International Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "276"
+    },
+    {
+      "id": 147,
+      "name": "Michigan International Speedway - 2009",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "124"
+    },
+    {
+      "id": 269,
+      "name": "Mid-Ohio Sports Car Course",
+      "variant": "Alt Oval",
+      "platform": "iracing",
+      "platform_id": "157"
+    },
+    {
+      "id": 304,
+      "name": "Mid-Ohio Sports Car Course",
+      "variant": "Chicane",
+      "platform": "iracing",
+      "platform_id": "154"
+    },
+    {
+      "id": 63,
+      "name": "Mid-Ohio Sports Car Course",
+      "variant": "Full Course",
+      "platform": "iracing",
+      "platform_id": "153"
+    },
+    {
+      "id": 370,
+      "name": "Mid-Ohio Sports Car Course",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "156"
+    },
+    {
+      "id": 255,
+      "name": "Mid-Ohio Sports Car Course",
+      "variant": "Short",
+      "platform": "iracing",
+      "platform_id": "155"
+    },
+    {
+      "id": 423,
+      "name": "Millbridge Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "513"
+    },
+    {
+      "id": 433,
+      "name": "Misano World Circuit Marco Simoncelli",
+      "variant": "Club",
+      "platform": "iracing",
+      "platform_id": "504"
+    },
+    {
+      "id": 424,
+      "name": "Misano World Circuit Marco Simoncelli",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "501"
+    },
+    {
+      "id": 435,
+      "name": "Misano World Circuit Marco Simoncelli",
+      "variant": "Grand Prix - 2007",
+      "platform": "iracing",
+      "platform_id": "502"
+    },
+    {
+      "id": 432,
+      "name": "Misano World Circuit Marco Simoncelli",
+      "variant": "Grand Prix - Historic Reverse",
+      "platform": "iracing",
+      "platform_id": "503"
+    },
+    {
+      "id": 430,
+      "name": "Misano World Circuit Marco Simoncelli",
+      "variant": "Truck",
+      "platform": "iracing",
+      "platform_id": "505"
+    },
+    {
+      "id": 288,
+      "name": "Mobility Resort Motegi",
+      "variant": "East",
+      "platform": "iracing",
+      "platform_id": "196"
+    },
+    {
+      "id": 136,
+      "name": "Mobility Resort Motegi",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "195"
+    },
+    {
+      "id": 221,
+      "name": "Mobility Resort Motegi",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "198"
+    },
+    {
+      "id": 362,
+      "name": "Mobility Resort Motegi",
+      "variant": "West",
+      "platform": "iracing",
+      "platform_id": "197"
+    },
+    {
+      "id": 400,
+      "name": "MotorLand Aragón",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "475"
+    },
+    {
+      "id": 403,
+      "name": "MotorLand Aragón",
+      "variant": "Motorcycle Grand Prix",
+      "platform": "iracing",
+      "platform_id": "478"
+    },
+    {
+      "id": 404,
+      "name": "MotorLand Aragón",
+      "variant": "Motorcycle National",
+      "platform": "iracing",
+      "platform_id": "479"
+    },
+    {
+      "id": 401,
+      "name": "MotorLand Aragón",
+      "variant": "National",
+      "platform": "iracing",
+      "platform_id": "476"
+    },
+    {
+      "id": 405,
+      "name": "MotorLand Aragón",
+      "variant": "Outer",
+      "platform": "iracing",
+      "platform_id": "480"
+    },
+    {
+      "id": 407,
+      "name": "MotorLand Aragón",
+      "variant": "Touring Car",
+      "platform": "iracing",
+      "platform_id": "482"
+    },
+    {
+      "id": 402,
+      "name": "MotorLand Aragón",
+      "variant": "West",
+      "platform": "iracing",
+      "platform_id": "477"
+    },
+    {
+      "id": 385,
+      "name": "Motorsport Arena Oschersleben",
+      "variant": "Alternate",
+      "platform": "iracing",
+      "platform_id": "454"
+    },
+    {
+      "id": 386,
+      "name": "Motorsport Arena Oschersleben",
+      "variant": "B Course",
+      "platform": "iracing",
+      "platform_id": "455"
+    },
+    {
+      "id": 387,
+      "name": "Motorsport Arena Oschersleben",
+      "variant": "C Course",
+      "platform": "iracing",
+      "platform_id": "456"
+    },
+    {
+      "id": 381,
+      "name": "Motorsport Arena Oschersleben",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "449"
+    },
+    {
+      "id": 79,
+      "name": "Mount Panorama Circuit",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "219"
+    },
+    {
+      "id": 281,
+      "name": "Mount Washington Hillclimb",
+      "variant": "Descent",
+      "platform": "iracing",
+      "platform_id": "399"
+    },
+    {
+      "id": 280,
+      "name": "Mount Washington Hillclimb",
+      "variant": "Hillclimb",
+      "platform": "iracing",
+      "platform_id": "398"
+    },
+    {
+      "id": 121,
+      "name": "Myrtle Beach Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "286"
+    },
+    {
+      "id": 223,
+      "name": "Nashville Fairgrounds Speedway",
+      "variant": "Mini",
+      "platform": "iracing",
+      "platform_id": "380"
+    },
+    {
+      "id": 115,
+      "name": "Nashville Fairgrounds Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "374"
+    },
+    {
+      "id": 258,
+      "name": "Nashville Superspeedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "400"
+    },
+    {
+      "id": 356,
+      "name": "New Hampshire Motor Speedway",
+      "variant": "Legends",
+      "platform": "iracing",
+      "platform_id": "222"
+    },
+    {
+      "id": 132,
+      "name": "New Hampshire Motor Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "131"
+    },
+    {
+      "id": 270,
+      "name": "New Hampshire Motor Speedway",
+      "variant": "Road Course",
+      "platform": "iracing",
+      "platform_id": "129"
+    },
+    {
+      "id": 353,
+      "name": "New Hampshire Motor Speedway",
+      "variant": "Road Course with North Oval",
+      "platform": "iracing",
+      "platform_id": "130"
+    },
+    {
+      "id": 229,
+      "name": "New Hampshire Motor Speedway",
+      "variant": "Road Course with South Oval",
+      "platform": "iracing",
+      "platform_id": "132"
+    },
+    {
+      "id": 284,
+      "name": "New Jersey Motorsports Park",
+      "variant": "Thunderbolt",
+      "platform": "iracing",
+      "platform_id": "220"
+    },
+    {
+      "id": 361,
+      "name": "New Jersey Motorsports Park",
+      "variant": "Thunderbolt w/both chicanes",
+      "platform": "iracing",
+      "platform_id": "221"
+    },
+    {
+      "id": 360,
+      "name": "New Jersey Motorsports Park",
+      "variant": "Thunderbolt w/first chicane",
+      "platform": "iracing",
+      "platform_id": "223"
+    },
+    {
+      "id": 262,
+      "name": "New Jersey Motorsports Park",
+      "variant": "Thunderbolt w/second chicane",
+      "platform": "iracing",
+      "platform_id": "224"
+    },
+    {
+      "id": 243,
+      "name": "New Smyrna Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "190"
+    },
+    {
+      "id": 475,
+      "name": "North Wilkesboro Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "562"
+    },
+    {
+      "id": 122,
+      "name": "North Wilkesboro Speedway",
+      "variant": "Oval - 1987",
+      "platform": "iracing",
+      "platform_id": "366"
+    },
+    {
+      "id": 93,
+      "name": "Nürburgring Combined",
+      "variant": "Gesamtstrecke 24h",
+      "platform": "iracing",
+      "platform_id": "252"
+    },
+    {
+      "id": 92,
+      "name": "Nürburgring Combined",
+      "variant": "Gesamtstrecke Long",
+      "platform": "iracing",
+      "platform_id": "264"
+    },
+    {
+      "id": 183,
+      "name": "Nürburgring Combined",
+      "variant": "Gesamtstrecke Short w/out Arena",
+      "platform": "iracing",
+      "platform_id": "263"
+    },
+    {
+      "id": 94,
+      "name": "Nürburgring Combined",
+      "variant": "Gesamtstrecke VLN",
+      "platform": "iracing",
+      "platform_id": "262"
+    },
+    {
+      "id": 100,
+      "name": "Nürburgring Grand-Prix-Strecke",
+      "variant": "BES/WEC",
+      "platform": "iracing",
+      "platform_id": "255"
+    },
+    {
+      "id": 66,
+      "name": "Nürburgring Grand-Prix-Strecke",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "250"
+    },
+    {
+      "id": 265,
+      "name": "Nürburgring Grand-Prix-Strecke",
+      "variant": "Grand Prix w/out Arena",
+      "platform": "iracing",
+      "platform_id": "257"
+    },
+    {
+      "id": 260,
+      "name": "Nürburgring Grand-Prix-Strecke",
+      "variant": "Kurzanbindung w/out Arena",
+      "platform": "iracing",
+      "platform_id": "260"
+    },
+    {
+      "id": 272,
+      "name": "Nürburgring Grand-Prix-Strecke",
+      "variant": "Müllenbachschleife",
+      "platform": "iracing",
+      "platform_id": "261"
+    },
+    {
+      "id": 203,
+      "name": "Nürburgring Grand-Prix-Strecke",
+      "variant": "Sprintstrecke",
+      "platform": "iracing",
+      "platform_id": "259"
+    },
+    {
+      "id": 75,
+      "name": "Nürburgring Nordschleife",
+      "variant": "Industriefahrten",
+      "platform": "iracing",
+      "platform_id": "249"
+    },
+    {
+      "id": 68,
+      "name": "Nürburgring Nordschleife",
+      "variant": "Touristenfahrten",
+      "platform": "iracing",
+      "platform_id": "253"
+    },
+    {
+      "id": 69,
+      "name": "Okayama International Circuit",
+      "variant": "Full Course",
+      "platform": "iracing",
+      "platform_id": "166"
+    },
+    {
+      "id": 84,
+      "name": "Okayama International Circuit",
+      "variant": "Short",
+      "platform": "iracing",
+      "platform_id": "167"
+    },
+    {
+      "id": 99,
+      "name": "Oran Park Raceway",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "202"
+    },
+    {
+      "id": 259,
+      "name": "Oran Park Raceway",
+      "variant": "Moto",
+      "platform": "iracing",
+      "platform_id": "211"
+    },
+    {
+      "id": 283,
+      "name": "Oran Park Raceway",
+      "variant": "North",
+      "platform": "iracing",
+      "platform_id": "207"
+    },
+    {
+      "id": 244,
+      "name": "Oran Park Raceway",
+      "variant": "North A",
+      "platform": "iracing",
+      "platform_id": "209"
+    },
+    {
+      "id": 216,
+      "name": "Oran Park Raceway",
+      "variant": "North B",
+      "platform": "iracing",
+      "platform_id": "210"
+    },
+    {
+      "id": 165,
+      "name": "Oran Park Raceway",
+      "variant": "South",
+      "platform": "iracing",
+      "platform_id": "208"
+    },
+    {
+      "id": 443,
+      "name": "Oswego Speedway",
+      "variant": "Dirt",
+      "platform": "iracing",
+      "platform_id": "520"
+    },
+    {
+      "id": 440,
+      "name": "Oswego Speedway",
+      "variant": "Mini Oval",
+      "platform": "iracing",
+      "platform_id": "519"
+    },
+    {
+      "id": 439,
+      "name": "Oswego Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "518"
+    },
+    {
+      "id": 163,
+      "name": "Oulton Park Circuit",
+      "variant": "Fosters",
+      "platform": "iracing",
+      "platform_id": "181"
+    },
+    {
+      "id": 248,
+      "name": "Oulton Park Circuit",
+      "variant": "Fosters w/Hislop",
+      "platform": "iracing",
+      "platform_id": "186"
+    },
+    {
+      "id": 96,
+      "name": "Oulton Park Circuit",
+      "variant": "International",
+      "platform": "iracing",
+      "platform_id": "180"
+    },
+    {
+      "id": 102,
+      "name": "Oulton Park Circuit",
+      "variant": "Intl w/no Chicanes",
+      "platform": "iracing",
+      "platform_id": "185"
+    },
+    {
+      "id": 209,
+      "name": "Oulton Park Circuit",
+      "variant": "Intl w/out Brittens",
+      "platform": "iracing",
+      "platform_id": "184"
+    },
+    {
+      "id": 127,
+      "name": "Oulton Park Circuit",
+      "variant": "Intl w/out Hislop",
+      "platform": "iracing",
+      "platform_id": "183"
+    },
+    {
+      "id": 230,
+      "name": "Oulton Park Circuit",
+      "variant": "Island",
+      "platform": "iracing",
+      "platform_id": "182"
+    },
+    {
+      "id": 241,
+      "name": "Oulton Park Circuit",
+      "variant": "Island Historic",
+      "platform": "iracing",
+      "platform_id": "187"
+    },
+    {
+      "id": 213,
+      "name": "Oxford Plains Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "12"
+    },
+    {
+      "id": 125,
+      "name": "Phillip Island Circuit",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "152"
+    },
+    {
+      "id": 318,
+      "name": "Phoenix Raceway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "418"
+    },
+    {
+      "id": 261,
+      "name": "Phoenix Raceway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "235"
+    },
+    {
+      "id": 172,
+      "name": "Phoenix Raceway",
+      "variant": "Oval w/open dogleg",
+      "platform": "iracing",
+      "platform_id": "236"
+    },
+    {
+      "id": 309,
+      "name": "Phoenix Raceway",
+      "variant": "Oval w/open dogleg",
+      "platform": "iracing",
+      "platform_id": "419"
+    },
+    {
+      "id": 392,
+      "name": "Phoenix Raceway - 2008",
+      "variant": "Dirt Road",
+      "platform": "iracing",
+      "platform_id": "472"
+    },
+    {
+      "id": 42,
+      "name": "Phoenix Raceway - 2008",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "104"
+    },
+    {
+      "id": 47,
+      "name": "Phoenix Raceway - 2008",
+      "variant": "Rallycross",
+      "platform": "iracing",
+      "platform_id": "306"
+    },
+    {
+      "id": 235,
+      "name": "Phoenix Raceway - 2008",
+      "variant": "Road Course",
+      "platform": "iracing",
+      "platform_id": "105"
+    },
+    {
+      "id": 220,
+      "name": "Pocono Raceway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "277"
+    },
+    {
+      "id": 146,
+      "name": "Pocono Raceway - 2009",
+      "variant": "East",
+      "platform": "iracing",
+      "platform_id": "137"
+    },
+    {
+      "id": 278,
+      "name": "Pocono Raceway - 2009",
+      "variant": "International",
+      "platform": "iracing",
+      "platform_id": "140"
+    },
+    {
+      "id": 276,
+      "name": "Pocono Raceway - 2009",
+      "variant": "North",
+      "platform": "iracing",
+      "platform_id": "139"
+    },
+    {
+      "id": 133,
+      "name": "Pocono Raceway - 2009",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "136"
+    },
+    {
+      "id": 352,
+      "name": "Pocono Raceway - 2009",
+      "variant": "South",
+      "platform": "iracing",
+      "platform_id": "138"
+    },
+    {
+      "id": 454,
+      "name": "Portland International Raceway",
+      "variant": "Full Circuit",
+      "platform": "iracing",
+      "platform_id": "536"
+    },
+    {
+      "id": 455,
+      "name": "Portland International Raceway",
+      "variant": "No Chicane",
+      "platform": "iracing",
+      "platform_id": "537"
+    },
+    {
+      "id": 378,
+      "name": "Port Royal Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "446"
+    },
+    {
+      "id": 253,
+      "name": "Red Bull Ring",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "403"
+    },
+    {
+      "id": 257,
+      "name": "Red Bull Ring",
+      "variant": "National",
+      "platform": "iracing",
+      "platform_id": "404"
+    },
+    {
+      "id": 254,
+      "name": "Red Bull Ring",
+      "variant": "North",
+      "platform": "iracing",
+      "platform_id": "407"
+    },
+    {
+      "id": 464,
+      "name": "Richmond Raceway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "561"
+    },
+    {
+      "id": 159,
+      "name": "Richmond Raceway",
+      "variant": "Richmond - 2007",
+      "platform": "iracing",
+      "platform_id": "31"
+    },
+    {
+      "id": 321,
+      "name": "Road America",
+      "variant": "Bend",
+      "platform": "iracing",
+      "platform_id": "50"
+    },
+    {
+      "id": 49,
+      "name": "Road America",
+      "variant": "Full Course",
+      "platform": "iracing",
+      "platform_id": "18"
+    },
+    {
+      "id": 178,
+      "name": "Road Atlanta",
+      "variant": "Club",
+      "platform": "iracing",
+      "platform_id": "126"
+    },
+    {
+      "id": 40,
+      "name": "Road Atlanta",
+      "variant": "Full Course",
+      "platform": "iracing",
+      "platform_id": "127"
+    },
+    {
+      "id": 158,
+      "name": "Road Atlanta",
+      "variant": "Short",
+      "platform": "iracing",
+      "platform_id": "128"
+    },
+    {
+      "id": 354,
+      "name": "Rockingham Speedway",
+      "variant": "Infield Road Course",
+      "platform": "iracing",
+      "platform_id": "205"
+    },
+    {
+      "id": 501,
+      "name": "Rockingham Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "583"
+    },
+    {
+      "id": 137,
+      "name": "Rockingham Speedway",
+      "variant": "Oval - 2012",
+      "platform": "iracing",
+      "platform_id": "203"
+    },
+    {
+      "id": 350,
+      "name": "Rockingham Speedway",
+      "variant": "Road Course",
+      "platform": "iracing",
+      "platform_id": "204"
+    },
+    {
+      "id": 371,
+      "name": "Rockingham Speedway",
+      "variant": "Short Road Course",
+      "platform": "iracing",
+      "platform_id": "206"
+    },
+    {
+      "id": 382,
+      "name": "Rudskogen Motorsenter",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "451"
+    },
+    {
+      "id": 441,
+      "name": "Sachsenring",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "521"
+    },
+    {
+      "id": 375,
+      "name": "Sandown International Motor Raceway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "443"
+    },
+    {
+      "id": 168,
+      "name": "Sebring International Raceway",
+      "variant": "Club",
+      "platform": "iracing",
+      "platform_id": "97"
+    },
+    {
+      "id": 35,
+      "name": "Sebring International Raceway",
+      "variant": "International",
+      "platform": "iracing",
+      "platform_id": "95"
+    },
+    {
+      "id": 190,
+      "name": "Sebring International Raceway",
+      "variant": "Modified",
+      "platform": "iracing",
+      "platform_id": "96"
+    },
+    {
+      "id": 458,
+      "name": "Shell V-Power Motorsport Park at The Bend",
+      "variant": "East Circuit",
+      "platform": "iracing",
+      "platform_id": "542"
+    },
+    {
+      "id": 456,
+      "name": "Shell V-Power Motorsport Park at The Bend",
+      "variant": "GT Circuit",
+      "platform": "iracing",
+      "platform_id": "540"
+    },
+    {
+      "id": 457,
+      "name": "Shell V-Power Motorsport Park at The Bend",
+      "variant": "International Circuit",
+      "platform": "iracing",
+      "platform_id": "541"
+    },
+    {
+      "id": 462,
+      "name": "Shell V-Power Motorsport Park at The Bend",
+      "variant": "South West Circuit",
+      "platform": "iracing",
+      "platform_id": "546"
+    },
+    {
+      "id": 461,
+      "name": "Shell V-Power Motorsport Park at The Bend",
+      "variant": "Sprint Circuit",
+      "platform": "iracing",
+      "platform_id": "545"
+    },
+    {
+      "id": 459,
+      "name": "Shell V-Power Motorsport Park at The Bend",
+      "variant": "West Circuit",
+      "platform": "iracing",
+      "platform_id": "543"
+    },
+    {
+      "id": 460,
+      "name": "Shell V-Power Motorsport Park at The Bend",
+      "variant": "West Plus Circuit",
+      "platform": "iracing",
+      "platform_id": "544"
+    },
+    {
+      "id": 80,
+      "name": "Silverstone Circuit",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "341"
+    },
+    {
+      "id": 292,
+      "name": "Silverstone Circuit",
+      "variant": "International",
+      "platform": "iracing",
+      "platform_id": "342"
+    },
+    {
+      "id": 50,
+      "name": "Silverstone Circuit",
+      "variant": "National",
+      "platform": "iracing",
+      "platform_id": "343"
+    },
+    {
+      "id": 62,
+      "name": "Silverstone Circuit - 2008",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "41"
+    },
+    {
+      "id": 130,
+      "name": "Silverstone Circuit - 2008",
+      "variant": "Historical Grand Prix",
+      "platform": "iracing",
+      "platform_id": "42"
+    },
+    {
+      "id": 192,
+      "name": "Silverstone Circuit - 2008",
+      "variant": "International",
+      "platform": "iracing",
+      "platform_id": "43"
+    },
+    {
+      "id": 118,
+      "name": "Silverstone Circuit - 2008",
+      "variant": "National",
+      "platform": "iracing",
+      "platform_id": "44"
+    },
+    {
+      "id": 299,
+      "name": "Silverstone Circuit - 2008",
+      "variant": "Southern",
+      "platform": "iracing",
+      "platform_id": "45"
+    },
+    {
+      "id": 421,
+      "name": "Slinger Speedway",
+      "variant": "Figure 8",
+      "platform": "iracing",
+      "platform_id": "506"
+    },
+    {
+      "id": 420,
+      "name": "Slinger Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "500"
+    },
+    {
+      "id": 277,
+      "name": "Snetterton Circuit",
+      "variant": "100",
+      "platform": "iracing",
+      "platform_id": "299"
+    },
+    {
+      "id": 301,
+      "name": "Snetterton Circuit",
+      "variant": "200",
+      "platform": "iracing",
+      "platform_id": "298"
+    },
+    {
+      "id": 135,
+      "name": "Snetterton Circuit",
+      "variant": "300",
+      "platform": "iracing",
+      "platform_id": "297"
+    },
+    {
+      "id": 479,
+      "name": "Sonoma Raceway",
+      "variant": "Cup Long",
+      "platform": "iracing",
+      "platform_id": "566"
+    },
+    {
+      "id": 480,
+      "name": "Sonoma Raceway",
+      "variant": "Cup Short",
+      "platform": "iracing",
+      "platform_id": "567"
+    },
+    {
+      "id": 476,
+      "name": "Sonoma Raceway",
+      "variant": "Indycar 2005-2007",
+      "platform": "iracing",
+      "platform_id": "563"
+    },
+    {
+      "id": 477,
+      "name": "Sonoma Raceway",
+      "variant": "Indycar 2008-2011",
+      "platform": "iracing",
+      "platform_id": "564"
+    },
+    {
+      "id": 478,
+      "name": "Sonoma Raceway",
+      "variant": "Indycar 2012-2018",
+      "platform": "iracing",
+      "platform_id": "565"
+    },
+    {
+      "id": 37,
+      "name": "Sonoma Raceway",
+      "variant": "NASCAR Long",
+      "platform": "iracing",
+      "platform_id": "98"
+    },
+    {
+      "id": 111,
+      "name": "Sonoma Raceway",
+      "variant": "NASCAR Short",
+      "platform": "iracing",
+      "platform_id": "48"
+    },
+    {
+      "id": 107,
+      "name": "Sonoma Raceway",
+      "variant": "Open Wheel 2008-2011",
+      "platform": "iracing",
+      "platform_id": "102"
+    },
+    {
+      "id": 239,
+      "name": "Sonoma Raceway",
+      "variant": "Open Wheel 2012-2018",
+      "platform": "iracing",
+      "platform_id": "397"
+    },
+    {
+      "id": 311,
+      "name": "Sonoma Raceway",
+      "variant": "Open Wheel pre-2008",
+      "platform": "iracing",
+      "platform_id": "49"
+    },
+    {
+      "id": 481,
+      "name": "Sonoma Raceway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "568"
+    },
+    {
+      "id": 156,
+      "name": "Sonoma Raceway",
+      "variant": "Rallycross",
+      "platform": "iracing",
+      "platform_id": "312"
+    },
+    {
+      "id": 482,
+      "name": "Sonoma Raceway",
+      "variant": "Short",
+      "platform": "iracing",
+      "platform_id": "569"
+    },
+    {
+      "id": 483,
+      "name": "Sonoma Raceway",
+      "variant": "Sportscar",
+      "platform": "iracing",
+      "platform_id": "570"
+    },
+    {
+      "id": 484,
+      "name": "Sonoma Raceway",
+      "variant": "Sportscar Alt",
+      "platform": "iracing",
+      "platform_id": "571"
+    },
+    {
+      "id": 45,
+      "name": "South Boston Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "14"
+    },
+    {
+      "id": 108,
+      "name": "Southern National Motorsports Park",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "256"
+    },
+    {
+      "id": 302,
+      "name": "Stafford Motor Speedway",
+      "variant": "Full Course",
+      "platform": "iracing",
+      "platform_id": "11"
+    },
+    {
+      "id": 427,
+      "name": "Stafford Motor Speedway",
+      "variant": "Mini Mile",
+      "platform": "iracing",
+      "platform_id": "32"
+    },
+    {
+      "id": 502,
+      "name": "St. Petersburg Grand Prix",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "584"
+    },
+    {
+      "id": 89,
+      "name": "Summit Point Raceway",
+      "variant": "Jefferson Circuit",
+      "platform": "iracing",
+      "platform_id": "8"
+    },
+    {
+      "id": 225,
+      "name": "Summit Point Raceway",
+      "variant": "Jefferson Reverse",
+      "platform": "iracing",
+      "platform_id": "142"
+    },
+    {
+      "id": 422,
+      "name": "Summit Point Raceway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "25"
+    },
+    {
+      "id": 322,
+      "name": "Summit Point Raceway",
+      "variant": "School",
+      "platform": "iracing",
+      "platform_id": "159"
+    },
+    {
+      "id": 238,
+      "name": "Summit Point Raceway",
+      "variant": "Short",
+      "platform": "iracing",
+      "platform_id": "24"
+    },
+    {
+      "id": 88,
+      "name": "Summit Point Raceway",
+      "variant": "Summit Point Raceway",
+      "platform": "iracing",
+      "platform_id": "9"
+    },
+    {
+      "id": 82,
+      "name": "Suzuka International Racing Course",
+      "variant": "East",
+      "platform": "iracing",
+      "platform_id": "174"
+    },
+    {
+      "id": 57,
+      "name": "Suzuka International Racing Course",
+      "variant": "Grand Prix",
+      "platform": "iracing",
+      "platform_id": "168"
+    },
+    {
+      "id": 338,
+      "name": "Suzuka International Racing Course",
+      "variant": "Moto",
+      "platform": "iracing",
+      "platform_id": "173"
+    },
+    {
+      "id": 151,
+      "name": "Suzuka International Racing Course",
+      "variant": "West",
+      "platform": "iracing",
+      "platform_id": "175"
+    },
+    {
+      "id": 303,
+      "name": "Suzuka International Racing Course",
+      "variant": "West w/chicane",
+      "platform": "iracing",
+      "platform_id": "176"
+    },
+    {
+      "id": 119,
+      "name": "Talladega Superspeedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "116"
+    },
+    {
+      "id": 320,
+      "name": "Texas Motor Speedway",
+      "variant": "Legends Oval",
+      "platform": "iracing",
+      "platform_id": "364"
+    },
+    {
+      "id": 188,
+      "name": "Texas Motor Speedway",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "357"
+    },
+    {
+      "id": 372,
+      "name": "Texas Motor Speedway - 2009",
+      "variant": "Legends Oval",
+      "platform": "iracing",
+      "platform_id": "120"
+    },
+    {
+      "id": 134,
+      "name": "Texas Motor Speedway - 2009",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "121"
+    },
+    {
+      "id": 247,
+      "name": "Texas Motor Speedway - 2009",
+      "variant": "Road Course Combined",
+      "platform": "iracing",
+      "platform_id": "122"
+    },
+    {
+      "id": 139,
+      "name": "Texas Motor Speedway - 2009",
+      "variant": "Road Course Long",
+      "platform": "iracing",
+      "platform_id": "117"
+    },
+    {
+      "id": 373,
+      "name": "Texas Motor Speedway - 2009",
+      "variant": "Road Course Short A",
+      "platform": "iracing",
+      "platform_id": "118"
+    },
+    {
+      "id": 336,
+      "name": "Texas Motor Speedway - 2009",
+      "variant": "Road Course Short B",
+      "platform": "iracing",
+      "platform_id": "119"
+    },
+    {
+      "id": 207,
+      "name": "The Bullring",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "271"
+    },
+    {
+      "id": 205,
+      "name": "The Dirt Track at Charlotte",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "314"
+    },
+    {
+      "id": 140,
+      "name": "The Milwaukee Mile",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "94"
+    },
+    {
+      "id": 144,
+      "name": "Thompson Speedway Motorsports Park",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "161"
+    },
+    {
+      "id": 453,
+      "name": "Thruxton Circuit",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "532"
+    },
+    {
+      "id": 199,
+      "name": "Tsukuba Circuit",
+      "variant": "1000 Chicane",
+      "platform": "iracing",
+      "platform_id": "329"
+    },
+    {
+      "id": 32,
+      "name": "Tsukuba Circuit",
+      "variant": "1000 Full",
+      "platform": "iracing",
+      "platform_id": "327"
+    },
+    {
+      "id": 268,
+      "name": "Tsukuba Circuit",
+      "variant": "1000 Full Reverse",
+      "platform": "iracing",
+      "platform_id": "333"
+    },
+    {
+      "id": 33,
+      "name": "Tsukuba Circuit",
+      "variant": "1000 Outer",
+      "platform": "iracing",
+      "platform_id": "328"
+    },
+    {
+      "id": 73,
+      "name": "Tsukuba Circuit",
+      "variant": "2000 Full",
+      "platform": "iracing",
+      "platform_id": "324"
+    },
+    {
+      "id": 110,
+      "name": "Tsukuba Circuit",
+      "variant": "2000 Moto",
+      "platform": "iracing",
+      "platform_id": "325"
+    },
+    {
+      "id": 160,
+      "name": "Tsukuba Circuit",
+      "variant": "2000 Short",
+      "platform": "iracing",
+      "platform_id": "326"
+    },
+    {
+      "id": 81,
+      "name": "USA International Speedway",
+      "variant": "Asphalt",
+      "platform": "iracing",
+      "platform_id": "16"
+    },
+    {
+      "id": 48,
+      "name": "USA International Speedway",
+      "variant": "Dirt",
+      "platform": "iracing",
+      "platform_id": "275"
+    },
+    {
+      "id": 393,
+      "name": "Virginia International Raceway",
+      "variant": "Full Course",
+      "platform": "iracing",
+      "platform_id": "465"
+    },
+    {
+      "id": 394,
+      "name": "Virginia International Raceway",
+      "variant": "Grand Course",
+      "platform": "iracing",
+      "platform_id": "466"
+    },
+    {
+      "id": 395,
+      "name": "Virginia International Raceway",
+      "variant": "North Course",
+      "platform": "iracing",
+      "platform_id": "467"
+    },
+    {
+      "id": 397,
+      "name": "Virginia International Raceway",
+      "variant": "Patriot Course",
+      "platform": "iracing",
+      "platform_id": "469"
+    },
+    {
+      "id": 396,
+      "name": "Virginia International Raceway",
+      "variant": "South Course",
+      "platform": "iracing",
+      "platform_id": "468"
+    },
+    {
+      "id": 164,
+      "name": "Virginia International Raceway - 2008",
+      "variant": "Full Course",
+      "platform": "iracing",
+      "platform_id": "2"
+    },
+    {
+      "id": 306,
+      "name": "Virginia International Raceway - 2008",
+      "variant": "Grand East",
+      "platform": "iracing",
+      "platform_id": "6"
+    },
+    {
+      "id": 114,
+      "name": "Virginia International Raceway - 2008",
+      "variant": "Grand West",
+      "platform": "iracing",
+      "platform_id": "5"
+    },
+    {
+      "id": 315,
+      "name": "Virginia International Raceway - 2008",
+      "variant": "North",
+      "platform": "iracing",
+      "platform_id": "4"
+    },
+    {
+      "id": 240,
+      "name": "Virginia International Raceway - 2008",
+      "variant": "Patriot",
+      "platform": "iracing",
+      "platform_id": "3"
+    },
+    {
+      "id": 279,
+      "name": "Virginia International Raceway - 2008",
+      "variant": "Patriot Reverse",
+      "platform": "iracing",
+      "platform_id": "141"
+    },
+    {
+      "id": 274,
+      "name": "Virginia International Raceway - 2008",
+      "variant": "South",
+      "platform": "iracing",
+      "platform_id": "7"
+    },
+    {
+      "id": 218,
+      "name": "Volusia Speedway Park",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "279"
+    },
+    {
+      "id": 324,
+      "name": "Watkins Glen International",
+      "variant": "Boot",
+      "platform": "iracing",
+      "platform_id": "434"
+    },
+    {
+      "id": 333,
+      "name": "Watkins Glen International",
+      "variant": "Classic",
+      "platform": "iracing",
+      "platform_id": "432"
+    },
+    {
+      "id": 329,
+      "name": "Watkins Glen International",
+      "variant": "Classic Boot",
+      "platform": "iracing",
+      "platform_id": "435"
+    },
+    {
+      "id": 326,
+      "name": "Watkins Glen International",
+      "variant": "Cup",
+      "platform": "iracing",
+      "platform_id": "433"
+    },
+    {
+      "id": 74,
+      "name": "Watkins Glen International - 2008",
+      "variant": "Boot",
+      "platform": "iracing",
+      "platform_id": "107"
+    },
+    {
+      "id": 113,
+      "name": "Watkins Glen International - 2008",
+      "variant": "Classic",
+      "platform": "iracing",
+      "platform_id": "109"
+    },
+    {
+      "id": 44,
+      "name": "Watkins Glen International - 2008",
+      "variant": "Classic Boot",
+      "platform": "iracing",
+      "platform_id": "108"
+    },
+    {
+      "id": 109,
+      "name": "Watkins Glen International - 2008",
+      "variant": "Cup",
+      "platform": "iracing",
+      "platform_id": "106"
+    },
+    {
+      "id": 34,
+      "name": "WeatherTech Raceway at Laguna Seca",
+      "variant": "Full Course",
+      "platform": "iracing",
+      "platform_id": "47"
+    },
+    {
+      "id": 106,
+      "name": "WeatherTech Raceway at Laguna Seca",
+      "variant": "School",
+      "platform": "iracing",
+      "platform_id": "158"
+    },
+    {
+      "id": 201,
+      "name": "Weedsport Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "373"
+    },
+    {
+      "id": 193,
+      "name": "Wild West Motorsports Park",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "332"
+    },
+    {
+      "id": 215,
+      "name": "Williams Grove Speedway",
+      "variant": "",
+      "platform": "iracing",
+      "platform_id": "274"
+    },
+    {
+      "id": 406,
+      "name": "Willow Springs International Raceway",
+      "variant": "Big Willow",
+      "platform": "iracing",
+      "platform_id": "481"
+    },
+    {
+      "id": 359,
+      "name": "Winton Motor Raceway",
+      "variant": "Club Circuit",
+      "platform": "iracing",
+      "platform_id": "440"
+    },
+    {
+      "id": 357,
+      "name": "Winton Motor Raceway",
+      "variant": "National Circuit",
+      "platform": "iracing",
+      "platform_id": "439"
+    },
+    {
+      "id": 500,
+      "name": "Winton Motor Raceway",
+      "variant": "Rallycross",
+      "platform": "iracing",
+      "platform_id": "582"
+    },
+    {
+      "id": 474,
+      "name": "World Wide Technology Raceway (Gateway)",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "560"
+    },
+    {
+      "id": 148,
+      "name": "World Wide Technology Raceway (Gateway)",
+      "variant": "Oval",
+      "platform": "iracing",
+      "platform_id": "237"
+    },
+    {
+      "id": 344,
+      "name": "World Wide Technology Raceway (Gateway)",
+      "variant": "Road Course",
+      "platform": "iracing",
+      "platform_id": "238"
+    }
+  ],
+  "total": 465
+}

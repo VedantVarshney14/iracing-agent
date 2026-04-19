@@ -14,4 +14,4 @@ if __name__ == '__main__':
         os.environ["GARAGE61_PAT"] = sys.argv[1]
     iracing_mcp.mount("garage", garage_mcp)
     logger.info("Starting MCP servers.")
-    iracing_mcp.run(transport="stdio")
+    iracing_mcp.run(transport="streamable-http", port=int(os.environ.get("MCP_PORT", "8000")))

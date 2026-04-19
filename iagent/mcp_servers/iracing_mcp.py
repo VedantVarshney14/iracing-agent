@@ -68,4 +68,4 @@ def get_telemetry_keys_resource() -> dict:
 
 
 if __name__ == '__main__':
-    mcp.run()
+    mcp.run(transport="streamable-http")

@@ -180,3 +180,8 @@ Subclass `iagent.events.detectors.base.BaseDetector`, implement `detect(telemetr
 ### Adding MCP tools
 
 Add tools to `iagent/mcp_servers/iracing_mcp.py` or `garage_mcp.py`, or create a new FastMCP server and mount it in `event_agent.py`.
+
+# License
+
+All rights reserved.
+(I may change my mind later. If you are keen to contribute - let me know!)

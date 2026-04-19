@@ -14,6 +14,8 @@ from langchain_core.messages import HumanMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 
+import sys
+
 import iagent
 from iagent import utils
 from iagent.agent import DriverMessage, AgentState, get_initial_state, Agent
@@ -42,11 +44,15 @@ def driver_input_thread(
         stop_event: threading.Event,
         loop: asyncio.AbstractEventLoop,
         enqueue_callback: Callable[[int, Trigger], None],
+        response_ready: threading.Event,
         default_msg: str = "Hey - how was my last lap?",
 ):
     """
     Blocking driver input running in a thread; pushes Trigger objects into the provided
     enqueue_callback with appropriate priority.
+
+    Blocks the next prompt until `response_ready` is set by the main loop, so the
+    driver cannot submit a second message while the AI is still responding.
     """
     try:
         while not stop_event.is_set():
@@ -55,10 +61,12 @@ def driver_input_thread(
             except EOFError:
                 break
             msg = raw or default_msg
-            logger.info(f"Driver Message received: {msg}")
+            print(f"Driver Message received: {msg}")
+            response_ready.clear()
             loop.call_soon_threadsafe(
                 enqueue_callback, 0, Trigger(TriggerType.DRIVER_MESSAGE, msg)
             )
+            response_ready.wait()
     except Exception:
         logger.exception("Exception in driver input thread")
     finally:
@@ -71,7 +79,7 @@ async def invoke_graph(state: AgentState, agent: Agent, tts: Optional[TTS]) -> A
     if state.get("send_driver_message"):
         if state.get("driver_messages"):
             ai_msg = state["driver_messages"][-1].content
-            logger.info(f"AI Message: {ai_msg}")
+            print(f"AI Message: {ai_msg}")
             try:
                 if tts is not None:
                     tts.generate(ai_msg)
@@ -90,8 +98,13 @@ async def process_trigger(
     if trigger.trigger_type == TriggerType.DRIVER_MESSAGE:
         msg: str = trigger.data
         state["trigger"] = "driver"
+        prev_driver_count = len(state["driver_messages"])
         state["driver_messages"].append(HumanMessage(msg))
         state["race_engineer_messages"].append(DriverMessage(msg))
+        state = await invoke_graph(state, agent, tts)
+        if len(state["driver_messages"]) == prev_driver_count + 1:
+            logger.warning("Driver message processed but no response was sent to the driver.")
+        return state
     else:
         event_stamp: EventStamp = trigger.data
         logger.info(f"Processing event: {event_stamp}")
@@ -151,9 +164,11 @@ async def main(phonetics: Optional[dict[str, str]]):
     event_thread.start()
 
     loop = asyncio.get_running_loop()
+    response_ready = threading.Event()
+    response_ready.set()
     driver_thread = threading.Thread(
         target=driver_input_thread,
-        args=(stop_event, loop, lambda p, t: prioritized_queue.put(p, t)),
+        args=(stop_event, loop, lambda p, t: prioritized_queue.put(p, t), response_ready),
         daemon=True,
     )
 
@@ -161,24 +176,16 @@ async def main(phonetics: Optional[dict[str, str]]):
     client = MultiServerMCPClient(
         {
             "iracing": {
-                "command": "python",
-                "args": [iracing_mcp.__file__],
-                "transport": "stdio",
-            },
-            "garage": {
-                "command": "python",
-                "args": [garage_mcp.__file__, os.environ.get("GARAGE61_PAT", "")],
-                "transport": "stdio",
-            },
+                "url": f"http://localhost:{os.environ.get('MCP_PORT', 8000)}/mcp",
+                "transport": "streamable_http",
+            }
         }
     )
 
     async with (
-        client.session("iracing") as iracing_session,
-        client.session("garage") as garage_session,
+        client.session("iracing") as session
     ):
-        tools = await load_mcp_tools(iracing_session)
-        tools += await load_mcp_tools(garage_session)
+        tools = await load_mcp_tools(session)
         agent = Agent(tools)
 
         state = get_initial_state()
@@ -189,6 +196,8 @@ async def main(phonetics: Optional[dict[str, str]]):
                 if not prioritized_queue.empty():
                     trigger = await queue_get_async(prioritized_queue)
                     state = await process_trigger(trigger, state, agent, tts)
+                    if trigger.trigger_type == TriggerType.DRIVER_MESSAGE:
+                        response_ready.set()
 
                 await asyncio.sleep(0.05)
 
@@ -233,7 +242,7 @@ def cli(env_file: Optional[Path], phonetics_file: Optional[Path], debug: bool):
         with open(phonetics_file) as f:
             phonetics = yaml.safe_load(f)
 
-    for _logger in (__name__, iagent.__name__):
+    for _logger in (iagent.__name__,):
         level = logging.DEBUG if debug else logging.INFO
         utils.setup_logger(_logger, level=level)
 

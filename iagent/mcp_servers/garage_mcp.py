@@ -93,4 +93,4 @@ async def analyse_last_lap(
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         os.environ["GARAGE61_PAT"] = sys.argv[1]
-    mcp.run(transport="stdio")
+    mcp.run(transport="streamable-http")
