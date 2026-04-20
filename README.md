@@ -51,6 +51,7 @@ iRacing Agent acts as a virtual race engineer and coaching team monitoring your 
 - **Driver radio** — Responses are spoken via a local TTS model, simulating real pit-wall radio
 - **Lap analysis** — Integrates with [Garage61](https://garage61.net) to pull lap data.
 - **Live telemetry tools** — Agents can query 300+ iRacing SDK variables in real-time via MCP tool calls
+- **Corner mapper** *(experimental)* — Maps track position to named corners for circuit-specific feedback; currently limited to Summit Point Raceway
 - **Priority queue** — Driver messages always pre-empt background coaching events
 - **Fully local** — Runs entirely on-device using Ollama LLMs; no cloud API keys required
 
@@ -64,7 +65,6 @@ iRacing Agent acts as a virtual race engineer and coaching team monitoring your 
 | iRacing SDK | `pyirsdk` |
 | Lap telemetry | Garage61 REST API |
 | Text-to-speech | Kokoro TTS (`hexgrad/Kokoro-82M`) |
-| Telemetry storage | PostgreSQL via SQLAlchemy (optional) |
 | Semantic search | `sentence-transformers` (`all-MiniLM-L6-v2`) |
 
 ## Prerequisites
@@ -73,7 +73,6 @@ iRacing Agent acts as a virtual race engineer and coaching team monitoring your 
 - [Ollama](https://ollama.ai) with `gemma4:e4b` pulled: `ollama pull gemma4:e4b`
 - iRacing running on the same machine (not required in debug mode)
 - (Optional) [Garage61](https://garage61.net) account + personal access token for lap analysis
-- (Optional) PostgreSQL instance for telemetry logging
 
 ## Installation
 
@@ -197,7 +196,6 @@ iracing-agent/
 │   ├── agent.py                      # LangGraph agent (Race Engineer + Assistant Coach)
 │   ├── models.py                     # IRSDKVars dataclass (300+ telemetry fields)
 │   ├── tools.py                      # iRacing telemetry lookup + semantic search
-│   ├── telemetry.py                  # Background telemetry collection to PostgreSQL
 │   ├── vision.py                     # Vision model wrapper for chart analysis
 │   ├── priority_queue.py             # Thread-safe priority queue
 │   ├── audio/
@@ -212,7 +210,6 @@ iracing-agent/
 │   │   ├── garage_client.py          # Garage61 async REST client
 │   │   ├── models.py                 # Lap Pydantic model
 │   │   └── plot.py                   # Telemetry visualisation (speed, braking, etc.)
-│   ├── db/                           # PostgreSQL telemetry storage (optional)
 │   ├── mcp_servers/
 │   │   ├── iracing_mcp.py            # Live telemetry MCP server
 │   │   ├── garage_mcp.py             # Lap analysis MCP server
