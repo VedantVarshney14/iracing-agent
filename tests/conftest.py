@@ -1,15 +1,26 @@
-from pathlib import Path
-
-import irsdk
 import pytest
 
+from iagent.testing.synthetic import LapKind, SyntheticSource
 
-@pytest.fixture(scope="session")
-def ir():
-    ir = irsdk.IRSDK()
-    data_path = Path(__file__).parent / "data" / "iracing-telemetry.bin"
-    assert data_path.is_file(), f"Please add a testing telemetry file at the path - {data_path}"
-    ir.startup(
-        test_file=data_path
+
+@pytest.fixture
+def clean_source() -> SyntheticSource:
+    return SyntheticSource(n_laps=4, seed=1)
+
+
+@pytest.fixture
+def messy_source() -> SyntheticSource:
+    """A partial first lap, then every kind of flagged lap, then a clean lap."""
+    return SyntheticSource(
+        n_laps=6,
+        kinds=[
+            LapKind.CLEAN,  # partial: session starts mid-lap
+            LapKind.OFF_TRACK,
+            LapKind.PIT_IN,
+            LapKind.OUT_LAP,
+            LapKind.RESET,
+            LapKind.CLEAN,
+        ],
+        start_m=1200.0,
+        seed=2,
     )
-    return ir
