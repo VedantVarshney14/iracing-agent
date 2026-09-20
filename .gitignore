@@ -183,3 +183,9 @@ misc-data/
 
 *.http
 *.bin
+# iRacing telemetry recordings (large; kept local)
+*.ibt
+data/telemetry/
+
+# macOS
+.DS_Store/
