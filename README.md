@@ -10,8 +10,7 @@ later on the same foundations.
 
 The design and rationale live in [.claude/architecture.md](.claude/architecture.md). In short:
 
-- **One coach** with a sandboxed workspace (recorded laps, notes, `run_python`), not a fixed set of
-  narrow tools.
+- **One coach** with a sandboxed workspace (recorded laps, notes, `run_python`).
 - **Agent-defined events:** the agent writes rules, backtests them on recorded laps, and a
   deterministic runtime fires them. No LLM in the real-time loop.
 - **Split deployment:** a light edge runtime on the sim PC (telemetry, rules, voice) and the
