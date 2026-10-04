@@ -6,6 +6,7 @@ pick one thing to work on, and (later) cue it by voice at the right place on tra
 
 > **Status: rewrite in progress (branch `rewrite/v2`).** Telemetry, laps, the analysis CLI and
 > the first coaching skills work on recorded sessions. Live telemetry, voice and the UI are next.
+> The v1 two-agent LangGraph prototype has been removed; it lives on in the history of `main`.
 
 The design lives in [.claude/architecture.md](.claude/architecture.md). In short:
 
@@ -41,13 +42,22 @@ uv tool install --editable .          # puts `iagent` on your PATH (or use `uv r
 # Ingest recordings (iRacing records .ibt with Alt+L, into Documents/iRacing/telemetry)
 iagent ingest path/to/*.ibt
 iagent tracks                          # track/car keys, lap counts, best times
+iagent workspace                       # where laps and notes are stored
 iagent laps list --track spa-2024-up --representative
 iagent laps compare 20250723-202727-L002      # vs the fastest other valid lap
 iagent laps trace 20250723-202727-L005 --from 250 --to 450 --channels Speed,Brake,Gear
 ```
 
-Laps live in `./workspace` unless you pass `--workspace` or set `IAGENT_WORKSPACE`. Every
-command has `--help`; agent-facing ones take `--json`.
+Every command has `--help`; agent-facing ones take `--json` (`trace` prints CSV).
+
+The workspace is `./workspace` unless you pass `--workspace` or set `IAGENT_WORKSPACE`:
+
+```text
+workspace/
+  index.sqlite                          lap index
+  laps/<track>/<car>/<lap_id>.parquet   raw 60 Hz samples (+ .grid.parquet on a 1 m grid)
+  notes/<track>.md                      the coach's notes: focus, evidence, progress
+```
 
 No recordings? `iagent ingest synthetic --laps 7 --messy` generates laps with known ground truth:
 
@@ -87,6 +97,13 @@ sec   from     to   delta  min kph    ref  brake@    ref
 - Each lap is stored raw (60 Hz) and on a 1 m distance grid, so laps compare point for point.
 
 ## Using the coach
+
+Skills in [coach/skills/](coach/skills/):
+
+| Skill | What it does |
+| --- | --- |
+| `telemetry` | How to find, inspect and compare laps with the CLI, and how to read the numbers |
+| `lap-review` | Reviews a session, finds the most *repeatable* time loss, gives one focus and writes it to the notes |
 
 ### Claude Code
 
@@ -140,8 +157,10 @@ times against iRacing's `LapLastLapTime`; those tests skip when the files are ab
 
 ## Requirements
 
-Python 3.12+ and [uv](https://docs.astral.sh/uv/). For the coach: Claude Code (subscription) or
-another skills-capable harness. iRacing itself is only needed for live telemetry (phase 4).
+Python 3.12+ and [uv](https://docs.astral.sh/uv/). For the coach: Claude Code (with a Claude
+subscription, or [Ollama](https://ollama.com) v0.14+ for local models) or another skills-capable
+harness. iRacing itself is only needed for live telemetry (phase 4); everything else runs on
+recorded `.ibt` files.
 
 ## License
 
