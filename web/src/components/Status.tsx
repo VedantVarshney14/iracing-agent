@@ -11,10 +11,13 @@ export function TelemetryIndicator({ system }: { system: SystemInfo | null }) {
   let detail: string;
   if (t.watching && t.error) {
     [state, text, detail] = ["warn", "iRacing telemetry · problem", t.error];
-  } else if (t.watching) {
+  } else if (t.watching && t.found) {
     const last = t.last && t.last.laps ? ` · last: ${t.last.track ?? t.last.file} (${t.last.laps} laps)` : "";
     [state, text, detail] = ["ok", `iRacing telemetry · watching${last}`,
       `Watching ${t.folder}. New recordings appear here when the session ends. ${t.files_ingested} recordings ingested.`];
+  } else if (t.watching) {
+    [state, text, detail] = ["off", "iRacing telemetry · folder not found",
+      `Waiting for ${t.folder} to be created. The folder will be watched for new recordings.`];
   } else if (t.found) {
     [state, text, detail] = ["off", "iRacing telemetry · not watching", `${t.folder} exists but isn't watched (started with --no-watch).`];
   } else {

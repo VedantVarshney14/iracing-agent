@@ -35,28 +35,30 @@ export function TopBar({ tracks, group, laps, lapId, refId, review, garage61, im
           </svg>
           <span>iRacing Coach</span>
         </div>
-        <label className="field">
-          <span className="sr-only">Track and car</span>
-          <select
-            value={group ? `${group.track}|${group.car}` : ""}
-            onChange={(e) => {
-              const [track, car] = e.target.value.split("|");
-              onGroup(track, car);
-            }}
-          >
-            {tracks.map((t) => (
-              <option key={`${t.track}|${t.car}`} value={`${t.track}|${t.car}`}>
-                {t.track_name} · {t.car_name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {tracks.length > 0 && (
+          <label className="field">
+            <span className="sr-only">Track and car</span>
+            <select
+              value={group ? `${group.track}|${group.car}` : ""}
+              onChange={(e) => {
+                const [track, car] = e.target.value.split("|");
+                onGroup(track, car);
+              }}
+            >
+              {tracks.map((t) => (
+                <option key={`${t.track}|${t.car}`} value={`${t.track}|${t.car}`}>
+                  {t.track_name} · {t.car_name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <span className="topbar-end">
           <TelemetryIndicator system={system} />
         </span>
       </header>
 
-      <div className="lapbar">
+      {tracks.length > 0 && <div className="lapbar">
         <label className="field">
           <span className="legend-key"><span className="swatch you" />Lap</span>
           <select value={lapId ?? ""} onChange={(e) => onLap(e.target.value)}>
@@ -110,7 +112,7 @@ export function TopBar({ tracks, group, laps, lapId, refId, review, garage61, im
           </div>
         )}
         {review && <GhostButton key={review.ref.lap_id} ghost={review.ref} system={system} />}
-      </div>
+      </div>}
     </>
   );
 }

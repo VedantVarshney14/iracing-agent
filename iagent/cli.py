@@ -203,7 +203,6 @@ def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool, telemet
     from iagent.laps.watch import TelemetryWatcher, default_telemetry_dir
     from iagent.ui.server import STATIC_DIR, create_app
 
-    ctx.store()  # fail early, with the usual message, when there are no laps yet
     if not (STATIC_DIR / "index.html").exists():
         click.echo("The UI isn't built yet: run `npm --prefix web install && npm --prefix web run build`.", err=True)
     url = f"http://{host}:{port}/"
@@ -212,7 +211,7 @@ def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool, telemet
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
     watcher = None
     folder = telemetry_dir or default_telemetry_dir()
-    if not no_watch and folder.is_dir():
+    if not no_watch:
         watcher = TelemetryWatcher(ctx.workspace, folder)
         watcher.start()
         click.echo(f"Watching {folder} for new recordings.")

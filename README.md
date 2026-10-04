@@ -194,6 +194,12 @@ iagent ui                                                 # http://127.0.0.1:876
 While working on the UI, run `iagent ui --no-browser` and `npm --prefix web run dev` (hot
 reload on http://localhost:5173, API calls forwarded to the server).
 
+`iagent ui` also starts when the workspace has no laps yet. It opens a blank screen and watches
+the iRacing telemetry folder for completed recordings; once laps are ingested, they appear in the
+UI. The default folder is `Documents/iRacing/telemetry` (or `IAGENT_TELEMETRY_DIR`). To use
+recordings elsewhere, ingest them with `iagent ingest <file.ibt>` or point `IAGENT_WORKSPACE` /
+`--workspace` at the workspace that already contains them.
+
 ## Using the coach
 
 Skills in [coach/skills/](coach/skills/):
