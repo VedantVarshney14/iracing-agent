@@ -1,93 +1,134 @@
-# iRacing Agent — a local AI coach for learning tracks
+# iRacing Agent: an AI coach for learning tracks
 
-A local, model-agnostic coach for iRacing. The first goal is helping a driver **learn a new
-track**: derive the corners from recorded laps, compare each one against a reference, pick one
-thing to work on, and cue it by voice at the right place on track. Race craft and strategy come
-later on the same foundations.
+An iRacing coach built as **skills for an existing agent harness** plus a **CLI that does the
+telemetry work**. The first goal is helping a driver learn a new track: find where time is lost,
+pick one thing to work on, and (later) cue it by voice at the right place on track.
 
-> **Status: rewrite in progress (branch `rewrite/v2`).** Phase 1 of 6 is done. The earlier
-> two-agent LangGraph prototype has been removed; see the git history on `main` if you need it.
+> **Status: rewrite in progress (branch `rewrite/v2`).** Telemetry, laps, the analysis CLI and
+> the first coaching skills work on recorded sessions. Live telemetry, voice and the UI are next.
 
-The design and rationale live in [.claude/architecture.md](.claude/architecture.md). In short:
+The design lives in [.claude/architecture.md](.claude/architecture.md). In short:
 
-- **One coach** with a sandboxed workspace (recorded laps, notes, `run_python`).
-- **Agent-defined events:** the agent writes rules, backtests them on recorded laps, and a
-  deterministic runtime fires them. No LLM in the real-time loop.
-- **Split deployment:** a light edge runtime on the sim PC (telemetry, rules, voice) and the
-  "brain" (agent + model) on another machine. Both can run on one machine.
-- **Swappable model** behind an OpenAI-compatible endpoint, with tools exposed over MCP. No
-  per-token API costs required.
-- **Testable without the sim:** recorded `.ibt` replay, a synthetic lap generator with exact
-  ground truth, and (later) a model eval suite.
+- **No custom agent loop.** The coach runs inside an agent harness. Claude Code is the primary
+  target (it works with a Claude subscription *or* local open models via Ollama); the skills use
+  the open [Agent Skills](https://agentskills.io) format, so other harnesses can use them too.
+- **Behaviour is markdown, capability is a CLI.** Skills in [coach/skills/](coach/skills/)
+  describe how to coach; the `iagent` CLI computes the numbers (JSON output), so the model
+  interprets rather than calculates.
+- **No per-token API billing.** Claude through a subscription, or open-weight models run locally.
+- **Agent-defined events (planned):** the agent creates rules and schedules through the CLI; a
+  deterministic service on the sim PC fires them and wakes the agent. No LLM in the real-time loop.
+- **Testable without the sim:** `.ibt` replay, a synthetic lap generator with exact ground truth,
+  and regression tests against real recordings.
 
 ## Roadmap
 
 | Phase | Scope | State |
 | --- | --- | --- |
-| 1 | Telemetry sources (`.ibt` replay, synthetic), lap segmentation, lap store | **Done** |
-| 2 | Corner-map derivation, per-corner metrics, reference laps, `run_python` sandbox | Next |
-| 3 | Agent loop, model adapter and capability profiles, MCP tool surface, eval suite | |
-| 4 | Agent-defined rules: schema, edge evaluator, backtesting | |
-| 5 | PC ↔ brain split, speech arbiter, TTS with cue cache, push-to-talk STT | |
-| 6 | The track-learning loop: focus, debrief, memory across sessions | |
+| 1 | Telemetry sources (`.ibt` replay, synthetic), lap segmentation, lap store, pace filter | **Done** |
+| 2 | Agent-facing CLI, `coach` plugin (`telemetry`, `lap-review` skills), headless harness test | **Done** |
+| 3 | Corner map, per-corner metrics and comparison, corner names and track knowledge | Next |
+| 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | |
+| 5 | Web UI: laps, corner comparisons, traces, rules, agent activity | |
+| 6 | Push-to-talk voice, debrief and focus skills, memory across sessions, local-model evals | |
 
-## What works today
-
-Replay a telemetry source through lap segmentation into a lap store:
+## Quick start
 
 ```bash
 uv sync
+uv tool install --editable .          # puts `iagent` on your PATH (or use `uv run iagent`)
 
-# Generated laps with known ground truth (--messy adds off-track, pit and reset laps)
-uv run iagent replay synthetic --laps 7 --messy --store workspace
-
-# A recorded iRacing session
-uv run iagent replay path/to/session.ibt --store workspace
-
-# List what was stored; --representative keeps only laps within 5% of your best valid lap
-uv run iagent laps --store workspace --representative
+# Ingest recordings (iRacing records .ibt with Alt+L, into Documents/iRacing/telemetry)
+iagent ingest path/to/*.ibt
+iagent tracks                          # track/car keys, lap counts, best times
+iagent laps list --track spa-2024-up --representative
+iagent laps compare 20250723-202727-L002      # vs the fastest other valid lap
+iagent laps trace 20250723-202727-L005 --from 250 --to 450 --channels Speed,Brake,Gear
 ```
+
+Laps live in `./workspace` unless you pass `--workspace` or set `IAGENT_WORKSPACE`. Every
+command has `--help`; agent-facing ones take `--json`.
+
+No recordings? `iagent ingest synthetic --laps 7 --messy` generates laps with known ground truth:
 
 ```text
 lap                   time  vs best  off(s)  valid  reasons
 synthetic-0-L000         -              0.0  False  incomplete
-synthetic-0-L001    58.317    +0.3%     1.0  True   
+synthetic-0-L001    58.317    +0.3%     1.0  True
 synthetic-0-L002    58.223              0.0  False  pit_road
 synthetic-0-L003    58.393              0.0  False  pit_road
 synthetic-0-L004    84.750              0.0  False  discontinuity
-synthetic-0-L005    58.135    +0.0%     0.0  True   
+synthetic-0-L005    58.135    +0.0%     0.0  True
 synthetic-0-L006    58.353    +0.4%     1.0  True
 ```
 
-- Lap times are interpolated across the start/finish crossing, so they are sub-frame accurate.
-- **Valid** is structural: a lap must be complete (start and end on a start/finish crossing), stay
-  off pit road, and have no position jump (reset/tow). The first lap of a session is always
-  `incomplete` because its start/finish crossing was never observed.
-- **Representative** is about pace: valid laps within a tolerance (default 5%) of the best valid
-  lap. Anything close to your best lap is a real lap; spins, recoveries and cool-downs fall out.
-  Off-track time is recorded (`off(s)`) but doesn't disqualify a lap, since a brief kerb clip
-  costs nothing.
-- Invalid and slow laps are stored, not discarded, so the coach can decide what to use.
-- Each lap is stored raw (60 Hz) and resampled onto a 1 m distance grid, so laps compare point
-  for point.
+```text
+$ iagent laps compare synthetic-0-L006 --sections 6
+synthetic-0-L006 vs synthetic-0-L005: +0.217s  (biggest losses in sections [4, 5, 6])
+sec   from     to   delta  min kph    ref  brake@    ref
+  1      0    500  -0.011    202.8  205.1     481    485
+  2    500   1000  -0.081    102.4   99.3       -      -
+  3   1000   1500  +0.019    116.0  118.7    1091   1080
+  4   1500   2000  +0.152     86.0   90.9    1771   1772
+  ...
+```
 
-iRacing can record `.ibt` files itself (default hotkey Alt+L, saved under
-`Documents/iRacing/telemetry`).
+### How laps are judged
+
+- Lap times are interpolated across the start/finish crossing (sub-frame accurate; they match
+  iRacing's own lap times on real recordings).
+- **Valid** is structural: complete, no pit road, no position jump (reset/tow). The first lap of a
+  recording is usually `incomplete`.
+- **Representative** is about pace: valid laps within 5% of the best valid lap *for the same
+  track layout and car*. Spins, recoveries and cool-downs fall out; a kerb clip that cost
+  nothing stays in. Off-track time is shown (`off(s)`) but never disqualifies a lap.
+- Laps are grouped by iRacing's internal track and car names (`spa-2024-up`, `formulair04`), so
+  different layouts or cars are never compared.
+- Each lap is stored raw (60 Hz) and on a 1 m distance grid, so laps compare point for point.
+
+## Using the coach
+
+### Claude Code
+
+```bash
+claude plugin marketplace add /path/to/iracing-agent    # or <github-owner>/<repo>
+claude plugin install coach@iracing-agent
+```
+
+Or, while developing, load it for one session: `claude --plugin-dir coach`. Then ask *"How did my
+last Spa session go?"*. The `lap-review` skill finds the laps, compares them, traces the problem
+area and writes a note to `workspace/notes/<track>.md`.
+
+Headless (what the live service will do):
+
+```bash
+claude -p "How did my last session go?" --plugin-dir coach \
+  --allowedTools "Bash(iagent *)" Read Write Edit --permission-mode acceptEdits
+```
+
+**Local models:** point Claude Code at Ollama (v0.14+) with
+`ANTHROPIC_BASE_URL=http://<host>:11434 ANTHROPIC_AUTH_TOKEN=ollama claude --model <model>`.
+Expect small models (what fits on a 16 GB Mac) to be much less reliable at multi-step tool use.
+
+### Other harnesses
+
+The skills are plain `SKILL.md` folders that only call the `iagent` CLI. Point any harness that
+reads Agent Skills (Codex, OpenCode, Goose, ...) at `coach/skills/`.
 
 ## Layout
 
 ```text
+.claude-plugin/marketplace.json   makes this repo a Claude Code plugin marketplace
+coach/                            the coach plugin: skills/<name>/SKILL.md
 iagent/
-  common/     frames, channel definitions, session info
-  edge/       telemetry sources (the part that runs on the sim PC): .ibt replay
-  brain/      lap segmentation, distance resampling, lap store, recorder
-  testing/    synthetic lap generator, .ibt writer
-  audio/      Kokoro TTS wrapper (to be reworked in phase 5)
-  garage/     Garage61 client (to become a reference-lap provider)
-  cli.py      `iagent` command
-tests/        pytest suite (runs without the sim or a GPU)
-.claude/
-  architecture.md   target architecture, protocol and phasing
+  telemetry/   frames, session info, sources (.ibt replay)
+  laps/        segmentation, distance resampling, lap store, pace filter, recorder
+  analysis/    lap summaries, section comparison, traces
+  testing/     synthetic lap generator, .ibt writer
+  audio/       Kokoro TTS wrapper (to be reworked)
+  garage/      Garage61 client (possible reference-lap source)
+  cli.py       the `iagent` command
+tests/        pytest suite (no sim, GPU, model or network needed)
 ```
 
 ## Tests
@@ -96,16 +137,14 @@ tests/        pytest suite (runs without the sim or a GPU)
 uv run pytest
 ```
 
-The suite needs no sim, no model and no network. `tests/test_tts.py` is a leftover manual
-debugging test that is always skipped; it goes when the TTS wrapper is reworked. Regression tests in `tests/real/` replay your own recordings from `data/telemetry/` (git-ignored)
-and check our lap times against iRacing's own `LapLastLapTime`; they skip when the files are
-absent.
+`tests/real/` replays your own recordings from `data/telemetry/` (git-ignored) and checks our lap
+times against iRacing's `LapLastLapTime`; those tests skip when the files are absent.
+`tests/test_tts.py` is a leftover manual test that is always skipped.
 
 ## Requirements
 
-Python 3.12+ and [uv](https://docs.astral.sh/uv/). iRacing itself is only needed for the live
-telemetry source, which arrives in phase 5. A [Garage61](https://garage61.net) token
-(`GARAGE61_PAT`) is optional and only used for reference laps.
+Python 3.12+ and [uv](https://docs.astral.sh/uv/). For the coach: Claude Code (subscription) or
+another skills-capable harness. iRacing itself is only needed for live telemetry (phase 4).
 
 ## License
 

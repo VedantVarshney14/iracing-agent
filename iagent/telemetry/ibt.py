@@ -1,13 +1,14 @@
 """Replay a recorded iRacing `.ibt` telemetry file as a `TelemetrySource`."""
 
+import re
 from pathlib import Path
 from typing import Iterator, Sequence
 
 import irsdk
 import numpy as np
 
-from iagent.common.frames import CORE_CHANNELS, Frame
-from iagent.common.session import SessionInfo, parse_session_yaml
+from iagent.telemetry.frames import CORE_CHANNELS, Frame
+from iagent.telemetry.session import SessionInfo, parse_session_yaml, slug
 
 _REQUIRED = ("SessionTime", "LapDistPct")
 
@@ -21,6 +22,20 @@ def _read_session_text(ibt: "irsdk.IBT") -> str:
     return raw.rstrip(b"\x00").decode("latin-1")
 
 
+# iRacing names recordings "<car>_<track> <config> YYYY-MM-DD HH-MM-SS.ibt".
+_STAMP = re.compile(r"(\d{4})-(\d{2})-(\d{2}) (\d{2})-(\d{2})-(\d{2})$")
+
+
+def session_id_from_filename(path: Path) -> str:
+    """A short, shell-safe session id: "20250723-202727" from iRacing's file name, otherwise a
+    slug of the file stem. Lap ids build on it (e.g. "20250723-202727-L002")."""
+    m = _STAMP.search(path.stem)
+    if m:
+        y, mo, d, h, mi, sec = m.groups()
+        return f"{y}{mo}{d}-{h}{mi}{sec}"
+    return slug(path.stem)
+
+
 class IbtSource:
     """Yields the file's samples in order as fast as they can be read.
 
@@ -28,7 +43,7 @@ class IbtSource:
         path: `.ibt` file.
         channels: channels to stream. Those missing from the file are skipped; `SessionTime` and
             `LapDistPct` are mandatory.
-        session_id: label used in lap ids (defaults to the file stem).
+        session_id: label used in lap ids (defaults to one derived from the file name).
     """
 
     def __init__(
@@ -41,7 +56,7 @@ class IbtSource:
         if not self._path.is_file():
             raise FileNotFoundError(self._path)
         self._channels = tuple(channels)
-        self._session_id = session_id or self._path.stem
+        self._session_id = session_id or session_id_from_filename(self._path)
         self._session: SessionInfo | None = None
 
     @property

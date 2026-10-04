@@ -2,9 +2,9 @@
 
 import logging
 
-from iagent.brain.laps import LapSegmenter
-from iagent.brain.store import LapRecord, LapStore
-from iagent.edge.source import TelemetrySource
+from iagent.laps.segment import LapSegmenter
+from iagent.laps.store import LapRecord, LapStore
+from iagent.telemetry.source import TelemetrySource
 
 logger = logging.getLogger(__name__)
 

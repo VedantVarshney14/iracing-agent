@@ -1,8 +1,8 @@
 import pytest
 
-from iagent.brain.recorder import record
-from iagent.brain.store import ParquetLapStore
-from iagent.edge.ibt import IbtSource
+from iagent.laps.recorder import record
+from iagent.laps.store import ParquetLapStore
+from iagent.telemetry.ibt import IbtSource
 from iagent.testing.ibt_writer import write_ibt
 
 
@@ -16,6 +16,7 @@ def test_session_info_is_read_from_the_file(ibt_path, messy_source):
     assert session.track_name == messy_source.session.track_name
     assert session.track_length_m == pytest.approx(messy_source.session.track_length_m)
     assert session.car_name == "Synthetic Car"
+    assert (session.track_key, session.car_key) == ("synthetic", "synthcar")
     assert session.session_id == "spa-test"
 
 
@@ -54,3 +55,13 @@ def test_file_without_required_channels_is_rejected(tmp_path, clean_source):
 def test_missing_file():
     with pytest.raises(FileNotFoundError):
         IbtSource("/nope/missing.ibt")
+
+
+def test_session_ids_are_short_and_shell_safe():
+    from pathlib import Path
+
+    from iagent.telemetry.ibt import session_id_from_filename
+
+    name = Path("formulair04_spa 2024 up 2025-07-23 20-27-27.ibt")
+    assert session_id_from_filename(name) == "20250723-202727"
+    assert session_id_from_filename(Path("My Lap (1).ibt")) == "my-lap-1"

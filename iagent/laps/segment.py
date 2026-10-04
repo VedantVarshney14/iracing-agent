@@ -4,12 +4,12 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from iagent.common.frames import Frame, SURFACE_OFF_TRACK
-from iagent.common.session import SessionInfo
+from iagent.telemetry.frames import Frame, SURFACE_OFF_TRACK
+from iagent.telemetry.session import SessionInfo
 
 # Structural reasons a lap can't be used at all. A lap is `valid` only if it has none.
 # Off-track time is deliberately *not* one: a brief clip of the kerb is normal, and whether a lap
-# is representative is a question of pace (see `iagent.brain.pace`), not of track-surface flags.
+# is representative is a question of pace (see `iagent.laps.pace`), not of track-surface flags.
 REASON_INCOMPLETE = "incomplete"  # didn't both start and end on a start/finish crossing
 REASON_PIT_ROAD = "pit_road"
 REASON_DISCONTINUITY = "discontinuity"  # position jumped (reset / tow / rewind)

@@ -1,418 +1,292 @@
-# Architecture (v2 draft)
+# Architecture (v2)
 
-Status: **draft for discussion — nothing here is implemented yet.** It supersedes the
-two-agent LangGraph design described in the README.
+Status: phase 1 (telemetry sources, lap segmentation, lap store) and the CLI/skills slice are
+implemented; the rest is design. Supersedes the two-agent LangGraph design.
 
 ## 1. Goals
 
 **Primary problem: help the driver learn a new track.** First test bed: Spa-Francorchamps.
-Race-craft tips, strategy and fuel come later and should reuse the same foundations.
+Race-craft, strategy and fuel come later on the same foundations.
 
-Design goals:
+1. **Don't build an agent harness.** Plug into an existing one. Claude Code is the primary
+   target; the repo stays usable from any harness that reads Agent Skills and can run a shell.
+2. **Behaviour lives in skills** (markdown), **capability lives in CLIs** (`iagent ...`, JSON
+   output). Changing how the coach coaches means editing a `SKILL.md`, not code.
+3. **No per-token API billing.** Models are either Claude through a Claude subscription (Claude
+   Code only) or open-weight models run locally.
+4. **The agent defines its own events**: it creates rules and schedules through the CLI; a
+   deterministic service evaluates them and wakes the agent.
+5. **Fully testable without the sim** (section 10).
 
-1. **One coach**, one conversation, with a flexible workspace instead of a small fixed tool set.
-2. **The agent defines its own events** (rules). The harness provides the framework to
-   evaluate them reliably; it does not hardcode what matters.
-3. **The model is swappable.** No component outside the model adapter knows which model runs.
-4. **Fully testable without the sim** (section 11).
-5. **Local by default.** No per-token API cost. A hosted agent may be plugged in for debriefs,
-   but nothing depends on one.
-
-Non-goals (for now): replacing CrewChief's spotter / fuel / gap calls, VR-specific UI,
-multi-driver or team-radio scenarios, lock-up detection (may return later as an
-agent-defined rule).
+Non-goals (for now): replacing CrewChief's spotter/fuel calls, VR UI, multi-driver scenarios.
 
 ## 2. What "learning a track" means
 
-The loop the system supports:
+1. **Map**: derive the corner map from recorded laps; attach names from researched knowledge.
+2. **Compare**: per corner, driver vs reference: brake point, minimum speed, throttle pickup,
+   and *consistency* across recent laps.
+3. **Focus**: one thing at a time ("this session: Bus Stop brake point, 15 m later").
+4. **Cue**: deliver it at the right place on track with a short spoken cue.
+5. **Debrief**: between runs, analyse and update the plan.
+6. **Remember**: persist progress and the driver's notes across sessions.
 
-1. **Map** — derive the corner map from recorded laps (speed minima, steering, distance).
-   No hand-built per-track JSON.
-2. **Compare** — per corner, compare the driver to a reference: brake point, minimum speed,
-   throttle pickup point, line/steering, and *consistency* across recent laps.
-3. **Focus** — pick one thing at a time ("this session: T5 brake point, 20 m later").
-4. **Cue** — deliver the focus at the right place on track with a short spoken cue.
-5. **Debrief** — between laps / after the session, analyse and update the plan.
-6. **Remember** — persist progress and the driver's own notes across sessions.
-
-Success measures: lap-time delta to reference; per-corner brake-point spread (std dev in
-metres) shrinking over a session; time until N corners are within tolerance.
+Success measures: lap-time delta to reference; per-corner brake-point spread (m) shrinking over a
+session; time until N corners are within tolerance.
 
 ## 3. System overview
 
+Everything runs on the sim PC except, optionally, the model.
+
 ```text
-        PC (Windows, runs the sim)                     Mac (brain)
-┌───────────────────────────────────┐        ┌──────────────────────────────────┐
-│ Edge runtime                      │        │ Coach service                    │
-│  ├─ Telemetry source (irsdk)      │ frames │  ├─ Recorder → lap store         │
-│  ├─ Rule engine (cues, events)    │───────►│  ├─ Workspace (laps, notes)      │
-│  ├─ Push-to-talk + STT (CPU)      │  text  │  ├─ Sandbox (run_python)         │
-│  ├─ Speech arbiter + TTS (CPU)    │───────►│  ├─ Agent loop  ──► Model adapter│──► LLM endpoint
-│  └─ Ring buffer / spool           │◄───────│  ├─ Rule authoring + backtest    │
-└───────────────────────────────────┘ rules, │  └─ Tool surface (MCP)           │◄── external agent
-                                      say()  └──────────────────────────────────┘    (optional)
+ Sim PC (Windows)                                                       model
+┌──────────────────────────────────────────────────────────────┐
+│ iagent service   (always on, deterministic, no LLM)          │
+│   telemetry (irsdk) → lap segmenter → lap store              │
+│   rule engine + scheduler ── events ──┐                      │
+│   push-to-talk STT ── utterances ─────┤                      │
+│   speech arbiter + TTS ◄── say ───────┼──────┐               │
+│   web UI                              ▼      │               │
+│                         ┌─────────────────────────────┐      │
+│                         │ agent harness (Claude Code) │──────┼──► Claude (subscription)
+│                         │   skills/*.md               │      │    or Ollama (Mac / local)
+│                         │   runs `iagent ...` CLIs    │      │
+│                         │   reads/edits workspace/    │      │
+│                         └─────────────────────────────┘      │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-Why split this way:
+- The **service** owns everything time-critical: telemetry, laps, rules, audio. It never waits on
+  a model. Planned cues fire even if the model is slow or unreachable.
+- The **harness** is woken per event (lap complete, rule fired, utterance, schedule), never per
+  frame. It acts only through the CLI and the workspace files.
+- The only network hop is harness → model, over the harness's own protocol. The Mac's role, if
+  any, is to run `ollama serve`.
+- For development, the same pieces run on the Mac against recorded `.ibt` files.
 
-- iRacing shared memory is Windows-only, so something must run on the PC.
-- The 3070 is needed by the sim; LLM inference lives on the Mac (or any machine we point it at).
-- Rules run **next to the data**, so a cue fires with no network hop and no LLM in the path.
-  If the Mac sleeps or Wi-Fi drops, planned cues keep firing.
-- The edge runtime stays dumb and cheap; all intelligence is on the brain side.
+## 4. Harness
 
-The two halves are also runnable on one machine (loopback), which is what tests and a
-single-PC setup use.
+**Primary: Claude Code.** It is the only harness a Claude subscription may be used in (Anthropic
+restricted subscription OAuth to Claude Code and claude.ai in Feb 2026, enforced Apr 2026), and it
+can also drive open models through Ollama's Anthropic-compatible endpoint
+(`ANTHROPIC_BASE_URL=http://<host>:11434`). It already provides skills with progressive loading,
+shell access, file editing, hooks, headless runs (`claude -p`) and session resume.
 
-## 4. Data model
+**Harness-agnostic by construction.** Nothing in the repo depends on Claude Code beyond packaging:
+
+- Skills use only the open Agent Skills format (`name`, `description` frontmatter + markdown).
+  Claude Code-specific frontmatter is avoided; if ever needed it is optional.
+- Skills call tools by running `iagent ...` in a shell, never by harness-specific tool names.
+- Memory is plain files in the workspace.
+- Waking the agent is one adapter in the service: "send this message to the coach session". The
+  Claude Code adapter runs `claude -p --resume <session> <message>`; other adapters (Codex,
+  OpenCode, Goose) are the same few lines with a different command.
+
+**Models.** Claude via subscription is the practical primary. Local open models are a supported
+fallback but must pass the eval suite (section 10) first: a coding-agent harness has a large
+prompt, and on this hardware (M1 16 GB; the 3070 belongs to the sim) only ~8–20B models fit, which
+are unreliable at multi-step tool use. Subscription usage limits are respected by waking the agent
+per lap/event, never per frame, and keeping in-lap cues deterministic.
+
+## 5. Repository as a skills repository
+
+```text
+.claude-plugin/marketplace.json   # makes the repo a Claude Code marketplace
+coach/                            # the plugin (harness-agnostic content)
+  .claude-plugin/plugin.json
+  skills/
+    telemetry/SKILL.md            # how to find, inspect and compare laps with the CLI
+    lap-review/SKILL.md           # review a session's laps and give one focus
+    (planned) pick-focus, write-cue, debrief, research-track, name-corners, set-trigger
+iagent/                           # Python package; installs the `iagent` CLI
+workspace/                        # per-user data (git-ignored); the agent's working dir
+```
+
+Install for Claude Code: `claude plugin marketplace add <repo>` then
+`claude plugin install coach@iracing-agent`, or `claude --plugin-dir coach` during development.
+Other harnesses: point their skills directory at `coach/skills/`.
+
+**CLI contract.** Every command an agent uses supports `--json` (or emits CSV for bulk traces),
+has a `--help` that is accurate enough to be the documentation, and finds the workspace from
+`--workspace` or `IAGENT_WORKSPACE`. Errors go to stderr with a non-zero exit code.
+
+| Command | Purpose | Status |
+| --- | --- | --- |
+| `iagent ingest <file.ibt>` | segment a recording into the lap store | done |
+| `iagent tracks` | tracks/cars in the store, lap counts, best times | done |
+| `iagent laps list` | laps with validity, pace, filters | done |
+| `iagent laps show <id>` | lap summary and distance splits | done |
+| `iagent laps compare <id> [ref]` | time gained/lost per section vs a reference | done (sections; corners later) |
+| `iagent laps trace <id>` | channel samples over a distance range (CSV) | done |
+| `iagent corners map/report` | corner map and per-corner metrics | phase 2 |
+| `iagent rules add/backtest/activate/list` | agent-defined triggers | phase 4 |
+| `iagent schedule add` | time/lap-based wake-ups | phase 4 |
+| `iagent say "<text>"` | speak through the arbiter | phase 4 |
+| `iagent live snapshot` | current channel values | phase 4 |
+| `iagent service start/status` | run the service | phase 4 |
+
+## 6. Data model
 
 ### Frames
 
-The unit of telemetry: a timestamped dict of channels. Sampling is 60 Hz on the PC; the stream
-sends a configurable subset (default ~30 channels: `SessionTime, LapDistPct, LapDist, Speed,
-Throttle, Brake, Clutch, SteeringWheelAngle, Gear, RPM, LatAccel, LongAccel, VertAccel, Lap,
-OnPitRoad, IsOnTrack, ...`). The agent can request additional channels per session.
-Time comes from `SessionTime`, never wall clock (this is what makes replay possible).
+A timestamped mapping of channels, sampled at 60 Hz. Time is `SessionTime`, never the wall clock,
+so replays are deterministic and can run faster than real time (a 30-minute session replays in
+under a second).
 
-### Lap store (Mac)
+### Laps and the lap store
 
-- One file per lap (Parquet by default), holding the raw time series plus a version resampled onto a
-  **fixed distance grid** (1 m steps from `LapDist`) so laps are directly comparable. Parquet is
-  chosen for exact dtypes and ~5–10× smaller files as laps accumulate across sessions, not because
-  the data is large (a Spa lap is ~8k rows). Access goes through a `LapStore` interface, so the
-  format is an implementation detail and CSV would be a drop-in alternative. Small derived
-  artifacts (corner map, notes, reference summaries) stay JSON/markdown.
-- Index (SQLite or a single Parquet): `lap_id, track, car, session, lap_time, valid, off_track_s,
-  sectors, conditions, source (live|ibt|garage61|import)`.
-- **Validity vs pace.** `valid` is structural only (complete, no pit road, no position jump).
-  Off-track time is recorded but never disqualifies a lap. Which laps are *representative* is
-  decided by pace: valid laps within a tolerance (default 5%) of the best valid lap. On real Okayama,
-  Spa and Watkins Glen recordings this cleanly separates normal laps from excursions and slow laps,
-  and it keeps the best lap even when it has a brief off-track. iRacing's `LapLastLapTime` (which
-  updates about a second after the line) is a possible later cross-check, not needed yet.
-- Derived artifacts (corner map, reference "theoretical best") are stored as files in the
-  workspace, not in a database, so the agent can read and rewrite them.
+- One Parquet file per lap holding the raw samples, plus a copy resampled onto a **1 m distance
+  grid** so laps compare point for point. Parquet is for exact dtypes and small files, not scale.
+  Access goes through the `LapStore` protocol; the format is an implementation detail.
+- SQLite index: lap id, session, track, car, sim lap number, lap time, completeness, validity,
+  reasons, off-track seconds, source.
+- **Identity.** Laps are grouped by `track_key` (iRacing's internal `TrackName`, e.g.
+  `spa-2024-up`, unique per layout and scan version) and `car_key` (the driver's `CarPath`, e.g.
+  `formulair04`). Display names are kept for people. Never compare laps across keys.
+- **Validity vs pace.** `valid` is structural only: complete, no pit road, no position jump.
+  Off-track time is recorded but never disqualifies a lap. *Representative* laps are valid laps
+  within a tolerance (default 5%) of the best valid lap for the same track and car. On real
+  Okayama, Spa and Watkins Glen recordings this separates normal laps from excursions and slow
+  laps, and keeps a best lap that had a brief off-track.
 
 ### Workspace
 
 ```text
 workspace/
-  laps/<track>/<car>/<lap_id>.parquet      # read-only to the sandbox
-  reference/<track>/<car>/...              # reference laps (any source)
-  tracks/<track>/corners.json              # derived geometry + aligned names, agent-editable
-  tracks/<track>/knowledge.md              # researched-once track knowledge (names, quirks)
-  notes/
-    driver.md                              # who the driver is, preferences, goals
-    <track>.md                             # per-track learnings, current focus
-    sessions/<date>.md                     # debrief summaries
-  rules/<track>/*.json                     # active + archived rules
-  scratch/                                 # sandbox-writable
+  laps/<track_key>/<car_key>/<lap_id>.parquet   # + .grid.parquet
+  index.sqlite
+  tracks/<track_key>/corners.json               # derived geometry + names (agent-editable)
+  tracks/<track_key>/knowledge.md               # researched names, quirks, sources
+  notes/driver.md                               # who the driver is, goals, preferences
+  notes/<track_key>.md                          # per-track learnings, current focus
+  notes/sessions/<date>.md                      # debrief summaries
+  rules/<track_key>/*.json                      # active + archived rules
+  scratch/                                      # agent's free space (analysis scripts, plots)
 ```
 
-Memory is plain markdown the agent reads at session start and edits at debrief. No special
-memory API.
+Memory is markdown the agent reads and edits with its harness's normal file tools.
 
-### Track knowledge (corner names and quirks)
+### Track knowledge
 
-Corner *geometry* and corner *knowledge* are separate layers:
+Two layers:
 
-1. **Geometry (derived):** where corners are, from speed minima, steering and distance, stored as
-   distance ranges in `corners.json`.
-2. **Knowledge (researched):** names and character — e.g. Spa's Eau Rouge/Raidillon compression,
-   Pouhon double-apex, Blanchimont flat-out — stored in `knowledge.md`.
+1. **Geometry (derived)**: corner positions from speed minima, steering and distance.
+2. **Knowledge (researched)**: names and character (Eau Rouge/Raidillon compression, Pouhon
+   double apex, Blanchimont flat), in `knowledge.md`, researched once and cached, sources noted.
+   Sources by trust: CrewChief's MIT-licensed `trackLandmarksData.json` (corner names with lap
+   distances; to be verified against our `LapDist`), web search, the model's own memory (flagged
+   unverified). The agent aligns names to derived corners by order and distance and records its
+   confidence; the driver's corrections persist.
 
-A small local model will half-remember famous circuits and invent details with confidence, so its
-own memory is one input, not the source of truth. `knowledge.md` is **researched once and cached**
-from these sources, in rough order of trust:
+## 7. Analysis
 
-- **CrewChief track landmarks** (`trackLandmarksData.json`: name, `distanceRoundLapStart`,
-  `distanceRoundLapEnd`, common overtaking spot; MIT-licensed, reportedly includes Spa). Used as
-  *data we import*, not a runtime integration. Coverage and accuracy unverified (spike, section 13).
-- **Web search** as a debrief-mode tool (any agent with search; results summarised into the file,
-  with sources noted).
-- The model's own knowledge, flagged as unverified.
+The deterministic layer that makes the agent cheap and reliable: the CLI computes the numbers,
+the model chooses what matters and how to say it. Small or large, the model never has to derive
+a brake point from raw samples to be useful.
 
-Alignment: the agent matches named corners to derived corners by order and approximate lap
-distance, writes the result into `corners.json`, and records its confidence. The driver can
-correct it, and corrections persist. iRacing's session info gives sector splits but no corner
-names, so names always come from the sources above.
+- **Now:** distance splits, section comparison against a reference lap, channel traces.
+- **Phase 2:** corner map; a **corner tracker** that computes per-corner metrics (brake point,
+  min speed, apex distance, throttle pickup, time in corner). The same code runs offline over
+  stored laps and live at each corner exit, so analysis, rules and backtests agree.
+- References: own best, theoretical best (best corner segments stitched), imported laps
+  (`.ibt`/CSV dropped into the workspace). Garage61 remains a possible source; whether its API
+  allows laps from outside the user's team is unverified.
 
-## 5. PC ↔ brain protocol
+## 8. Rules, schedules and events
 
-WebSocket, JSON messages (msgpack later if needed). Every message has `type`, `seq`, `t`
-(session time). Sequence numbers let the PC resend after a reconnect from its ring buffer.
-
-| Direction | Message | Purpose |
-| --- | --- | --- |
-| PC → brain | `hello` | edge version, sim/track/car, available channels |
-| PC → brain | `frames` | batch of frames (e.g. 10 per message) |
-| PC → brain | `lap_complete` | lap boundary, validity flag, lap time |
-| PC → brain | `rule_fired` | rule id, session time, lap distance, captured context |
-| PC → brain | `utterance` | STT text from push-to-talk |
-| brain → PC | `set_rules` | full rule set (replace) |
-| brain → PC | `say` | text, priority, optional `earliest`/`latest` window, cache key |
-| brain → PC | `set_channels` | change the streamed channel subset |
-
-`say` carries a **priority** and an **expiry**: a corner-entry cue that arrives 4 s late is
-worse than silence, so the arbiter drops expired speech.
-
-## 6. Rules (agent-defined events)
-
-A rule is data, not code. The agent authors rules; the edge runtime evaluates them each frame.
+Created by the agent via the CLI; evaluated by the service. A rule is data, not code.
 
 ```json
 {
-  "id": "spa-t5-brake-marker",
-  "track": "spa",
-  "when": {
-    "distance": {"pct": 0.412, "lead_seconds": 2.0},   // fire early enough to speak
-    "if": "Speed > 180 and Brake < 0.05"                // optional predicate
-  },
-  "action": {"say": "Brake board. Twenty metres later than last lap.", "priority": "cue"},
-  "limits": {"cooldown_laps": 1, "max_per_lap": 1, "hysteresis": 0.02},
-  "report": ["Speed", "Brake", "Throttle"]
+  "id": "spa-bus-stop-brake-feedback",
+  "track": "spa-2024-up",
+  "when": {"corner_exit": "Bus Stop"},
+  "if": "brake_m < target_brake_m - 10",
+  "action": {"say": "Bus Stop: braked {early_m:.0f} metres early.", "priority": "feedback"},
+  "limits": {"cooldown_laps": 1}
 }
 ```
 
-Semantics:
+- **Triggers**: a track position with a lead time (`target − speed × lead_seconds`, so a cue ends
+  before the corner), a corner exit carrying that corner's metrics, lap complete, pit entry/exit,
+  or a schedule.
+- **Predicates**: a small restricted expression language over current channels and corner
+  metrics. No arbitrary code in the 60 Hz loop.
+- **Actions**: `say` (spoken directly by the service, no model), `wake` (send the event to the
+  agent), `log`.
+- **Backtest before activation**: `iagent rules backtest` runs the *same evaluator* over stored
+  laps and reports where it would have fired. Replay is fast enough that no separate engine is
+  needed.
+- Edge-triggered with hysteresis, cooldowns and global rate limits.
 
-- **Predicates** use a restricted expression language over current channels plus a small set of
-  derived channels and rolling windows (`max(Brake, 0.5s)`, `delta(Speed, 0.2s)`). No arbitrary
-  code executes in the 60 Hz loop. (Candidate implementation: a sandboxed expression library or
-  CEL; decision deferred to the spike.)
-- **Distance triggers** use a *lead time*: the trigger point is `target − speed × lead_seconds`,
-  so the cue finishes before the corner regardless of speed.
-- **Actions:** `say` (spoken), `notify_agent` (wake the coach with a context window of the last
-  N seconds), `log` (record only).
-- **Edge-triggered** with hysteresis and cooldowns; per-rule and global rate limits stop a
-  buggy rule from flooding the driver.
+## 9. Voice and UI
 
-**Backtesting is mandatory before activation.** `backtest_rule(rule, laps)` replays a rule
-against stored laps and returns where and how often it would have fired. The agent reads that,
-adjusts thresholds, and only then calls `activate_rule`. This is the mechanism that replaces
-hand-tuned detectors: the agent calibrates against real data.
+- **Input:** push-to-talk → STT on the PC CPU (faster-whisper `small` int8, Parakeet or
+  Moonshine) → utterance event → agent.
+- **Output:** a speech arbiter owns the audio device: priority, expiry (a late corner cue is
+  dropped), no interrupting higher priority, minimum quiet gap. Kokoro TTS on CPU; rule cues are
+  pre-rendered when rules are activated.
+- **CrewChief coexistence:** no integration; sparse speech, a different voice, avoid spotter/fuel
+  topics.
+- **CPU cost on the sim PC is unmeasured**; checked in the live phase before committing.
+- **UI:** a local web app served by the service, viewable from any machine on the LAN: laps,
+  corner comparisons, traces, rules, and what the agent did and said.
 
-## 7. The agent
+## 10. Test rig
 
-### Loop
-
-A plain async loop — no graph framework:
-
-```text
-wait for trigger (utterance | rule_fired notify | lap_complete | schedule | manual)
-  → build context (system prompt + notes + recent state + trigger)
-  → model turn(s) with tools until a final answer / no more tool calls
-  → outputs: say() calls, note writes, rule changes
-```
-
-### Modes
-
-Same agent, different budgets — not different agents.
-
-| Mode | Trigger | Latency budget | Behaviour |
-| --- | --- | --- | --- |
-| Live | utterance, `notify_agent`, lap boundary | seconds | short context, few tool calls, brief speech |
-| Debrief | pit lane / session end / manual | minutes | full analysis, corner map, plan, rules, notes |
-
-Most in-lap speech should be **precomputed cues** from debrief, not LLM output.
-
-### Tool surface (exposed over MCP)
-
-The same functions serve the built-in loop (called in-process) and any external agent (over MCP).
-
-| Tool | Purpose |
-| --- | --- |
-| `list_laps(filter)` / `get_lap(id)` | browse the lap store |
-| `run_python(code)` | sandboxed pandas/numpy over the workspace (below) |
-| `get_reference(track, car, kind)` | fetch a reference lap (section 9) |
-| `define_rule` / `backtest_rule` / `activate_rule` / `list_rules` / `retire_rule` | rule lifecycle |
-| `say(text, priority, expires)` | radio output |
-| `read_notes` / `write_notes` | memory (files) |
-| `live_snapshot(channels)` | current values, for quick checks |
-
-Deliberately few. Anything analytical goes through `run_python`, because small models write
-short pandas more reliably than they compose many narrow tools.
-
-### Sandbox
-
-- Subprocess per call, timeout, memory cap, CPU niceness, **no network**.
-- `laps/` and `reference/` mounted read-only; `scratch/` writable.
-- Preloaded helpers (`load_lap`, `resample_distance`, `corner_metrics`, `plot`) so the model
-  writes little code. Output truncated and structured to protect context.
-- Candidate implementation: a plain subprocess with `resource` limits first; container/WASM only
-  if needed. Threat model is "model makes mistakes", not "model is adversarial", but treat
-  any external MCP client as untrusted.
-
-## 8. Model seam
-
-Two existing standards, no bespoke protocol:
-
-- **Harness → model:** OpenAI-compatible Chat Completions with `tools` (Ollama, `llama-server`,
-  LM Studio, vLLM, `mlx-lm`). Config is `base_url`, `model`, and a capability profile.
-- **Any agent → coach:** MCP over the tool surface above.
-
-"OpenAI-compatible" is only approximately compatible, so a thin **adapter layer** absorbs the
-differences, one small module per quirk, enabled by the model's capability profile:
-
-- tool calls emitted as XML / in content instead of `tool_calls` (seen with some Qwen builds);
-- reasoning / thinking tokens leaking into `content`, or a separate `reasoning` field;
-- malformed or truncated JSON arguments → repair once, then re-prompt;
-- servers that reject `tools` + `response_format` together;
-- system-prompt handling and role-alternation differences; max-token and stop-sequence defaults.
-
-A capability profile per model (`supports_tools`, `parallel_tools`, `thinking: on|off|field`,
-`context`, sampling defaults) lives in config, not code. **A model is only trusted after it
-passes the eval suite** (section 11); swapping models means editing config and re-running it.
-
-Baseline candidates to evaluate first: Gemma 4 E4B, Qwen3-4B / Qwen3.5-4B (Mac, 16 GB),
-Gemma 4 12B for debrief. Treat published benchmarks as hints only.
-
-## 9. Reference laps
-
-Behind one interface, so the source can change:
-
-```text
-ReferenceProvider.get(track, car, kind) -> Lap
-  kinds: own_best | theoretical_best | external
-```
-
-Sources:
-
-1. **Own best** and **theoretical best** (best corner-by-corner segments stitched from the
-   driver's own laps) — always available, no external dependency. Start here.
-2. **Garage61** — the existing client already fetches a lap's CSV. **Unverified:** whether the API
-   lets us fetch laps from drivers outside the user's team, and which plan tier is needed for
-   telemetry. Both the developer portal and endpoint pages are JavaScript-rendered and could not be read
-   offline; to be settled by calling the API with the real token (spike, section 13).
-3. **Manual import** — CSV or `.ibt` dropped into `reference/` (e.g. a friend's lap or a
-   coaching-video export). Guarantees the feature works even if Garage61 does not allow it.
-
-Reference laps are normalised to the same distance grid as the driver's laps, and the source
-and quality are recorded so the agent can say how much to trust a comparison.
-
-## 10. Voice
-
-- **Input:** push-to-talk (wheel button/hotkey) → mic capture → STT on the PC CPU → text →
-  `utterance`. Candidates: faster-whisper `small` (int8), Parakeet, Moonshine. Runs only while
-  talking, capped to 2 threads.
-- **Output:** the **speech arbiter** on the PC owns the audio device. Inputs: `say` messages and
-  local rule actions, each with priority and expiry. It queues, drops expired items, never
-  interrupts a higher-priority item, and enforces a minimum quiet gap.
-- **TTS:** Kokoro (ONNX, CPU). Planned cues are **pre-rendered** when rules are pushed
-  (cache key = text + voice), so firing costs nothing. Only ad-hoc replies are synthesised live.
-- **CrewChief coexistence:** it has no plugin API, so we don't integrate; we stay out of its way.
-  Keep in-lap speech sparse, use a different voice, avoid its spotter/fuel topics, and let the
-  arbiter be told to hold during spotter-heavy moments (later: detect via a shared "quiet"
-  hotkey/flag or proximity channels).
-- Not measured yet: CPU cost of STT/TTS on the sim PC. Check iRacing frame times with both
-  active before committing (fallback: run STT/TTS on the Mac and stream audio).
-
-## 11. Test rig
-
-The sim can't be a prerequisite for development. The key is that **only the telemetry source
-and audio ends are sim/hardware-specific**; everything else runs on recorded or synthetic input.
-
-### Seams (interfaces with fake implementations)
+Only the telemetry source and the audio ends touch the sim or hardware.
 
 | Seam | Real | Test |
 | --- | --- | --- |
-| `TelemetrySource` | live irsdk | `.ibt` replay, synthetic generator, recorded frame log |
-| `Clock` | wall clock | driven by frame `SessionTime` (replay at 1×, 10×, or as fast as possible) |
-| `ModelClient` | OpenAI-compatible endpoint | scripted fake, record/replay cassettes, real local model |
-| `AudioOut` | speakers | capture list of (time, text, priority) |
-| `Mic` / STT | push-to-talk | inject `utterance` text at a chosen session time |
-| `Reference` | Garage61 / files | fixture laps |
+| `TelemetrySource` | live irsdk | `.ibt` replay, synthetic generator |
+| Agent wake-up | `claude -p` | recorded command lines (assert what the agent would be told) |
+| Audio out | speakers | captured (time, text, priority) |
+| STT | push-to-talk | injected utterance text |
 
-### Layers
+Layers:
 
-1. **Unit** — rule expression evaluation, distance triggers, arbiter, sandbox limits, adapter
-   quirks. Fast, deterministic, no model.
-2. **Replay integration** — feed a recorded session through the whole pipeline with a *fake
-   model*. Assertions on lap segmentation, stored laps, rule firings, and the sequence of
-   `say` messages.
-3. **Rule backtests as golden tests** — fixed laps with known expected firing positions.
-4. **Model eval suite** — scenario files: `state + trigger → acceptable behaviour`. Programmatic
-   checks first (right tool called, valid arguments, `say` under N words, no invented numbers
-   not present in tool output); optional LLM judge later. Run against each candidate model and
-   record a scorecard. This is the gate for swapping models.
-5. **Live smoke test** (manual, sim running): a short checklist run before releases.
+1. **Unit**: segmentation, resampling, store, analysis, rule evaluation, arbiter.
+2. **Real-file regression** (`tests/real/`, skipped without the files): lap times match the sim's
+   own `LapLastLapTime`; representative laps per file are pinned.
+3. **CLI contract**: every agent-facing command's `--json` shape.
+4. **Skill evals**: scenario workspaces + a prompt, run headless through the harness with each
+   candidate model; programmatic checks (right commands run, numbers in the answer appear in CLI
+   output, answer length). This is the gate for using a local model.
+5. **Live smoke test** (manual, sim running).
 
-### Test data
+Test data: synthetic laps with exact ground truth (committed); real `.ibt` recordings in
+`data/telemetry/` (git-ignored): Okayama, Spa, Silverstone (F4) and Watkins Glen (GT3).
 
-- `.ibt` files: iRacing can log full-session telemetry to disk (default hotkey Alt+L, saved under
-  `Documents/iRacing/telemetry`). A handful of Spa laps — including a couple of deliberately
-  messy ones (off-tracks, spin, pit in/out) — is the core fixture set. Each file needs a short
-  **annotation** (car, what happened, e.g. "spun at Les Combes, lap 4") so tests can assert
-  correct results, not just "doesn't crash". Use one car/setup family so laps are comparable.
-- No public Spa `.ibt` dataset was found (only parsers such as TRACE.IT / ibt-telemetry, whose
-  repos may carry small samples). Regression coverage therefore comes from the synthetic
-  generator plus our own recordings.
-- The current `tests/data/iracing-telemetry.bin` is a single-frame snapshot and is not enough
-  for lap-level testing.
-- Fixtures are large and stay out of git (keep the existing ignore rules); a small script
-  documents how to record and place them. A **synthetic generator** (parametric lap with known
-  corners and braking points) provides small committed fixtures and exact ground truth for the
-  corner-mapper tests.
-
-## 12. Repository layout and existing code
-
-Proposed:
+## 11. Package layout
 
 ```text
 iagent/
-  edge/          # PC runtime: source, rule engine, arbiter, voice, transport
-  brain/         # coach service: recorder, lap store, agent loop, sandbox, MCP server
-  model/         # OpenAI-compatible client, adapters, capability profiles
-  common/        # wire messages, channel definitions, schemas
-  testing/       # fake sources, cassettes, synthetic lap generator, eval runner
-docs/
-evals/           # scenario files and scorecards
+  telemetry/   frames, session info, sources (ibt; irsdk live later)
+  laps/        segmenter, resampling, store, pace, recorder
+  analysis/    splits, comparison (corner tracker in phase 2)
+  testing/     synthetic generator, .ibt writer
+  cli.py       the `iagent` command
+  audio/ garage/ serialize/   kept from v1, to be adapted (TTS, Garage61 client)
 ```
 
-Existing code, in short:
+## 12. Phasing
 
-- **Drop:** LangGraph agent, two-agent prompts, `LockUpDetector`, the event priority queue, the
-  sentence-transformer variable lookup (replaced by a static channel catalogue in the prompt).
-- **Keep and adapt:** Garage61 client (→ one reference provider), Kokoro TTS wrapper,
-  `vars.json` definitions, `serialize/json.py`, track ID map.
-- **Remove:** the stdin driver input and the separate MCP HTTP process requirement.
+1. **Foundations** (done): sources, segmentation, store, pace filter.
+2. **CLI + skills slice** (done): agent-facing CLI, `coach` plugin with `telemetry` and
+   `lap-review` skills, verified headless with `claude -p` on real recordings.
+3. **Analysis**: corner map, corner tracker, per-corner report and comparison, track knowledge
+   and naming. *Exit: a Spa per-corner report from real laps, with corner names.*
+4. **Live**: irsdk source, service, rules/schedules/backtest, `say`, wake-up adapter, TTS.
+   *Exit: corner-exit feedback spoken on the real rig; frame-time impact measured.*
+5. **UI**: web app over the store, analysis and agent activity.
+6. **Voice in + learning loop**: push-to-talk STT, debrief and focus skills, memory across
+   sessions, skill evals with local models.
 
-## 13. Phasing
+## 13. Open questions and risks
 
-Each phase is testable on its own and adds value without the later ones.
-
-1. **Foundations** — `TelemetrySource` (live + `.ibt` replay + synthetic), `Clock`, lap
-   segmentation, lap store. *Exit: replay a Spa session, get clean laps on the distance grid.*
-2. **Analysis** — corner-map derivation, per-corner metrics, own-best / theoretical-best
-   reference, `run_python` sandbox. *Exit: a script (no LLM) prints a per-corner comparison.*
-3. **Agent + model seam** — loop, adapter layer, capability profiles, tool surface (MCP), eval
-   suite v0. *Exit: two local models scored on the eval suite.*
-4. **Rules** — rule schema, edge evaluator, backtest, activation. *Exit: agent authors a
-   brake-marker rule for one Spa corner and backtests it.*
-5. **Split + voice** — edge/brain over WebSocket, arbiter, TTS with cue cache, push-to-talk STT.
-   *Exit: end-to-end on the real rig, measured frame-time impact.*
-6. **Track-learning loop** — focus selection, debrief flow, notes/memory across sessions.
-
-Spikes to run early (cheap, and they remove the biggest unknowns):
-
-- **Garage61 access:** with the real token, try fetching a non-team, non-own lap; note plan
-  requirements for telemetry.
-- **CrewChief landmarks:** fetch `trackLandmarksData.json`, check Spa coverage and whether
-  distances line up with iRacing's `LapDist` on our recorded laps.
-- **Frame-time impact:** run Kokoro + faster-whisper on the PC CPU during a Spa session.
-- **Model baseline:** run 2–3 candidate models against a few hand-written eval scenarios.
-- **Rule language:** pick and prototype the expression evaluator.
-
-## 14. Open questions and risks
-
-- Garage61 external reference laps (see above); mitigated by own-best and manual import.
-- Corner segmentation quality on a track like Spa (long flowing sections, elevation) — needs
-  real data before we trust auto-derived corners.
-- Small-model reliability on multi-step tool use; mitigated by fewer tools, precomputed cues
-  and the eval gate.
-- Audio path and hearing the coach on the PC side (edge-runtime TTS resolves this, at the CPU
-  cost noted above).
-- Where `.ibt`-style logging is off by default: recorder on the Mac already captures the live
-  stream, but replay fixtures need one manual logging session.
-- Whether a hosted agent (e.g. Claude Code over MCP) is worth wiring for debrief; the design
-  allows it but nothing requires it.
+- Local models in a coding-agent harness on this hardware; mitigated by deterministic analysis,
+  short skills and the eval gate, with Claude via subscription as the primary.
+- Subscription usage limits under frequent wake-ups; mitigated by per-lap/event cadence.
+- Corner segmentation on flowing sections (Spa's Eau Rouge, Blanchimont) needs real data.
+- CrewChief landmark distances vs iRacing `LapDist`: unverified.
+- STT/TTS CPU impact on iRacing frame times: unmeasured.
+- Garage61 external reference laps: unverified; own best and imports cover the need.

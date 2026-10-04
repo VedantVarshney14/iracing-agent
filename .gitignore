@@ -189,3 +189,5 @@ data/telemetry/
 
 # macOS
 .DS_Store/
+# Coach workspace (lap store, notes)
+workspace/

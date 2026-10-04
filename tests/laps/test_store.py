@@ -1,7 +1,7 @@
 import pytest
 
-from iagent.brain.recorder import record
-from iagent.brain.store import ParquetLapStore
+from iagent.laps.recorder import record
+from iagent.laps.store import ParquetLapStore
 
 
 @pytest.fixture
@@ -20,8 +20,8 @@ def test_record_saves_every_lap_with_flags(store, messy_source):
 def test_list_filters(store, messy_source):
     record(messy_source, store, "synthetic")
     assert len(store.list(valid_only=True)) == 2
-    assert len(store.list(track="Synthetic Test Circuit")) == 6
-    assert store.list(track="Spa-Francorchamps") == []
+    assert len(store.list(track="synthetic", car="synthcar")) == 6
+    assert store.list(track="spa-2024-up") == []
     assert len(store.list(session_id="synthetic-2")) == 6
 
 
@@ -57,3 +57,19 @@ def test_persists_across_instances(tmp_path, clean_source):
     second = ParquetLapStore(tmp_path)
     assert len(second.list()) == 4
     second.close()
+
+
+def test_old_format_store_is_refused(tmp_path):
+    import sqlite3
+
+    db = sqlite3.connect(tmp_path / "index.sqlite")
+    db.execute("CREATE TABLE laps (lap_id TEXT PRIMARY KEY)")
+    db.commit()
+    db.close()
+    with pytest.raises(RuntimeError, match="older format"):
+        ParquetLapStore(tmp_path)
+
+
+def test_files_are_laid_out_by_track_and_car_key(store, clean_source, tmp_path):
+    record(clean_source, store, "synthetic")
+    assert len(list((tmp_path / "laps" / "synthetic" / "synthcar").glob("*.grid.parquet"))) == 4

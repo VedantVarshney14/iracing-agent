@@ -3,8 +3,8 @@
 import numpy as np
 import pandas as pd
 
-from iagent.brain.laps import Lap
-from iagent.common.frames import DISCRETE_CHANNELS
+from iagent.laps.segment import Lap
+from iagent.telemetry.frames import DISCRETE_CHANNELS
 
 
 def resample_to_distance(lap: Lap, step_m: float = 1.0) -> pd.DataFrame:

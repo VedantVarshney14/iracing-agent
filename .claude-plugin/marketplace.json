@@ -1,0 +1,14 @@
+{
+  "name": "iracing-agent",
+  "description": "An iRacing driving coach: skills plus the iagent CLI for telemetry analysis.",
+  "owner": {
+    "name": "Vedant Varshney"
+  },
+  "plugins": [
+    {
+      "name": "coach",
+      "source": "./coach",
+      "description": "Coaching skills that use the iagent CLI to analyse iRacing laps."
+    }
+  ]
+}

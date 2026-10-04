@@ -2,8 +2,8 @@
 
 from typing import Iterator, Protocol
 
-from iagent.common.frames import Frame
-from iagent.common.session import SessionInfo
+from iagent.telemetry.frames import Frame
+from iagent.telemetry.session import SessionInfo
 
 
 class TelemetrySource(Protocol):

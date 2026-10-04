@@ -7,8 +7,8 @@ import struct
 from pathlib import Path
 from typing import Iterable
 
-from iagent.common.frames import CORE_CHANNELS, Frame
-from iagent.common.session import SessionInfo
+from iagent.telemetry.frames import CORE_CHANNELS, Frame
+from iagent.telemetry.session import SessionInfo
 
 # irsdk type ids and their struct codes/sizes.
 _TYPES = {"?": (1, 1), "i": (2, 4), "f": (4, 4), "d": (5, 8)}
@@ -30,7 +30,9 @@ def session_yaml(session: SessionInfo) -> str:
         "---\n"
         "WeekendInfo:\n"
         f" TrackID: {session.track_id or 0}\n"
+        f" TrackName: {session.track_code or session.track_key}\n"
         f" TrackDisplayName: {session.track_name}\n"
+        f" TrackConfigName: {session.track_config or 'Full'}\n"
         f" TrackLength: {session.track_length_m / 1000.0:.3f} km\n"
         "DriverInfo:\n"
         " DriverCarIdx: 0\n"
@@ -38,9 +40,11 @@ def session_yaml(session: SessionInfo) -> str:
         " - CarIdx: 0\n"
         "   UserName: Test Driver\n"
         f"   CarScreenName: {session.car_name}\n"
+        f"   CarPath: {session.car_path or session.car_key}\n"
         " - CarIdx: 1\n"
         "   UserName: Someone Else\n"
         "   CarScreenName: Other Car\n"
+        "   CarPath: othercar\n"
         "...\n"
     )
 

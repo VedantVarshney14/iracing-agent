@@ -1,12 +1,12 @@
 import pytest
 
-from iagent.brain.laps import (
+from iagent.laps.segment import (
     LapSegmenter,
     REASON_DISCONTINUITY,
     REASON_INCOMPLETE,
     REASON_PIT_ROAD,
 )
-from iagent.common.frames import Frame
+from iagent.telemetry.frames import Frame
 
 
 def segment(source):

@@ -11,11 +11,11 @@ import irsdk
 import numpy as np
 import pytest
 
-from iagent.brain.laps import LapSegmenter
-from iagent.brain.pace import representative
-from iagent.brain.recorder import record
-from iagent.brain.store import ParquetLapStore
-from iagent.edge.ibt import IbtSource
+from iagent.laps.segment import LapSegmenter
+from iagent.laps.pace import representative
+from iagent.laps.recorder import record
+from iagent.laps.store import ParquetLapStore
+from iagent.telemetry.ibt import IbtSource
 
 DATA = Path(__file__).parents[2] / "data" / "telemetry"
 
@@ -74,6 +74,7 @@ def test_okayama_pace_filter_picks_the_clean_laps(tmp_path):
         records = record(source, store, "okayama")
         assert source.session.track_name == "Okayama International Circuit"
         assert source.session.car_name == "FIA F4"
+        assert (source.session.track_key, source.session.car_key) == ("okayama-full", "formulair04")
         assert len(records) == 10
         # Laps 2, 3, 5, 6 are the clean ones (6 has a 4-frame kerb clip that cost nothing);
         # 1 is an out-lap, 4/7/8 are long excursions ~11-13% slower, 0/9 are partial.
@@ -93,6 +94,7 @@ def test_spa_best_lap_is_kept_even_with_an_off_track_flag(tmp_path):
         assert source.session.track_name == "Circuit de Spa-Francorchamps"
         assert source.session.track_length_m == pytest.approx(6929, abs=2)
         assert source.session.track_id == 523
+        assert (source.session.track_key, source.session.car_key) == ("spa-2024-up", "formulair04")
         kept = representative(records)
         assert [r.seq for r in kept] == [2, 5]  # 147.0 and 146.5; the 161/280 s laps are out
         assert min(r.lap_time for r in kept) == pytest.approx(146.472, abs=0.03)

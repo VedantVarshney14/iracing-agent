@@ -14,12 +14,12 @@ from typing import Iterator
 
 import numpy as np
 
-from iagent.common.frames import (
+from iagent.telemetry.frames import (
     Frame,
     SURFACE_OFF_TRACK,
     SURFACE_ON_TRACK,
 )
-from iagent.common.session import SessionInfo
+from iagent.telemetry.session import SessionInfo
 
 HZ = 60
 GRID_M = 0.5  # profile resolution
@@ -175,6 +175,8 @@ class SyntheticSource:
             track_length_m=track.length_m,
             car_name="Synthetic Car",
             session_id=f"synthetic-{seed}",
+            track_code="synthetic",
+            car_path="synthcar",
         )
 
     @property

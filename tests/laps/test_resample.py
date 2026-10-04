@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from iagent.brain.resample import resample_to_distance
-from tests.brain.test_laps import segment
+from iagent.laps.resample import resample_to_distance
+from tests.laps.test_segment import segment
 
 
 def complete_laps(source):
