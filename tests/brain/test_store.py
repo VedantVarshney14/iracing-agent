@@ -14,12 +14,12 @@ def store(tmp_path):
 def test_record_saves_every_lap_with_flags(store, messy_source):
     records = record(messy_source, store, "synthetic")
     assert len(records) == 6
-    assert [r.valid for r in store.list()] == [False] * 5 + [True]
+    assert [r.valid for r in store.list()] == [False, True, False, False, False, True]
 
 
 def test_list_filters(store, messy_source):
     record(messy_source, store, "synthetic")
-    assert len(store.list(valid_only=True)) == 1
+    assert len(store.list(valid_only=True)) == 2
     assert len(store.list(track="Synthetic Test Circuit")) == 6
     assert store.list(track="Spa-Francorchamps") == []
     assert len(store.list(session_id="synthetic-2")) == 6

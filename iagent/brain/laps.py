@@ -7,10 +7,11 @@ import pandas as pd
 from iagent.common.frames import Frame, SURFACE_OFF_TRACK
 from iagent.common.session import SessionInfo
 
-# Reasons a lap can be flagged. A lap is `valid` only if it has none.
+# Structural reasons a lap can't be used at all. A lap is `valid` only if it has none.
+# Off-track time is deliberately *not* one: a brief clip of the kerb is normal, and whether a lap
+# is representative is a question of pace (see `iagent.brain.pace`), not of track-surface flags.
 REASON_INCOMPLETE = "incomplete"  # didn't both start and end on a start/finish crossing
 REASON_PIT_ROAD = "pit_road"
-REASON_OFF_TRACK = "off_track"
 REASON_DISCONTINUITY = "discontinuity"  # position jumped (reset / tow / rewind)
 
 
@@ -23,6 +24,7 @@ class Lap:
     end_time: float | None
     reasons: list[str] = field(default_factory=list)
     sim_lap: int | None = None  # iRacing's own `Lap` counter, when the channel exists
+    off_track_s: float = 0.0  # time with the car off the track surface (information only)
 
     @property
     def complete(self) -> bool:
@@ -123,8 +125,10 @@ class LapSegmenter:
             reasons.append(REASON_DISCONTINUITY)
         if "OnPitRoad" in df and (df["OnPitRoad"] > 0.5).any():
             reasons.append(REASON_PIT_ROAD)
-        if "PlayerTrackSurface" in df and (df["PlayerTrackSurface"] == SURFACE_OFF_TRACK).any():
-            reasons.append(REASON_OFF_TRACK)
+        off_track_s = 0.0
+        if "PlayerTrackSurface" in df and len(df) > 1:
+            off_frames = int((df["PlayerTrackSurface"] == SURFACE_OFF_TRACK).sum())
+            off_track_s = off_frames * float(df["SessionTime"].diff().median())
 
         sim_lap = int(df["Lap"].median()) if "Lap" in df else None
         lap = Lap(
@@ -135,6 +139,7 @@ class LapSegmenter:
             end_time=end_time,
             reasons=reasons,
             sim_lap=sim_lap,
+            off_track_s=off_track_s,
         )
         self._seq += 1
         self._rows = []

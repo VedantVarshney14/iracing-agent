@@ -27,6 +27,7 @@ V_MAX = 60.0  # m/s (~216 km/h)
 A_ACCEL = 6.0  # m/s^2 out of corners
 A_BRAKE_MAX = 15.0  # m/s^2 -> brake pedal = decel / A_BRAKE_MAX
 PICKUP_M = 15.0  # throttle applied this far after the apex
+SLOW_FACTOR = 1.15
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ class LapKind(str, Enum):
     PIT_IN = "pit_in"  # lap ends on pit road
     OUT_LAP = "out_lap"  # lap starts on pit road
     RESET = "reset"  # car teleported back mid-lap
+    SLOW = "slow"  # a structurally fine lap, driven `SLOW_FACTOR` times slower (a spin recovery, say)
 
 
 @dataclass
@@ -192,6 +194,10 @@ class SyntheticSource:
                 {c.name: rng.gauss(0.0, self._brake_jitter) for c in self._track.corners},
                 {c.name: rng.gauss(0.0, self._speed_jitter) for c in self._track.corners},
             )
+            if kind is LapKind.SLOW:
+                profile.v /= SLOW_FACTOR
+                profile.long_accel /= SLOW_FACTOR**2
+                profile.t *= SLOW_FACTOR
             lap_time = float(profile.t[-1])
             first_d = self._start_m if i == 0 else 0.0
             # Session time at which this lap's start/finish crossing happens.
@@ -208,9 +214,10 @@ class SyntheticSource:
                     start_time=t_start,
                     brake_m=profile.truth_brake,
                     min_speed=profile.truth_min_speed,
-                    # The first lap of a session never has an observed start/finish crossing,
-                    # so it can't be a valid timed lap, whatever `start_m` is.
-                    expect_valid=kind is LapKind.CLEAN and i > 0,
+                    # Structural validity: off-track and slow laps are still usable laps. The
+                    # first lap of a session never has an observed start/finish crossing, so it
+                    # can't be a timed lap whatever `start_m` is.
+                    expect_valid=kind in (LapKind.CLEAN, LapKind.SLOW, LapKind.OFF_TRACK) and i > 0,
                 )
             )
 

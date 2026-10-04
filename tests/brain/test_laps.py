@@ -4,7 +4,6 @@ from iagent.brain.laps import (
     LapSegmenter,
     REASON_DISCONTINUITY,
     REASON_INCOMPLETE,
-    REASON_OFF_TRACK,
     REASON_PIT_ROAD,
 )
 from iagent.common.frames import Frame
@@ -36,7 +35,7 @@ def test_messy_laps_are_flagged_for_the_right_reason(messy_source):
     assert len(laps) == 6
     expected = [
         {REASON_INCOMPLETE},
-        {REASON_OFF_TRACK},
+        set(),  # off-track is information, not a reason
         {REASON_PIT_ROAD},
         {REASON_PIT_ROAD},
         {REASON_DISCONTINUITY},
@@ -44,6 +43,13 @@ def test_messy_laps_are_flagged_for_the_right_reason(messy_source):
     ]
     assert [set(lap.reasons) for lap in laps] == expected
     assert [lap.valid for lap in laps] == [t.expect_valid for t in messy_source.truth]
+
+
+def test_off_track_time_is_measured_but_does_not_invalidate(messy_source):
+    off_lap = segment(messy_source)[1]
+    assert off_lap.valid
+    assert off_lap.off_track_s == pytest.approx(1.0, abs=0.1)  # 60 m at ~60 m/s
+    assert segment(messy_source)[5].off_track_s == 0.0
 
 
 def test_partial_first_lap_has_no_lap_time(messy_source):
@@ -54,8 +60,8 @@ def test_partial_first_lap_has_no_lap_time(messy_source):
 
 def test_flagged_laps_keep_their_time_when_complete(messy_source):
     laps = segment(messy_source)
-    # Off-track and pit laps are complete laps, just not valid ones.
-    assert laps[1].complete and laps[1].lap_time == pytest.approx(messy_source.truth[1].lap_time, abs=1e-3)
+    # Pit laps are complete laps with a time, just not valid ones.
+    assert laps[2].complete and laps[2].lap_time == pytest.approx(messy_source.truth[2].lap_time, abs=1e-3)
 
 
 def test_tiny_tail_is_dropped(clean_source):

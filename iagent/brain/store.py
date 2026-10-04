@@ -26,6 +26,7 @@ class LapRecord:
     valid: bool
     reasons: tuple[str, ...]
     source: str
+    off_track_s: float = 0.0
 
 
 class LapStore(Protocol):
@@ -37,7 +38,11 @@ class LapStore(Protocol):
         car: str | None = None,
         session_id: str | None = None,
         valid_only: bool = False,
-    ) -> list[LapRecord]: ...
+        within_best: float | None = None,
+    ) -> list[LapRecord]:
+        """`within_best` keeps only representative laps: valid and within that fraction (e.g.
+        0.05) of the best valid lap among the *other* filter matches."""
+        ...
 
     def load(self, lap_id: str, grid: bool = True) -> pd.DataFrame:
         """`grid=True` gives the distance-resampled lap, otherwise the raw 60 Hz samples."""
@@ -64,7 +69,7 @@ class ParquetLapStore:
             """CREATE TABLE IF NOT EXISTS laps (
                 lap_id TEXT PRIMARY KEY, session_id TEXT, track TEXT, car TEXT, seq INTEGER,
                 sim_lap INTEGER, lap_time REAL, complete INTEGER, valid INTEGER,
-                reasons TEXT, source TEXT, path TEXT, created_at TEXT)"""
+                reasons TEXT, source TEXT, path TEXT, created_at TEXT, off_track_s REAL)"""
         )
         self._db.commit()
 
@@ -89,14 +94,15 @@ class ParquetLapStore:
             valid=lap.valid,
             reasons=tuple(lap.reasons),
             source=source,
+            off_track_s=lap.off_track_s,
         )
         self._db.execute(
-            "INSERT OR REPLACE INTO laps VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO laps VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 record.lap_id, record.session_id, record.track, record.car, record.seq,
                 record.sim_lap, record.lap_time, int(record.complete), int(record.valid),
                 ",".join(record.reasons), source, str(raw_path.relative_to(self._root)),
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(), record.off_track_s,
             ),
         )
         self._db.commit()
@@ -108,6 +114,7 @@ class ParquetLapStore:
         car: str | None = None,
         session_id: str | None = None,
         valid_only: bool = False,
+        within_best: float | None = None,
     ) -> list[LapRecord]:
         where, args = [], []
         for column, value in (("track", track), ("car", car), ("session_id", session_id)):
@@ -116,18 +123,24 @@ class ParquetLapStore:
                 args.append(value)
         if valid_only:
             where.append("valid = 1")
-        query = "SELECT lap_id, session_id, track, car, seq, sim_lap, lap_time, complete, valid, reasons, source FROM laps"
+        query = "SELECT lap_id, session_id, track, car, seq, sim_lap, lap_time, complete, valid, reasons, source, off_track_s FROM laps"
         if where:
             query += " WHERE " + " AND ".join(where)
         query += " ORDER BY session_id, seq"
-        return [
+        records = [
             LapRecord(
                 lap_id=r[0], session_id=r[1], track=r[2], car=r[3], seq=r[4], sim_lap=r[5],
                 lap_time=r[6], complete=bool(r[7]), valid=bool(r[8]),
                 reasons=tuple(x for x in r[9].split(",") if x), source=r[10],
+                off_track_s=r[11],
             )
             for r in self._db.execute(query, args)
         ]
+        if within_best is not None:
+            from iagent.brain.pace import representative  # avoid an import cycle
+
+            records = representative(records, within_best)
+        return records
 
     def load(self, lap_id: str, grid: bool = True) -> pd.DataFrame:
         row = self._db.execute("SELECT path FROM laps WHERE lap_id = ?", (lap_id,)).fetchone()

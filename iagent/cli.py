@@ -4,6 +4,7 @@ from pathlib import Path
 import click
 
 from iagent import utils
+from iagent.brain.pace import DEFAULT_WITHIN, best_time
 from iagent.brain.recorder import record
 from iagent.brain.store import LapRecord, ParquetLapStore
 from iagent.edge.ibt import IbtSource
@@ -14,10 +15,15 @@ DEFAULT_STORE = Path("workspace")
 
 
 def _print_laps(records: list[LapRecord]) -> None:
-    click.echo(f"{'lap':<28} {'time':>9}  {'valid':<5}  reasons")
+    best = best_time(records)
+    width = max([len("lap")] + [len(r.lap_id) for r in records])
+    click.echo(f"{'lap':<{width}} {'time':>9} {'vs best':>8} {'off(s)':>7}  {'valid':<5}  reasons")
     for r in records:
         time = f"{r.lap_time:9.3f}" if r.lap_time is not None else f"{'-':>9}"
-        click.echo(f"{r.lap_id:<28} {time}  {str(r.valid):<5}  {', '.join(r.reasons)}")
+        gap = f"{(r.lap_time / best - 1) * 100:+7.1f}%" if best and r.valid and r.lap_time else f"{'':>8}"
+        click.echo(
+            f"{r.lap_id:<{width}} {time} {gap} {r.off_track_s:7.1f}  {str(r.valid):<5}  {', '.join(r.reasons)}"
+        )
 
 
 @click.group()
@@ -54,12 +60,14 @@ def replay(source: str, store_dir: Path, laps: int, messy: bool, seed: int):
 
 @cli.command("laps")
 @click.option("--store", "store_dir", type=click.Path(exists=True, path_type=Path), default=DEFAULT_STORE)
-@click.option("--valid-only", is_flag=True)
-def list_laps(store_dir: Path, valid_only: bool):
+@click.option("--valid-only", is_flag=True, help="Only structurally valid laps (complete, no pit road, no reset).")
+@click.option("--representative", "within", is_flag=False, flag_value=DEFAULT_WITHIN, default=None,
+              type=float, help="Only laps within FRACTION of the best valid lap (default 0.05 if given bare).")
+def list_laps(store_dir: Path, valid_only: bool, within: float | None):
     """List laps in the store."""
     store = ParquetLapStore(store_dir)
     try:
-        _print_laps(store.list(valid_only=valid_only))
+        _print_laps(store.list(valid_only=valid_only, within_best=within))
     finally:
         store.close()
 

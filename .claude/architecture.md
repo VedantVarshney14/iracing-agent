@@ -82,8 +82,14 @@ Time comes from `SessionTime`, never wall clock (this is what makes replay possi
   the data is large (a Spa lap is ~8k rows). Access goes through a `LapStore` interface, so the
   format is an implementation detail and CSV would be a drop-in alternative. Small derived
   artifacts (corner map, notes, reference summaries) stay JSON/markdown.
-- Index (SQLite or a single Parquet): `lap_id, track, car, session, lap_time, valid, sectors,
-  conditions, source (live|ibt|garage61|import)`.
+- Index (SQLite or a single Parquet): `lap_id, track, car, session, lap_time, valid, off_track_s,
+  sectors, conditions, source (live|ibt|garage61|import)`.
+- **Validity vs pace.** `valid` is structural only (complete, no pit road, no position jump).
+  Off-track time is recorded but never disqualifies a lap. Which laps are *representative* is
+  decided by pace: valid laps within a tolerance (default 5%) of the best valid lap. On real Okayama,
+  Spa and Watkins Glen recordings this cleanly separates normal laps from excursions and slow laps,
+  and it keeps the best lap even when it has a brief off-track. iRacing's `LapLastLapTime` (which
+  updates about a second after the line) is a possible later cross-check, not needed yet.
 - Derived artifacts (corner map, reference "theoretical best") are stored as files in the
   workspace, not in a database, so the agent can read and rewrite them.
 

@@ -39,28 +39,35 @@ Replay a telemetry source through lap segmentation into a lap store:
 uv sync
 
 # Generated laps with known ground truth (--messy adds off-track, pit and reset laps)
-uv run iagent replay synthetic --laps 6 --messy --store workspace
+uv run iagent replay synthetic --laps 7 --messy --store workspace
 
 # A recorded iRacing session
 uv run iagent replay path/to/session.ibt --store workspace
 
-# List what was stored
-uv run iagent laps --store workspace --valid-only
+# List what was stored; --representative keeps only laps within 5% of your best valid lap
+uv run iagent laps --store workspace --representative
 ```
 
 ```text
-lap                               time  valid  reasons
-synthetic-0-L000                     -  False  incomplete
-synthetic-0-L001                58.317  False  off_track
-synthetic-0-L002                58.223  False  pit_road
-synthetic-0-L003                58.393  False  pit_road
-synthetic-0-L004                84.750  False  discontinuity
-synthetic-0-L005                58.135  True
+lap                   time  vs best  off(s)  valid  reasons
+synthetic-0-L000         -              0.0  False  incomplete
+synthetic-0-L001    58.317    +0.3%     1.0  True   
+synthetic-0-L002    58.223              0.0  False  pit_road
+synthetic-0-L003    58.393              0.0  False  pit_road
+synthetic-0-L004    84.750              0.0  False  discontinuity
+synthetic-0-L005    58.135    +0.0%     0.0  True   
+synthetic-0-L006    58.353    +0.4%     1.0  True
 ```
 
 - Lap times are interpolated across the start/finish crossing, so they are sub-frame accurate.
-- Flagged laps are stored, not discarded, so the coach can decide what to use. The first lap of a
-  session is always `incomplete` because its start/finish crossing was never observed.
+- **Valid** is structural: a lap must be complete (start and end on a start/finish crossing), stay
+  off pit road, and have no position jump (reset/tow). The first lap of a session is always
+  `incomplete` because its start/finish crossing was never observed.
+- **Representative** is about pace: valid laps within a tolerance (default 5%) of the best valid
+  lap. Anything close to your best lap is a real lap; spins, recoveries and cool-downs fall out.
+  Off-track time is recorded (`off(s)`) but doesn't disqualify a lap, since a brief kerb clip
+  costs nothing.
+- Invalid and slow laps are stored, not discarded, so the coach can decide what to use.
 - Each lap is stored raw (60 Hz) and resampled onto a 1 m distance grid, so laps compare point
   for point.
 
@@ -90,8 +97,9 @@ uv run pytest
 ```
 
 The suite needs no sim, no model and no network. `tests/test_tts.py` is a leftover manual
-debugging test that is always skipped; it goes when the TTS wrapper is reworked. Real `.ibt` recordings, once added, are kept out of git (see
-`.gitignore`) and will drive additional regression tests.
+debugging test that is always skipped; it goes when the TTS wrapper is reworked. Regression tests in `tests/real/` replay your own recordings from `data/telemetry/` (git-ignored)
+and check our lap times against iRacing's own `LapLastLapTime`; they skip when the files are
+absent.
 
 ## Requirements
 
