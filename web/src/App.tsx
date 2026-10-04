@@ -56,7 +56,6 @@ export function App() {
         const fromUrl = rows.find((r) => r.track === params.get("track") && r.car === params.get("car"));
         const first = fromUrl ?? rows[0];
         if (first) setGroup({ track: first.track, car: first.car });
-        else setError("No laps yet. Ingest a recording with `iagent ingest <file.ibt>`.");
       })
       .catch((e: Error) => !stale && setError(e.message));
     return () => {
@@ -99,8 +98,11 @@ export function App() {
         .then((info) => {
           setSystem(info);
           const version = info.telemetry.version;
-          if (seen != null && version !== seen) {
-            api.tracks().then(setTracks).catch(() => {});
+          if (seen == null || version !== seen) {
+            api.tracks().then((rows) => {
+              setTracks(rows);
+              if (!groupRef.current && rows[0]) setGroup({ track: rows[0].track, car: rows[0].car });
+            }).catch(() => {});
             const g = groupRef.current;
             if (g) api.laps(g.track, g.car).then(setLaps).catch(() => {});
           }
@@ -269,7 +271,29 @@ export function App() {
         onRef={onRef}
       />
       {error && <div className="error" role="alert">{error}</div>}
-      {review && group ? (
+      {!error && tracks.length === 0 ? (
+        <main className="empty-state">
+          <h1>No laps yet</h1>
+          {system?.telemetry.watching ? (
+            <p>
+              Recording files from iRacing will appear here after a session. Telemetry folder:{" "}
+              <code>{system.telemetry.folder}</code>
+            </p>
+          ) : system?.telemetry.found ? (
+            <p>
+              Telemetry watching is disabled. Ingest a recording with{" "}
+              <code>iagent ingest &lt;file.ibt&gt;</code> or restart <code>iagent ui</code> without{" "}
+              <code>--no-watch</code>.
+            </p>
+          ) : (
+            <p>
+              Put an <code>.ibt</code> recording in <code>{system?.telemetry.folder ?? "your iRacing telemetry folder"}</code>,
+              or ingest one with <code>iagent ingest &lt;file.ibt&gt;</code>.
+            </p>
+          )}
+          {system?.telemetry.error && <p className="error" role="alert">{system.telemetry.error}</p>}
+        </main>
+      ) : review && group ? (
         <div className="workspace">
         {page === "corner" && primaryCorner && cornerWindow ? (
           <CornerView

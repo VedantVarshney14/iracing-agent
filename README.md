@@ -52,7 +52,9 @@ iagent laps trace 20250723-202727-L005 --from 250 --to 450 --channels Speed,Brak
 
 Every command has `--help`; agent-facing ones take `--json` (`trace` prints CSV).
 
-The workspace is `./workspace` unless you pass `--workspace` or set `IAGENT_WORKSPACE`:
+By default, the workspace is the `workspace/` directory in the project, regardless of the
+directory you run `iagent` from. Pass `--workspace` or set `IAGENT_WORKSPACE` to use another
+location:
 
 ```text
 workspace/
@@ -193,6 +195,12 @@ iagent ui                                                 # http://127.0.0.1:876
 
 While working on the UI, run `iagent ui --no-browser` and `npm --prefix web run dev` (hot
 reload on http://localhost:5173, API calls forwarded to the server).
+
+`iagent ui` also starts when the workspace has no laps yet. It opens a blank screen and watches
+the iRacing telemetry folder for completed recordings; once laps are ingested, they appear in the
+UI. The default folder is `Documents/iRacing/telemetry` (or `IAGENT_TELEMETRY_DIR`). To use
+recordings elsewhere, ingest them with `iagent ingest <file.ibt>` or point `IAGENT_WORKSPACE` /
+`--workspace` at the workspace that already contains them.
 
 ## Using the coach
 

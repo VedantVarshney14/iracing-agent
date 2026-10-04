@@ -28,6 +28,8 @@ TRACE_CHANNELS = {
 
 def tracks(ws: Workspace) -> list[dict]:
     """Track/car combinations with lap counts and best times, most recently driven first."""
+    if not (ws.root / "index.sqlite").exists():
+        return []
     records = ws.store().list()
     best = best_times(records)
     groups: dict[tuple[str, str], list[LapRecord]] = {}

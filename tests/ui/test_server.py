@@ -49,6 +49,35 @@ def test_tracks(workspace):
     assert rows[0]["laps"] == 5 and rows[0]["reference_laps"] == 0
 
 
+def test_tracks_are_empty_when_workspace_has_no_lap_store(tmp_path):
+    assert client(tmp_path).get("/api/tracks").json() == []
+    assert not (tmp_path / "index.sqlite").exists()
+
+
+def test_ui_starts_with_an_empty_workspace_and_watches_missing_telemetry_dir(tmp_path, monkeypatch):
+    import uvicorn
+    from click.testing import CliRunner
+
+    from iagent.cli import cli
+    from iagent.laps import watch
+
+    telemetry_dir = tmp_path / "telemetry"
+    started = []
+    monkeypatch.setattr(watch, "default_telemetry_dir", lambda: telemetry_dir)
+    monkeypatch.setattr(watch.TelemetryWatcher, "start", lambda self: started.append(self.folder))
+
+    def run(app, **kwargs):
+        with TestClient(app) as web:
+            assert web.get("/api/tracks").json() == []
+
+    monkeypatch.setattr(uvicorn, "run", run)
+    result = CliRunner().invoke(cli, ["--workspace", str(tmp_path / "workspace"), "ui", "--no-browser"])
+
+    assert result.exit_code == 0, result.output
+    assert started == [telemetry_dir]
+    assert not (tmp_path / "workspace" / "index.sqlite").exists()
+
+
 def test_laps_default_to_the_best_lap_against_the_next_best(workspace):
     root, _, records = workspace
     data = client(root).get("/api/laps", params={"track": "synthetic", "car": "synthcar"}).json()
