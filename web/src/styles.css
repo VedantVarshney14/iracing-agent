@@ -246,3 +246,13 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .ghost-note { max-width: 360px; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 
+/* --- screen 1 traces (design 5) --------------------------------------------------------- */
+.lane-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lane-chip { min-height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; }
+.lane-chip[aria-pressed="true"] { background: #26303a; border-color: #3a4550; color: var(--text); }
+.strip-stack { display: flex; flex-direction: column; }
+.bar { stroke: none; }
+.bar.loss { fill: var(--loss-strong); fill-opacity: 0.85; }
+.bar.gain { fill: var(--gain-strong); fill-opacity: 0.85; }
+.loss-text { color: #ff9b6e; }
+.gain-text { color: #6fb2ff; }

@@ -1,20 +1,22 @@
-import { useMemo, useRef, useState, type PointerEvent } from "react";
-import { extent, indexAt, polyline, tickStep, toLane, useWidth } from "../geometry";
-import { metres, signed } from "../format";
-import type { ChannelName, Corner, Review, Series } from "../types";
+import { useMemo, useState } from "react";
+import { extent, indexAt } from "../geometry";
+import { signed } from "../format";
+import type { ChannelName, Review, Series } from "../types";
+import { Lanes, type Band, type Label, type Lane, type Marker } from "./Lanes";
 
-const LABEL_W = 140; // px, the readout column left of the plots
-
-interface Lane {
-  key: string;
-  title: string;
-  height: number;
-  lap: Series;
-  ref?: Series;
-  domain: [number, number];
-  zero?: boolean;
-  format: (v: number) => string;
-}
+const LANE_CHOICES: { key: string; label: string; default: boolean }[] = [
+  { key: "loss", label: "Time loss", default: true },
+  { key: "gap", label: "Gap", default: true },
+  { key: "speed", label: "Speed", default: true },
+  { key: "dv", label: "Speed diff", default: false },
+  { key: "throttle", label: "Throttle", default: true },
+  { key: "brake", label: "Brake", default: true },
+  { key: "gear", label: "Gear", default: true },
+  { key: "steer", label: "Steering", default: false },
+  { key: "offset", label: "Line offset", default: false },
+];
+const STORE_KEY = "iagent.lanes";
+const MARKERS_BELOW_M = 1500; // show brake/throttle markers once zoomed in this far
 
 interface Props {
   review: Review;
@@ -31,87 +33,89 @@ interface Props {
 export function Telemetry({ review, range, cursor, selected, primary, onCursor, onZoom, onPickCorner, onAsk }: Props) {
   const { trace, corners } = review;
   const dist = trace.distance_m;
-  const plotRef = useRef<HTMLDivElement>(null);
-  const plotWidth = useWidth(plotRef);
-  const [brush, setBrush] = useState<[number, number] | null>(null);
-
-  const [r0, r1] = range;
-  const lanes = useMemo<Lane[]>(() => {
-    // Lanes whose scale depends on the data fit what's on screen, so a zoomed corner fills them.
-    const [from, to] = [indexAt(dist, r0), indexAt(dist, r1) + 1];
-    const visible = (s: Series) => s.slice(from, to);
-    const abs = (s: Series) => visible(s).map((v) => (v == null ? null : Math.abs(v)));
-    const channel = (name: ChannelName) => ({ lap: trace.lap[name] ?? [], ref: trace.ref[name] ?? [] });
-    const [gLo, gHi] = extent(visible(trace.gap_s));
-    const gPad = Math.max(0.05, (gHi - gLo) * 0.12);
-    const speed = channel("Speed");
-    const [sLo, sHi] = extent(visible(speed.lap), visible(speed.ref));
-    const sPad = Math.max(3, (sHi - sLo) * 0.08);
-    const gear = channel("Gear");
-    const [, gearHi] = extent(gear.lap, gear.ref);
-    const steer = channel("SteeringWheelAngle");
-    const stHi = Math.max(5, extent(abs(steer.lap), abs(steer.ref))[1] * 1.1);
-    const pct = (v: number) => `${Math.round(v)}%`;
-    return [
-      { key: "gap", title: "Gap to ghost s", height: 84, lap: trace.gap_s, domain: [gLo - gPad, gHi + gPad], zero: true, format: (v) => signed(v) },
-      { key: "speed", title: "Speed km/h", height: 160, ...speed, domain: [sLo - sPad, sHi + sPad], format: (v) => v.toFixed(1) },
-      { key: "throttle", title: "Throttle", height: 64, ...channel("Throttle"), domain: [-4, 104], format: pct },
-      { key: "brake", title: "Brake", height: 64, ...channel("Brake"), domain: [-4, 104], format: pct },
-      { key: "gear", title: "Gear", height: 56, ...gear, domain: [0, gearHi + 0.6], format: (v) => String(Math.round(v)) },
-      { key: "steer", title: "Steering °", height: 72, ...steer, domain: [-stHi, stHi], zero: true, format: (v) => `${Math.round(v)}°` },
-    ];
-  }, [trace, dist, r0, r1]);
-
-  const paths = useMemo(
-    () =>
-      lanes.map((lane) => ({
-        lap: polyline(dist, toLane(lane.lap, ...lane.domain)),
-        ref: lane.ref ? polyline(dist, toLane(lane.ref, ...lane.domain)) : "",
-        zero: lane.zero ? toLane([0], ...lane.domain)[0] : null,
-      })),
-    [lanes, dist],
-  );
-
-  const span = r1 - r0;
-  const viewBox = `${r0} 0 ${span} 100`;
-  const pctOf = (d: number) => ((d - r0) / span) * 100;
-
-  // Readouts follow the cursor, else sit at the selected corner's apex.
-  const probe = cursor ?? corners.find((c) => c.id === primary)?.apex_m ?? null;
-  const probeIdx = probe == null ? null : indexAt(dist, probe);
-
-  const labels = useMemo(() => cornerLabels(corners, range, plotWidth), [corners, range, plotWidth]);
-  const step = tickStep(span);
-  const ticks: number[] = [];
-  for (let d = Math.ceil(r0 / step) * step; d <= r1; d += step) ticks.push(d);
-
-  const distanceAt = (e: PointerEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return r0 + ((e.clientX - rect.left) / rect.width) * span;
-  };
-  const onDown = (e: PointerEvent<HTMLDivElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const d = distanceAt(e);
-    setBrush([d, d]);
-  };
-  const onMove = (e: PointerEvent<HTMLDivElement>) => {
-    const d = distanceAt(e);
-    onCursor(d);
-    if (brush) setBrush([brush[0], d]);
-  };
-  const onUp = (e: PointerEvent<HTMLDivElement>) => {
-    if (!brush) return;
-    const d = distanceAt(e);
-    const [a, b] = [Math.min(brush[0], d), Math.max(brush[0], d)];
-    setBrush(null);
-    if (b - a > Math.max(15, span * 0.01)) {
-      onZoom([a, b]);
-    } else {
-      const hit = corners.find((c) => d >= c.entry_m - 30 && d <= c.exit_m + 30);
-      if (hit) onPickCorner(hit.id);
+  const [shown, setShown] = useState<string[]>(loadLanes);
+  const toggle = (key: string) => {
+    const next = shown.includes(key) ? shown.filter((k) => k !== key) : [...shown, key];
+    setShown(next);
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(next));
+    } catch {
+      // Not critical: the choice just won't be remembered.
     }
   };
 
+  const [r0, r1] = range;
+  const span = r1 - r0;
+  const lanes = useMemo<Lane[]>(() => {
+    const [from, to] = [indexAt(dist, r0), indexAt(dist, r1) + 1];
+    const vis = (s: Series | undefined) => (s ?? []).slice(from, to);
+    const fit = (pad: number, ...s: (Series | undefined)[]): [number, number] => {
+      const [lo, hi] = extent(...s.map(vis));
+      const p = Math.max(pad, (hi - lo) * 0.08);
+      return [lo - p, hi + p];
+    };
+    const sym = (min: number, ...s: (Series | undefined)[]): [number, number] => {
+      const m = Math.max(min, ...s.flatMap((x) => vis(x).map((v) => (v == null ? 0 : Math.abs(v))))) * 1.15;
+      return [-m, m];
+    };
+    const ch = (name: ChannelName): [Series, Series] => [trace.lap[name] ?? [], trace.ref[name] ?? []];
+    const pct = (v: number) => `${Math.round(v)}%`;
+    const [sl, sr] = ch("Speed");
+    const dv = sl.map((v, i) => (v == null || sr[i] == null ? null : v - sr[i]!));
+
+    // Time lost per bucket: where the gap grows, not just how big it is.
+    const bucket = [10, 20, 50, 100].find((b) => span / b <= 160) ?? 200;
+    const bars: { start: number; end: number; value: number }[] = [];
+    for (let s = Math.floor(r0 / bucket) * bucket; s < r1; s += bucket) {
+      const a = trace.gap_s[indexAt(dist, s)], b = trace.gap_s[indexAt(dist, s + bucket)];
+      if (a != null && b != null) bars.push({ start: s, end: s + bucket, value: (b - a) * 1000 });
+    }
+    const barMax = Math.max(5, ...bars.map((b) => Math.abs(b.value))) * 1.1;
+
+    const all: Lane[] = [
+      { key: "loss", title: `Time lost per ${bucket} m`, height: 64, lines: [], domain: [-barMax, barMax], zero: true, bars,
+        format: (v) => `${signed(v, 0)} ms`,
+        readout: (i) => {
+          const b = bars.find((x) => dist[i] >= x.start && dist[i] < x.end);
+          return <span className={b && b.value > 0 ? "loss-text" : "gain-text"}>{b ? `${signed(b.value, 0)} ms` : "—"}</span>;
+        } },
+      { key: "gap", title: "Gap to ghost s", height: 72, lines: [{ values: trace.gap_s, cls: "gap" }], domain: fit(0.03, trace.gap_s),
+        zero: true, fill: "zero", fillGood: "below", format: (v) => signed(v) },
+      { key: "speed", title: "Speed km/h", height: 150, lines: [{ values: sl, cls: "you" }, { values: sr, cls: "ghost" }],
+        domain: fit(3, sl, sr), fill: "between", format: (v) => v.toFixed(1) },
+      { key: "dv", title: "Speed vs ghost km/h", height: 70, lines: [{ values: dv, cls: "gap" }], domain: sym(3, dv), zero: true,
+        fill: "zero", format: (v) => signed(v, 1) },
+      { key: "throttle", title: "Throttle", height: 64, lines: [{ values: ch("Throttle")[0], cls: "you" }, { values: ch("Throttle")[1], cls: "ghost" }],
+        domain: [-4, 104], fill: "between", format: pct },
+      { key: "brake", title: "Brake", height: 64, lines: [{ values: ch("Brake")[0], cls: "you" }, { values: ch("Brake")[1], cls: "ghost" }],
+        domain: [-4, 104], fill: "between", fillGood: "neutral", format: pct },
+      { key: "gear", title: "Gear", height: 52, lines: [{ values: ch("Gear")[0], cls: "you" }, { values: ch("Gear")[1], cls: "ghost" }],
+        domain: [0, extent(...ch("Gear"))[1] + 0.6], format: (v) => String(Math.round(v)) },
+      { key: "steer", title: "Steering °", height: 72, lines: [{ values: ch("SteeringWheelAngle")[0], cls: "you" }, { values: ch("SteeringWheelAngle")[1], cls: "ghost" }],
+        domain: sym(5, ...ch("SteeringWheelAngle")), zero: true, format: (v) => `${Math.round(v)}°` },
+    ];
+    if (trace.offset_m) {
+      all.push({ key: "offset", title: "Line vs ghost m (+ left)", height: 72, lines: [{ values: trace.offset_m, cls: "offset" }],
+        domain: sym(2, trace.offset_m), zero: true, fill: "zero", fillGood: "neutral",
+        format: (v) => `${Math.abs(v).toFixed(1)} ${v >= 0 ? "left" : "right"}` });
+    }
+    return all.filter((l) => shown.includes(l.key));
+  }, [trace, dist, r0, r1, span, shown]);
+
+  const bands: Band[] = corners
+    .filter((c) => selected.includes(c.id))
+    .map((c) => ({ start: c.entry_m, end: c.exit_m, strong: c.id === primary }));
+  const labels: Label[] = corners.map((c) => ({ d: c.apex_m, text: `T${c.id}`, on: selected.includes(c.id), priority: c.flat ? 0 : 1 }));
+  const markers: Marker[] = [];
+  if (span <= MARKERS_BELOW_M) {
+    for (const c of corners) {
+      if (c.exit_m < r0 || c.entry_m > r1) continue;
+      if (c.ref_brake_m != null) markers.push({ d: c.ref_brake_m, who: "ghost", label: `ghost brake ${Math.round(c.ref_brake_m)}`, dashed: true });
+      if (c.brake_m != null) markers.push({ d: c.brake_m, who: "you", label: `brake ${Math.round(c.brake_m)}${diff(c.brake_diff_m)}`, dashed: true });
+      if (c.ref_full_throttle_m != null) markers.push({ d: c.ref_full_throttle_m, who: "ghost", label: `ghost full ${Math.round(c.ref_full_throttle_m)}` });
+      if (c.full_throttle_m != null) markers.push({ d: c.full_throttle_m, who: "you", label: `full ${Math.round(c.full_throttle_m)}${diff(c.full_throttle_diff_m)}` });
+    }
+  }
   const primaryCorner = corners.find((c) => c.id === primary);
   const zoomed = span < review.track.length_m - 1;
 
@@ -122,119 +126,54 @@ export function Telemetry({ review, range, cursor, selected, primary, onCursor, 
           Telemetry <span className="muted">· drag to zoom, double-click to reset</span>
         </h2>
         <div className="row">
-          <button type="button" className="btn" onClick={onAsk}>
-            Ask coach
-          </button>
+          <button type="button" className="btn" onClick={onAsk}>Ask coach</button>
           {primaryCorner && (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => onZoom([primaryCorner.entry_m - 80, primaryCorner.exit_m + 80])}
-            >
+            <button type="button" className="btn" onClick={() => onZoom([primaryCorner.entry_m - 80, primaryCorner.exit_m + 80])}>
               Zoom to {primaryCorner.label}
             </button>
           )}
-          {zoomed && (
-            <button type="button" className="btn" onClick={() => onZoom(null)}>
-              Whole lap
-            </button>
-          )}
+          {zoomed && <button type="button" className="btn" onClick={() => onZoom(null)}>Whole lap</button>}
         </div>
       </div>
-
-      <div className="lanes-grid">
-        <div className="lane-label probe">{probe == null ? "Hover the traces" : `@ ${metres(probe)}`}</div>
-        <div className="corner-strip">
-          {labels.map((c) => (
-            <span key={c.id} style={{ left: `${pctOf(c.apex_m)}%` }} className={selected.includes(c.id) ? "on" : ""}>
-              T{c.id}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="lanes">
-        {lanes.map((lane, i) => (
-          <div className="lanes-grid lane" key={lane.key}>
-            <div className="lane-label">
-              <span className="muted">{lane.title}</span>
-              {probeIdx != null && (
-                <span className="readout">
-                  <Value v={lane.lap[probeIdx]} f={lane.format} cls={lane.ref ? "you" : ""} />
-                  {lane.ref && <Value v={lane.ref[probeIdx]} f={lane.format} cls="ghost" />}
-                </span>
-              )}
-            </div>
-            <svg viewBox={viewBox} preserveAspectRatio="none" style={{ height: lane.height }} aria-hidden="true">
-              {paths[i].zero != null && (
-                <line x1={r0} x2={r1} y1={paths[i].zero!} y2={paths[i].zero!} className="zero" vectorEffect="non-scaling-stroke" />
-              )}
-              {paths[i].ref && <path d={paths[i].ref} className="trace ghost" vectorEffect="non-scaling-stroke" />}
-              <path d={paths[i].lap} className={lane.ref ? "trace you" : "trace gap"} vectorEffect="non-scaling-stroke" />
-            </svg>
-          </div>
+      <div className="lane-chips" role="group" aria-label="Channels shown">
+        {LANE_CHOICES.filter((c) => c.key !== "offset" || trace.offset_m).map((c) => (
+          <button key={c.key} type="button" className="lane-chip" aria-pressed={shown.includes(c.key)} onClick={() => toggle(c.key)}>
+            {c.label}
+          </button>
         ))}
-
-        <div
-          ref={plotRef}
-          className="lanes-overlay"
-          style={{ left: LABEL_W }}
-          onPointerDown={onDown}
-          onPointerMove={onMove}
-          onPointerUp={onUp}
-          onPointerLeave={() => onCursor(null)}
-          onDoubleClick={() => onZoom(null)}
-        >
-          <svg viewBox={viewBox} preserveAspectRatio="none" aria-hidden="true">
-            {corners
-              .filter((c) => selected.includes(c.id))
-              .map((c) => (
-                <rect
-                  key={c.id}
-                  x={c.entry_m}
-                  width={c.exit_m - c.entry_m}
-                  y={0}
-                  height={100}
-                  className={c.id === primary ? "band primary" : "band"}
-                />
-              ))}
-            {brush && (
-              <rect x={Math.min(...brush)} width={Math.abs(brush[1] - brush[0])} y={0} height={100} className="brush" />
-            )}
-            {probe != null && (
-              <line x1={probe} x2={probe} y1={0} y2={100} className="cursor" vectorEffect="non-scaling-stroke" />
-            )}
-          </svg>
-        </div>
+        <span className="muted small">Shaded blue where you're ahead of the ghost, orange where you're behind</span>
       </div>
-
-      <div className="lanes-grid">
-        <div className="lane-label muted">{zoomed ? `${metres(r0)} – ${metres(r1)}` : ""}</div>
-        <div className="axis">
-          {ticks.map((d) => (
-            <span key={d} style={{ left: `${pctOf(d)}%` }}>
-              {span > 2500 ? `${(d / 1000).toFixed(d % 1000 ? 1 : 0)} km` : `${Math.round(d)}`}
-            </span>
-          ))}
-        </div>
-      </div>
+      <Lanes
+        dist={dist}
+        range={range}
+        lanes={lanes}
+        markers={markers}
+        bands={bands}
+        labels={labels}
+        cursor={cursor}
+        probe={primaryCorner?.apex_m ?? null}
+        onCursor={onCursor}
+        onZoom={onZoom}
+        onPick={(d) => {
+          const hit = corners.find((c) => d >= c.entry_m - 30 && d <= c.exit_m + 30);
+          if (hit) onPickCorner(hit.id);
+        }}
+      />
     </section>
   );
 }
 
-function Value({ v, f, cls }: { v: number | null | undefined; f: (v: number) => string; cls: string }) {
-  return <span className={cls}>{v == null ? "—" : f(v)}</span>;
+/** " (+101 m)" against the ghost, for marker labels. */
+function diff(v: number | null | undefined): string {
+  return v == null || v === 0 ? "" : ` (${signed(v, 0)} m)`;
 }
 
-/** Corner labels that fit: corners taken with a real speed drop first, then flat ones. */
-function cornerLabels(corners: Corner[], [r0, r1]: [number, number], width: number): Corner[] {
-  if (!width) return [];
-  const pxPerM = width / (r1 - r0);
-  const visible = corners.filter((c) => c.apex_m >= r0 && c.apex_m <= r1);
-  const ordered = [...visible.filter((c) => !c.flat), ...visible.filter((c) => c.flat)];
-  const kept: Corner[] = [];
-  for (const c of ordered) {
-    if (kept.every((k) => Math.abs(k.apex_m - c.apex_m) * pxPerM >= 34)) kept.push(c);
+function loadLanes(): string[] {
+  try {
+    const saved = localStorage.getItem(STORE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {
+    // Storage unavailable: use the defaults.
   }
-  return kept;
+  return LANE_CHOICES.filter((c) => c.default).map((c) => c.key);
 }

@@ -176,7 +176,7 @@ export function CornerView({ review, corner, window, cursor, onCursor, onCorner,
         <div className="card-head">
           <h2>Telemetry <span className="muted">· {metres(window[0])} – {metres(window[1])}, shaded where you're ahead (blue) or behind (orange)</span></h2>
         </div>
-        <Lanes dist={dist} range={window} lanes={lanes} markers={markers} band={[corner.entry_m, corner.exit_m]} cursor={cursor} onCursor={onCursor} />
+        <Lanes dist={dist} range={window} lanes={lanes} markers={markers} bands={[{ start: corner.entry_m, end: corner.exit_m }]} cursor={cursor} onCursor={onCursor} />
       </section>
     </main>
   );
