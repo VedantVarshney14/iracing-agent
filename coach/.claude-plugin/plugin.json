@@ -1,0 +1,8 @@
+{
+  "name": "coach",
+  "description": "Coaching skills that use the iagent CLI to analyse iRacing laps.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Vedant Varshney"
+  }
+}

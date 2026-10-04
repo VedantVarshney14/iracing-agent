@@ -1,0 +1,895 @@
+"""The `iagent` command: the coach agent's hands, and yours.
+
+Every agent-facing command takes `--json` (or writes CSV for bulk data), writes errors to stderr
+and exits non-zero on failure. The workspace comes from `--workspace` or `IAGENT_WORKSPACE`.
+"""
+
+import dataclasses
+import json
+import logging
+from pathlib import Path
+
+import click
+import pandas as pd
+
+from iagent import utils
+from iagent.analysis import landmarks
+from iagent.analysis.compare import compare, summarize, trace
+from iagent.analysis.corners import (
+    CornerMap,
+    carry_names,
+    compare_corners,
+    consistency,
+    corner_metrics,
+    derive_corner_map,
+    load_map,
+    save_map,
+)
+from iagent.laps.pace import DEFAULT_WITHIN, best_times, group_of, representative
+from iagent.laps.recorder import record
+from iagent.laps.store import LapRecord, ParquetLapStore
+from iagent.laps.tracks import load_track_info, update_track_info
+from iagent.references import garage61 as g61
+from iagent.references import ghosts
+from iagent.telemetry.session import SessionInfo
+from iagent.telemetry.ibt import IbtSource
+from iagent.telemetry.source import TelemetrySource
+from iagent.testing.synthetic import LapKind, SyntheticSource
+
+DEFAULT_WORKSPACE = Path("workspace")
+
+
+def _emit(obj) -> None:
+    click.echo(json.dumps(obj, indent=2))
+
+
+def _record_dict(r: LapRecord, best: dict) -> dict:
+    out = dataclasses.asdict(r)
+    out["reasons"] = list(r.reasons)
+    b = best.get(group_of(r))
+    out["vs_best_pct"] = round((r.lap_time / b - 1) * 100, 2) if b and r.valid and r.lap_time else None
+    return out
+
+
+def _print_laps(records: list[LapRecord], best: dict) -> None:
+    width = max([len("lap")] + [len(r.lap_id) for r in records])
+    click.echo(f"{'lap':<{width}} {'time':>9} {'vs best':>8} {'off(s)':>7}  {'valid':<5}  reasons")
+    for r in records:
+        time = f"{r.lap_time:9.3f}" if r.lap_time is not None else f"{'-':>9}"
+        b = best.get(group_of(r))
+        gap = f"{(r.lap_time / b - 1) * 100:+7.1f}%" if b and r.valid and r.lap_time else f"{'':>8}"
+        click.echo(
+            f"{r.lap_id:<{width}} {time} {gap} {r.off_track_s:7.1f}  {str(r.valid):<5}  {', '.join(r.reasons)}"
+        )
+
+
+class Ctx:
+    def __init__(self, workspace: Path):
+        self.workspace = workspace
+        self._store: ParquetLapStore | None = None
+        self._refs: ParquetLapStore | None = None
+
+    def store(self, create: bool = False) -> ParquetLapStore:
+        if self._store is None:
+            if not create and not (self.workspace / "index.sqlite").exists():
+                raise click.ClickException(
+                    f"No lap store in {self.workspace}. Run `iagent ingest <file.ibt>` first, or "
+                    "set --workspace / IAGENT_WORKSPACE."
+                )
+            try:
+                self._store = ParquetLapStore(self.workspace)
+            except RuntimeError as e:
+                raise click.ClickException(str(e)) from e
+        return self._store
+
+    def refs(self, create: bool = False) -> ParquetLapStore | None:
+        """Reference laps (other drivers', e.g. from Garage61), kept apart from the driver's own
+        laps so they never count towards "your best" or the pace filter."""
+        root = self.workspace / "reference"
+        if self._refs is None and (create or (root / "index.sqlite").exists()):
+            self._refs = ParquetLapStore(root)
+        return self._refs
+
+    def close(self) -> None:
+        for store in (self._store, self._refs):
+            if store is not None:
+                store.close()
+
+
+def _find(ctx: Ctx, lap_id: str) -> LapRecord:
+    """A lap by id: the driver's own laps first, then reference laps."""
+    for store in (ctx.store(), ctx.refs()):
+        if store is not None:
+            matches = [r for r in store.list() if r.lap_id == lap_id]
+            if matches:
+                return matches[0]
+    raise click.ClickException(f"Unknown lap {lap_id!r}. See `iagent laps list` or `iagent refs list`.")
+
+
+def _load(ctx: Ctx, lap_id: str) -> pd.DataFrame:
+    """The distance-gridded lap, from whichever store holds it."""
+    try:
+        return ctx.store().load(lap_id)
+    except KeyError:
+        refs = ctx.refs()
+        if refs is None:
+            raise
+        return refs.load(lap_id)
+
+
+def _reference(ctx: Ctx, rec: LapRecord, ref_id: str | None) -> LapRecord:
+    """REF_ID's record, or the fastest other valid lap on the same track and car."""
+    if ref_id is None:
+        candidates = [r for r in ctx.store().list(track=rec.track_key, car=rec.car_key, valid_only=True)
+                      if r.lap_id != rec.lap_id and r.lap_time is not None]
+        if not candidates:
+            raise click.ClickException("No other valid lap on this track and car to compare against.")
+        return min(candidates, key=lambda r: r.lap_time)
+    ref = _find(ctx, ref_id)
+    if group_of(ref) != group_of(rec):
+        raise click.ClickException(
+            f"{ref_id} is {ref.track_key}/{ref.car_key}, {rec.lap_id} is {rec.track_key}/{rec.car_key}: "
+            "laps on different tracks or cars can't be compared."
+        )
+    return ref
+
+
+@click.group()
+@click.option("--workspace", type=click.Path(file_okay=False, path_type=Path), envvar="IAGENT_WORKSPACE",
+              default=DEFAULT_WORKSPACE, show_default=True, help="Workspace directory (env: IAGENT_WORKSPACE).")
+@click.option("--debug", is_flag=True, help="Verbose logging (to stderr).")
+@click.pass_context
+def cli(click_ctx: click.Context, workspace: Path, debug: bool):
+    """iRacing coach toolkit: ingest telemetry, inspect and compare laps."""
+    utils.setup_logger("iagent", logging.DEBUG if debug else logging.INFO)
+    ctx = Ctx(workspace)
+    click_ctx.obj = ctx
+    click_ctx.call_on_close(ctx.close)
+
+
+@cli.command()
+@click.argument("sources", nargs=-1, required=True)
+@click.option("--laps", default=5, show_default=True, help="Synthetic source only: lap count.")
+@click.option("--messy", is_flag=True, help="Synthetic source only: include off-track, pit and reset laps.")
+@click.option("--seed", default=0, show_default=True, help="Synthetic source only.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def ingest(ctx: Ctx, sources: tuple[str, ...], laps: int, messy: bool, seed: int, as_json: bool):
+    """Segment SOURCES (.ibt files, or 'synthetic') into laps and save them to the workspace.
+
+    Every lap is saved, including partial, pit and reset laps (flagged invalid). Re-ingesting a
+    file replaces its laps.
+    """
+    records: list[LapRecord] = []
+    for source in sources:
+        src: TelemetrySource
+        if source == "synthetic":
+            kinds = None
+            if messy:
+                cycle = [LapKind.CLEAN, LapKind.OFF_TRACK, LapKind.PIT_IN, LapKind.OUT_LAP, LapKind.RESET]
+                kinds = [cycle[i % len(cycle)] for i in range(laps)]
+            src = SyntheticSource(n_laps=laps, kinds=kinds, seed=seed)
+        else:
+            try:
+                src = IbtSource(source)
+            except FileNotFoundError as e:
+                raise click.ClickException(f"No such file: {e}") from e
+        records += record(src, ctx.store(create=True), source_label=Path(source).name)
+        update_track_info(ctx.workspace, src.session)
+    best = best_times(records)
+    if as_json:
+        _emit([_record_dict(r, best) for r in records])
+    else:
+        _print_laps(records, best)
+
+
+@cli.command()
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def workspace(ctx: Ctx, as_json: bool):
+    """Where the workspace is: lap store, notes/ and scratch/ live here."""
+    root = ctx.workspace.resolve()
+    info = {
+        "workspace": str(root),
+        "has_laps": (root / "index.sqlite").exists(),
+        "notes": str(root / "notes"),
+        "scratch": str(root / "scratch"),
+    }
+    if as_json:
+        _emit(info)
+    else:
+        for key, value in info.items():
+            click.echo(f"{key}: {value}")
+
+
+@cli.command()
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def tracks(ctx: Ctx, as_json: bool):
+    """Track/car combinations in the workspace, with lap counts and best times.
+
+    Use the `track` and `car` keys to filter other commands.
+    """
+    records = ctx.store().list()
+    best = best_times(records)
+    rows: dict[tuple[str, str], dict] = {}
+    for r in records:
+        row = rows.setdefault(group_of(r), {
+            "track": r.track_key, "car": r.car_key, "track_name": r.track, "car_name": r.car,
+            "laps": 0, "valid_laps": 0, "sessions": set(), "best_lap_time": best.get(group_of(r)),
+        })
+        row["laps"] += 1
+        row["valid_laps"] += int(r.valid)
+        row["sessions"].add(r.session_id)
+    out = [{**row, "sessions": sorted(row["sessions"])} for row in rows.values()]
+    for row in out:
+        row["representative_laps"] = len(
+            representative([r for r in records if group_of(r) == (row["track"], row["car"])])
+        )
+    if as_json:
+        _emit(out)
+        return
+    for row in out:
+        best_s = f"{row['best_lap_time']:.3f}" if row["best_lap_time"] else "-"
+        click.echo(
+            f"{row['track']} / {row['car']}  ({row['track_name']}, {row['car_name']}): "
+            f"{row['laps']} laps, {row['valid_laps']} valid, {row['representative_laps']} "
+            f"representative, best {best_s}, {len(row['sessions'])} session(s)"
+        )
+
+
+@cli.group()
+def laps():
+    """List, inspect and compare laps."""
+
+
+@laps.command("list")
+@click.option("--track", help="Track key (see `iagent tracks`).")
+@click.option("--car", help="Car key (see `iagent tracks`).")
+@click.option("--session", "session_id", help="Session id (the .ibt file stem).")
+@click.option("--valid-only", is_flag=True, help="Only structurally valid laps (complete, no pit road, no reset).")
+@click.option("--representative", "within", is_flag=False, flag_value=DEFAULT_WITHIN, default=None,
+              type=float, help="Only valid laps within FRACTION of the best lap for that track/car "
+              "(0.05 if given without a value).")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def laps_list(ctx: Ctx, track: str | None, car: str | None, session_id: str | None,
+              valid_only: bool, within: float | None, as_json: bool):
+    """Laps with time, gap to the best valid lap (same track/car), off-track time and validity."""
+    store = ctx.store()
+    records = store.list(track=track, car=car, session_id=session_id, valid_only=valid_only,
+                         within_best=within)
+    best = best_times(store.list(track=track, car=car))
+    if as_json:
+        _emit([_record_dict(r, best) for r in records])
+    else:
+        _print_laps(records, best)
+
+
+@laps.command("show")
+@click.argument("lap_id")
+@click.option("--sections", default=10, show_default=True, help="Number of equal-distance splits.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def laps_show(ctx: Ctx, lap_id: str, sections: int, as_json: bool):
+    """One lap: headline numbers and equal-distance splits (time, min speed, first brake point)."""
+    rec = _find(ctx, lap_id)
+    out = {
+        **_record_dict(rec, best_times(ctx.store().list(track=rec.track_key, car=rec.car_key))),
+        **summarize(_load(ctx, lap_id), rec.lap_time, sections),
+    }
+    if as_json:
+        _emit(out)
+        return
+    for key, value in out.items():
+        if key != "splits":
+            click.echo(f"{key}: {value}")
+    click.echo(f"{'sec':>3} {'from':>6} {'to':>6} {'time':>8} {'min kph':>8} {'brake@':>8}")
+    for s in out["splits"]:
+        brake = f"{s['brake_start_m']:.0f}" if s["brake_start_m"] is not None else "-"
+        click.echo(f"{s['section']:>3} {s['start_m']:>6} {s['end_m']:>6} {s['time_s']:>8.3f} "
+                   f"{s['min_speed_kph']:>8.1f} {brake:>8}")
+
+
+@laps.command("compare")
+@click.argument("lap_id")
+@click.argument("ref_id", required=False)
+@click.option("--sections", default=20, show_default=True, help="Number of equal-distance sections.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def laps_compare(ctx: Ctx, lap_id: str, ref_id: str | None, sections: int, as_json: bool):
+    """Where LAP_ID gains or loses time against REF_ID, section by section.
+
+    REF_ID defaults to the fastest other valid lap on the same track and car. A positive
+    `delta_s` means LAP_ID was slower in that section.
+    """
+    rec = _find(ctx, lap_id)
+    ref = _reference(ctx, rec, ref_id)
+    result = compare(_load(ctx, lap_id), rec.lap_time, _load(ctx, ref.lap_id), ref.lap_time,
+                     sections)
+    out = {"lap": lap_id, "lap_time": rec.lap_time, "ref": ref.lap_id, "ref_lap_time": ref.lap_time, **result}
+    if as_json:
+        _emit(out)
+        return
+    total = f"{out['total_delta_s']:+.3f}s" if out["total_delta_s"] is not None else "n/a"
+    click.echo(f"{lap_id} vs {ref.lap_id}: {total}  (biggest losses in sections {out['biggest_losses']})")
+    click.echo(f"{'sec':>3} {'from':>6} {'to':>6} {'delta':>7} {'min kph':>8} {'ref':>6} {'brake@':>7} {'ref':>6}")
+    for s in out["sections"]:
+        def fmt(v, spec):
+            return format(v, spec) if v is not None else "-"
+        click.echo(f"{s['section']:>3} {s['start_m']:>6} {s['end_m']:>6} {s['delta_s']:>+7.3f} "
+                   f"{fmt(s['min_speed_kph'], '8.1f'):>8} {fmt(s['ref_min_speed_kph'], '6.1f'):>6} "
+                   f"{fmt(s['brake_start_m'], '7.0f'):>7} {fmt(s['ref_brake_start_m'], '6.0f'):>6}")
+
+
+@laps.command("trace")
+@click.argument("lap_id")
+@click.option("--channels", default="Speed,Throttle,Brake,Gear,SteeringWheelAngle", show_default=True,
+              help="Comma-separated channel names.")
+@click.option("--from", "start_m", default=0.0, show_default=True, help="Start distance (m).")
+@click.option("--to", "end_m", type=float, default=None, help="End distance (m); default end of lap.")
+@click.option("--step", "step_m", default=10.0, show_default=True, help="Sample spacing (m).")
+@click.pass_obj
+def laps_trace(ctx: Ctx, lap_id: str, channels: str, start_m: float, end_m: float | None, step_m: float):
+    """Channel values along the lap as CSV (LapDist in m, lap_time_s, Speed in km/h).
+
+    Keep ranges short (a corner is ~100-300 m) to avoid flooding the output.
+    """
+    _find(ctx, lap_id)
+    names = [c.strip() for c in channels.split(",") if c.strip() not in ("", "LapDist", "lap_time_s")]
+    try:
+        df = trace(_load(ctx, lap_id), names, start_m, end_m, step_m)
+    except KeyError as e:
+        raise click.ClickException(str(e.args[0])) from e
+    click.echo(df.to_csv(index=False), nl=False)
+
+# --- corners --------------------------------------------------------------------------------
+
+logger = logging.getLogger("iagent.cli")
+
+
+def _derive_map(ctx: Ctx, track: str, car: str | None) -> CornerMap:
+    reps = representative(ctx.store().list(track=track, car=car))
+    if not reps:
+        raise click.ClickException(f"No representative laps for track {track!r}; see `iagent tracks`.")
+    if car is None:  # use the car with the most representative laps
+        counts: dict[str, int] = {}
+        for r in reps:
+            counts[r.car_key] = counts.get(r.car_key, 0) + 1
+        car = max(counts, key=counts.__getitem__)
+        reps = [r for r in reps if r.car_key == car]
+    grids = [ctx.store().load(r.lap_id) for r in reps]
+    try:
+        return derive_corner_map(grids, track, car, [r.lap_id for r in reps])
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+
+def _corner_map(ctx: Ctx, track: str) -> CornerMap:
+    """The saved map for a track, derived (and saved) on first use."""
+    cmap = load_map(ctx.workspace, track)
+    if cmap is None:
+        cmap = _derive_map(ctx, track, None)
+        path = save_map(ctx.workspace, cmap)
+        logger.info("No corner map for %s yet: derived %d corners into %s", track, len(cmap.corners), path)
+    return cmap
+
+
+def _corner_dicts(cmap: CornerMap) -> list[dict]:
+    return [dataclasses.asdict(c) for c in cmap.corners]
+
+
+def _print_map(cmap: CornerMap) -> None:
+    click.echo(f"{cmap.track_key}: {len(cmap.corners)} corners (from {len(cmap.derived_from)} "
+               f"{cmap.car_key} laps)")
+    click.echo(f"{'corner':<24} {'dir':>3} {'entry':>6} {'apex':>6} {'exit':>6} {'min kph':>8}  name source")
+    for c in cmap.corners:
+        flat = " flat" if c.flat else ""
+        src = f"{c.name_source}/{c.name_confidence}" if c.name else ""
+        click.echo(f"{c.label:<24} {c.direction:>3} {c.entry_m:>6.0f} {c.apex_m:>6.0f} {c.exit_m:>6.0f} "
+                   f"{c.ref_min_speed_kph:>8.1f}{flat:<5} {src}")
+
+
+def _fmt(v, spec: str) -> str:
+    return format(v, spec) if v is not None else "-"
+
+
+def _off(row: dict) -> str:
+    """Off-track metres for a compare row, shown only when either lap left the track."""
+    a, b = row.get("off_track_m") or 0, row.get("ref_off_track_m") or 0
+    return f"{a:.0f}/{b:.0f}" if a or b else ""
+
+
+@cli.group()
+def corners():
+    """Corner map (derived from laps) and per-corner analysis."""
+
+
+@corners.command("map")
+@click.option("--track", required=True, help="Track key (see `iagent tracks`).")
+@click.option("--car", help="Car whose laps to derive from (default: the one with most representative laps).")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def corners_map(ctx: Ctx, track: str, car: str | None, as_json: bool):
+    """(Re)derive the corner map for a track from its representative laps and save it.
+
+    Corners are stretches of sustained lateral g; chicanes split into one corner per direction.
+    Names from an existing map are kept for corners that still line up.
+    """
+    cmap = _derive_map(ctx, track, car)
+    old = load_map(ctx.workspace, track)
+    if old is not None:
+        cmap = carry_names(old, cmap)
+    save_map(ctx.workspace, cmap)
+    if as_json:
+        _emit({**dataclasses.asdict(cmap)})
+    else:
+        _print_map(cmap)
+
+
+@corners.command("list")
+@click.option("--track", required=True, help="Track key (see `iagent tracks`).")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def corners_list(ctx: Ctx, track: str, as_json: bool):
+    """The corner map: direction, entry/apex/exit distances (m), reference minimum speed, names."""
+    cmap = _corner_map(ctx, track)
+    if as_json:
+        _emit(dataclasses.asdict(cmap))
+    else:
+        _print_map(cmap)
+
+
+@corners.command("name")
+@click.option("--track", required=True, help="Track key (see `iagent tracks`).")
+@click.argument("corner_id", type=int)
+@click.argument("name", required=False)
+@click.option("--source", default="driver", show_default=True,
+              help="Where the name came from, e.g. driver, crewchief, web, model.")
+@click.option("--confidence", type=click.Choice(["high", "medium", "low"]), default="high", show_default=True)
+@click.option("--clear", is_flag=True, help="Remove the corner's name.")
+@click.pass_obj
+def corners_name(ctx: Ctx, track: str, corner_id: int, name: str | None, source: str, confidence: str, clear: bool):
+    """Name corner CORNER_ID (e.g. `iagent corners name --track spa-2024-up 1 "La Source"`)."""
+    if not clear and not name:
+        raise click.UsageError("Give a NAME, or --clear.")
+    cmap = _corner_map(ctx, track)
+    try:
+        c = cmap.get(corner_id)
+    except KeyError as e:
+        raise click.ClickException(str(e.args[0])) from e
+    c.name, c.name_source, c.name_confidence = (None, None, None) if clear else (name, source, confidence)
+    save_map(ctx.workspace, cmap)
+    click.echo(f"T{c.id}: {c.name or '(no name)'}")
+
+
+@corners.command("landmarks")
+@click.option("--track", required=True, help="Track key (see `iagent tracks`).")
+@click.option("--apply", is_flag=True,
+              help="Name unnamed corners that match exactly one named landmark (source crewchief, medium confidence).")
+@click.option("--refresh", is_flag=True, help="Re-download the landmarks file.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def corners_landmarks(ctx: Ctx, track: str, apply: bool, refresh: bool, as_json: bool):
+    """Corner-name hints from CrewChief's landmark data, matched to this track's corners.
+
+    Coverage is partial (~25 iRacing tracks) and names can be misspelled or generic ("turn9");
+    treat them as hints. Downloads the data once into the workspace.
+    """
+    cmap = _corner_map(ctx, track)
+    try:
+        data = landmarks.load(ctx.workspace / "cache" / "crewchief-landmarks.json", refresh)
+    except OSError as e:
+        raise click.ClickException(f"Couldn't fetch CrewChief landmarks: {e}") from e
+    found = landmarks.find(data, track)
+    if found is None:
+        if as_json:
+            _emit({"track": track, "source_track": None, "landmarks": []})
+        else:
+            click.echo(f"CrewChief has no landmarks for {track}.")
+        return
+    source_track, marks = found
+    matches = landmarks.match(cmap, marks)
+    applied = []
+    if apply:
+        for m in matches:
+            if m["suggested_name"] and len(m["corners"]) == 1:
+                c = cmap.get(m["corners"][0])
+                if c.name is None:
+                    c.name, c.name_source, c.name_confidence = m["suggested_name"], "crewchief", "medium"
+                    applied.append(c.id)
+        save_map(ctx.workspace, cmap)
+    if as_json:
+        _emit({"track": track, "source_track": source_track, "landmarks": matches, "applied": applied})
+        return
+    click.echo(f"CrewChief landmarks for {source_track!r} (may be an older scan of {track}):")
+    for m in matches:
+        corners_s = ", ".join(f"T{i}" for i in m["corners"]) or "no corner"
+        click.echo(f"  {m['landmark']:<16} {m['start_m']:>6.0f}-{m['end_m']:<6.0f} -> {corners_s}")
+    if apply:
+        click.echo(f"Named: {', '.join(f'T{i}' for i in applied) or 'nothing new'}")
+
+
+@corners.command("report")
+@click.argument("lap_id")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def corners_report(ctx: Ctx, lap_id: str, as_json: bool):
+    """Per-corner numbers for one lap: time, brake point, entry/min/exit speed, full throttle point.
+
+    Distances are metres from the start/finish line; speeds km/h. A missing brake point means the
+    corner was taken without braking (min_throttle shows any lift). `off m` is metres driven off
+    the track in that corner: the corner's numbers then describe an incident.
+    """
+    rec = _find(ctx, lap_id)
+    cmap = _corner_map(ctx, rec.track_key)
+    rows = corner_metrics(_load(ctx, lap_id), rec.lap_time, cmap)
+    if as_json:
+        _emit({"lap": lap_id, "lap_time": rec.lap_time, "track": rec.track_key, "corners": rows})
+        return
+    click.echo(f"{lap_id}  {rec.lap_time:.3f}s" if rec.lap_time else lap_id)
+    click.echo(f"{'corner':<24} {'time':>7} {'brake@':>7} {'entry':>6} {'min':>6} {'@':>6} {'full@':>6} {'exit':>6} {'off m':>5}")
+    for r in rows:
+        if r.get("missing"):
+            continue
+        label = f"T{r['corner']} {r['name']}" if r["name"] else f"T{r['corner']}"
+        click.echo(f"{label:<24} {_fmt(r['time_s'], '7.3f'):>7} {_fmt(r['brake_m'], '7.0f'):>7} "
+                   f"{_fmt(r['entry_speed_kph'], '6.1f'):>6} {_fmt(r['min_speed_kph'], '6.1f'):>6} "
+                   f"{_fmt(r['min_speed_m'], '6.0f'):>6} {_fmt(r['full_throttle_m'], '6.0f'):>6} "
+                   f"{_fmt(r['exit_speed_kph'], '6.1f'):>6} {_fmt(r['off_track_m'] or None, '5.0f'):>5}")
+
+
+@corners.command("compare")
+@click.argument("lap_id")
+@click.argument("ref_id", required=False)
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def corners_compare(ctx: Ctx, lap_id: str, ref_id: str | None, as_json: bool):
+    """Corner by corner: where LAP_ID gains or loses time against REF_ID, and why.
+
+    REF_ID defaults to the fastest other valid lap on the same track and car. Signs: delta_s > 0
+    slower; brake_diff_m > 0 braked later; min_speed_diff_kph > 0 more speed; full_throttle_diff_m
+    > 0 full throttle later; exit_speed_diff_kph > 0 faster exit. Off-track metres are shown when
+    either lap left the track in a corner: that corner's difference is then an incident, not technique.
+    """
+    rec = _find(ctx, lap_id)
+    ref = _reference(ctx, rec, ref_id)
+    cmap = _corner_map(ctx, rec.track_key)
+    rows = compare_corners(
+        corner_metrics(_load(ctx, lap_id), rec.lap_time, cmap),
+        corner_metrics(_load(ctx, ref.lap_id), ref.lap_time, cmap),
+    )
+    total = round(rec.lap_time - ref.lap_time, 3) if rec.lap_time and ref.lap_time else None
+    losses = sorted((r for r in rows if (r.get("delta_s") or 0) > 0), key=lambda r: -r["delta_s"])
+    out = {"lap": lap_id, "ref": ref.lap_id, "total_delta_s": total,
+           "biggest_losses": [r["corner"] for r in losses[:3]], "corners": rows}
+    if as_json:
+        _emit(out)
+        return
+    click.echo(f"{lap_id} vs {ref.lap_id}: {_fmt(total, '+.3f')}s  (biggest losses: "
+               f"{', '.join(f'T{i}' for i in out['biggest_losses']) or 'none'})")
+    click.echo(f"{'corner':<24} {'delta':>7} {'brake':>6} {'min kph':>8} {'full thr':>9} {'exit kph':>9}  off m (lap/ref)")
+    for r in rows:
+        if r.get("missing"):
+            continue
+        label = f"T{r['corner']} {r['name']}" if r["name"] else f"T{r['corner']}"
+        click.echo(f"{label:<24} {_fmt(r['delta_s'], '+7.3f'):>7} {_fmt(r['brake_diff_m'], '+6.0f'):>6} "
+                   f"{_fmt(r['min_speed_diff_kph'], '+8.1f'):>8} {_fmt(r['full_throttle_diff_m'], '+9.0f'):>9} "
+                   f"{_fmt(r['exit_speed_diff_kph'], '+9.1f'):>9}  {_off(r)}")
+
+
+@corners.command("consistency")
+@click.option("--track", required=True, help="Track key (see `iagent tracks`).")
+@click.option("--car", help="Car key (default: all cars on this track).")
+@click.option("--session", "session_id", help="Only this session's laps.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def corners_consistency(ctx: Ctx, track: str, car: str | None, session_id: str | None, as_json: bool):
+    """How repeatable each corner is across representative laps: spread (std dev) of corner time,
+    brake point, minimum speed and full-throttle point. Lower spread = more consistent."""
+    cmap = _corner_map(ctx, track)
+    reps = [r for r in representative(ctx.store().list(track=track, car=car))
+            if session_id is None or r.session_id == session_id]
+    if len(reps) < 2:
+        raise click.ClickException(f"Need at least two representative laps; found {len(reps)}.")
+    rows = consistency([corner_metrics(ctx.store().load(r.lap_id), r.lap_time, cmap) for r in reps])
+    if as_json:
+        _emit({"track": track, "laps": [r.lap_id for r in reps], "corners": rows})
+        return
+    click.echo(f"{track}: {len(reps)} representative laps")
+    click.echo(f"{'corner':<24} {'time sd':>8} {'brake@ mean/sd':>15} {'min kph mean/sd':>16} {'full@ mean/sd':>14}")
+    for r in rows:
+        label = f"T{r['corner']} {r['name']}" if r["name"] else f"T{r['corner']}"
+        brake = f"{_fmt(r['brake_mean_m'], '.0f')}/{_fmt(r['brake_spread_m'], '.0f')}"
+        speed = f"{_fmt(r['min_speed_mean_kph'], '.1f')}/{_fmt(r['min_speed_spread_kph'], '.1f')}"
+        thr = f"{_fmt(r['full_throttle_mean_m'], '.0f')}/{_fmt(r['full_throttle_spread_m'], '.0f')}"
+        click.echo(f"{label:<24} {_fmt(r['time_spread_s'], '8.3f'):>8} {brake:>15} {speed:>16} {thr:>14}")
+
+
+# --- reference laps (Garage61) ----------------------------------------------------------------
+
+
+def _garage61_client() -> g61.Garage61Client:
+    token = g61.find_token()
+    if not token:
+        raise click.ClickException(
+            "No Garage61 token. Create a personal access token at https://garage61.net/developer, "
+            f"then set GARAGE61_TOKEN or save it to {g61.TOKEN_FILE}."
+        )
+    return g61.Garage61Client(token)
+
+
+def _cached(ctx: Ctx, name: str, fetch) -> list[dict]:
+    """Garage61's track/car catalogues change rarely: cache them in the workspace."""
+    path = ctx.workspace / "cache" / f"garage61-{name}.json"
+    if path.exists():
+        return json.loads(path.read_text())
+    items = fetch()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(items))
+    return items
+
+
+def _meta_path(ctx: Ctx, lap_id: str) -> Path:
+    return ctx.workspace / "reference" / "meta" / f"{lap_id}.json"
+
+
+def _ref_meta(ctx: Ctx, lap_id: str) -> dict:
+    path = _meta_path(ctx, lap_id)
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def _summarize_g61_lap(lap: dict) -> dict:
+    driver = lap.get("driver") or {}
+    return {
+        "garage61_id": lap.get("id"),
+        "driver": f"{driver.get('firstName', '')} {driver.get('lastName', '')}".strip() or driver.get("slug"),
+        "driver_slug": driver.get("slug"),
+        "lap_time": lap.get("lapTime"),
+        "driver_rating": lap.get("driverRating"),
+        "date": (lap.get("startTime") or "")[:10],
+        "session_type": {1: "practice", 2: "qualifying", 3: "race"}.get(lap.get("sessionType")),
+        "track_temp_c": round(lap["trackTemp"], 1) if lap.get("trackTemp") else None,
+        "track_usage_pct": lap.get("trackUsage"),
+        "clean": lap.get("clean"),
+        "can_view_telemetry": lap.get("canViewTelemetry"),
+        "ghost_available": lap.get("ghostAvailable"),
+    }
+
+
+@cli.group()
+def garage61():
+    """Find and import reference laps from Garage61 (your laps and your teammates')."""
+
+
+@garage61.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+def garage61_status(as_json: bool):
+    """Check the Garage61 token and show which teams' laps it can reach."""
+    client = _garage61_client()
+    try:
+        me = client.me()
+        teams = client.teams()
+    except g61.Garage61Error as e:
+        raise click.ClickException(str(e)) from e
+    finally:
+        client.close()
+    out = {"user": me.get("slug"), "teams": [{"slug": t.get("slug"), "name": (t.get("name") or "").strip()} for t in teams]}
+    if as_json:
+        _emit(out)
+    else:
+        click.echo(f"Token OK for {out['user']}. Teams: {', '.join(t['slug'] for t in out['teams']) or 'none'}")
+
+
+@garage61.command("find")
+@click.option("--track", required=True, help="Track key (see `iagent tracks`).")
+@click.option("--car", help="Car key (default: the only car you've driven there).")
+@click.option("--team", "teams", multiple=True, help="Team slug(s) to include (default: all your teams).")
+@click.option("--limit", default=20, show_default=True, help="Maximum laps to list.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def garage61_find(ctx: Ctx, track: str, car: str | None, teams: tuple[str, ...], limit: int, as_json: bool):
+    """Best Garage61 lap per driver for this track and car: yours and your teammates', fastest first.
+
+    `telemetry` says whether you can import the lap. A personal token only reaches you and your
+    Garage61 teammates.
+    """
+    info = load_track_info(ctx.workspace, track)
+    if not info or not info.get("track_id"):
+        raise click.ClickException(f"No iRacing ids recorded for {track}. Re-run `iagent ingest` on a recording of it.")
+    cars = info.get("cars", {})
+    if car is None:
+        if len(cars) != 1:
+            raise click.ClickException(f"Pick a car with --car: {', '.join(cars) or 'none recorded'}.")
+        car = next(iter(cars))
+    if car not in cars or not cars[car].get("car_id"):
+        raise click.ClickException(f"No iRacing car id recorded for {car} on {track}.")
+
+    client = _garage61_client()
+    try:
+        g_track = g61.g61_id_for(_cached(ctx, "tracks", client.tracks), info["track_id"])
+        g_car = g61.g61_id_for(_cached(ctx, "cars", client.cars), cars[car]["car_id"])
+        if g_track is None or g_car is None:
+            raise click.ClickException("Garage61 doesn't list this track or car.")
+        team_slugs = list(teams) or [t["slug"] for t in client.teams() if t.get("slug")]
+        laps_found = client.find_laps(g_track, g_car, team_slugs, limit)
+    except g61.Garage61Error as e:
+        raise click.ClickException(str(e)) from e
+    finally:
+        client.close()
+
+    own_best = best_times(ctx.store().list(track=track, car=car)).get((track, car))
+    rows = []
+    for lap in laps_found:
+        row = _summarize_g61_lap(lap)
+        if own_best and row["lap_time"]:
+            row["vs_your_best_pct"] = round((row["lap_time"] / own_best - 1) * 100, 2)
+        rows.append(row)
+    if as_json:
+        _emit({"track": track, "car": car, "your_best": own_best, "laps": rows})
+        return
+    click.echo(f"{track} / {car}: your best {own_best:.3f}s" if own_best else f"{track} / {car}")
+    click.echo(f"{'garage61 id':<28} {'driver':<22} {'time':>9} {'vs you':>7} {'rating':>6} {'date':<10} {'track °C':>8} {'telemetry':>9} {'ghost':>5}")
+    for r in rows:
+        click.echo(f"{r['garage61_id']:<28} {(r['driver'] or '')[:22]:<22} {_fmt(r['lap_time'], '9.3f'):>9} "
+                   f"{_fmt(r.get('vs_your_best_pct'), '+6.1f'):>6}% {_fmt(r['driver_rating'], '6.0f'):>6} "
+                   f"{r['date']:<10} {_fmt(r['track_temp_c'], '8.1f'):>8} {'yes' if r['can_view_telemetry'] else 'no':>9} {'yes' if r['ghost_available'] else 'no':>5}")
+
+
+@garage61.command("import")
+@click.argument("garage61_ids", nargs=-1, required=True)
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def garage61_import(ctx: Ctx, garage61_ids: tuple[str, ...], as_json: bool):
+    """Download Garage61 laps' telemetry and store them as reference laps.
+
+    The lap must be on a track (and car) you have recorded yourself, so it can be compared with
+    your laps. Use the printed lap id with `iagent corners compare YOUR_LAP REF_LAP`.
+    """
+    client = _garage61_client()
+    out = []
+    try:
+        for gid in garage61_ids:
+            meta = client.lap(gid)
+            summary = _summarize_g61_lap(meta)
+            track_pid = int((meta.get("track") or {}).get("platform_id") or 0)
+            car_pid = int((meta.get("car") or {}).get("platform_id") or 0)
+            info = next((i for i in _all_track_info(ctx) if i.get("track_id") == track_pid), None)
+            if info is None:
+                raise click.ClickException(
+                    f"{gid} is on {(meta.get('track') or {}).get('name')} (iRacing track {track_pid}), "
+                    "which you haven't recorded. Ingest one of your own laps there first."
+                )
+            car_key = next((k for k, c in info["cars"].items() if c.get("car_id") == car_pid), None)
+            car_name = (meta.get("car") or {}).get("name", "unknown")
+            session = SessionInfo(
+                track_name=info["name"],
+                track_length_m=info["length_m"],
+                car_name=car_name,
+                track_id=info["track_id"],
+                session_id=f"g61-{summary['driver_slug'] or 'driver'}-{gid[-6:].lower()}",
+                track_code=info.get("track_code"),
+                track_config=info.get("config"),
+                car_path=car_key or car_name,
+                car_id=car_pid,
+            )
+            # The download itself is the authority: Garage61's per-lap `canViewTelemetry` flag has
+            # been seen to say False for laps whose CSV downloads fine.
+            try:
+                csv_text = client.lap_csv(gid)
+            except g61.Garage61Error as e:
+                raise click.ClickException(f"Couldn't download the telemetry of {gid}: {e}") from e
+            lap = g61.csv_to_lap(csv_text, session, meta.get("lapTime"), meta.get("lapNumber"))
+            rec = ctx.refs(create=True).save(lap, "garage61")
+            path = _meta_path(ctx, rec.lap_id)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(summary, indent=2) + "\n")
+            out.append({**summary, "lap_id": rec.lap_id, "track": rec.track_key, "car": rec.car_key,
+                        "valid": rec.valid, "same_car_as_yours": car_key is not None})
+    except g61.Garage61Error as e:
+        raise click.ClickException(str(e)) from e
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+    finally:
+        client.close()
+    if as_json:
+        _emit(out)
+        return
+    for r in out:
+        note = "" if r["same_car_as_yours"] else "  (a car you haven't recorded: not comparable with your laps)"
+        click.echo(f"{r['lap_id']}: {r['driver']} {_fmt(r['lap_time'], '.3f')}s on {r['track']} / {r['car']}{note}")
+
+
+@garage61.command("ghost")
+@click.argument("garage61_id")
+@click.option("--install", is_flag=True,
+              help="Also copy it into iRacing's lapfiles folder (run this on the sim PC).")
+@click.option("--lapfiles", type=click.Path(file_okay=False, path_type=Path),
+              help="iRacing's lapfiles folder (default: Documents/iRacing/lapfiles, or IAGENT_IRACING_LAPFILES).")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def garage61_ghost(ctx: Ctx, garage61_id: str, install: bool, lapfiles: Path | None, as_json: bool):
+    """Download a Garage61 lap's ghost (iRacing .blap file) to drive against in the sim.
+
+    Saved under the workspace; with --install also copied to iRacing's lapfiles folder for that
+    track. In iRacing: Options > Driving Aids > Load Comparison Lap, and tick "Display Reference
+    Car" to see the ghost car.
+    """
+    client = _garage61_client()
+    try:
+        meta = client.lap(garage61_id)
+        if meta.get("ghostAvailable") is False:
+            raise click.ClickException(f"Garage61 has no ghost lap for {garage61_id}.")
+        data = client.ghost(garage61_id)
+    except g61.Garage61Error as e:
+        raise click.ClickException(str(e)) from e
+    finally:
+        client.close()
+    try:
+        info = ghosts.read_info(data)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+    summary = _summarize_g61_lap(meta)
+    name = ghosts.file_name(summary["driver_slug"] or "driver", info.car_path, summary["lap_time"])
+    track_dir = (info.track_path or "unknown").replace("\\", "-").replace(" ", "-")
+    saved = ctx.workspace / "reference" / "ghosts" / track_dir / name
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    saved.write_bytes(data)
+    out = {**summary, "car_path": info.car_path, "track_path": info.track_path, "saved": str(saved), "installed": None}
+
+    if install:
+        root = lapfiles or ghosts.default_lapfiles()
+        if not root.is_dir():
+            raise click.ClickException(
+                f"iRacing's lapfiles folder isn't at {root} (is this the sim PC?). The ghost is saved at "
+                f"{saved}: copy it to the PC, or pass --lapfiles."
+            )
+        target = ghosts.install_dir(root, info) / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        out["installed"] = str(target)
+
+    if as_json:
+        _emit(out)
+        return
+    click.echo(f"Ghost: {summary['driver']} {_fmt(summary['lap_time'], '.3f')}s, {info.car_path} at {info.track_path}")
+    click.echo(f"Saved: {saved}")
+    if out["installed"]:
+        click.echo(f"Installed for iRacing: {out['installed']}")
+    click.echo('In iRacing: Options > Driving Aids > Load Comparison Lap; tick "Display Reference Car".')
+
+
+def _all_track_info(ctx: Ctx) -> list[dict]:
+    root = ctx.workspace / "tracks"
+    return [json.loads(p.read_text()) for p in sorted(root.glob("*/track.json"))] if root.exists() else []
+
+
+@cli.group()
+def refs():
+    """Reference laps (other drivers' laps imported for comparison)."""
+
+
+@refs.command("list")
+@click.option("--track", help="Track key.")
+@click.option("--car", help="Car key.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def refs_list(ctx: Ctx, track: str | None, car: str | None, as_json: bool):
+    """Imported reference laps, fastest first, with driver and conditions."""
+    store = ctx.refs()
+    records = sorted(store.list(track=track, car=car) if store else [], key=lambda r: r.lap_time or float("inf"))
+    rows = [{**_ref_meta(ctx, r.lap_id), "lap_id": r.lap_id, "track": r.track_key, "car": r.car_key,
+             "lap_time": r.lap_time, "valid": r.valid, "off_track_s": r.off_track_s} for r in records]
+    if as_json:
+        _emit(rows)
+        return
+    if not rows:
+        click.echo("No reference laps. Find some with `iagent garage61 find --track T`.")
+    for r in rows:
+        click.echo(f"{r['lap_id']:<36} {(r.get('driver') or '')[:22]:<22} {_fmt(r['lap_time'], '9.3f')}  "
+                   f"{r['track']} / {r['car']}  {r.get('date', '')}")
+
+
+if __name__ == "__main__":
+    cli()
