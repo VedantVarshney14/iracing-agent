@@ -3,7 +3,7 @@ import json
 import pytest
 from click.testing import CliRunner
 
-from iagent.cli import cli
+from iagent.cli import DEFAULT_WORKSPACE, cli
 
 
 @pytest.fixture
@@ -78,6 +78,15 @@ def test_unknown_lap_is_a_clean_error(run, ingested):
 def test_workspace_reports_paths(run, tmp_path):
     info = json.loads(run("workspace", "--json").output)
     assert info["workspace"] == str(tmp_path.resolve()) and info["has_laps"] is False
+
+
+def test_default_workspace_is_relative_to_project_not_current_directory(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli, ["workspace", "--json"], catch_exceptions=False)
+    info = json.loads(result.output)
+
+    assert info["workspace"] == str(DEFAULT_WORKSPACE.resolve())
+    assert info["workspace"] != str((tmp_path / "workspace").resolve())
 
 
 def test_corners_are_mapped_on_first_use_and_can_be_named(run, ingested, tmp_path):

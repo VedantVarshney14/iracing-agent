@@ -52,7 +52,9 @@ iagent laps trace 20250723-202727-L005 --from 250 --to 450 --channels Speed,Brak
 
 Every command has `--help`; agent-facing ones take `--json` (`trace` prints CSV).
 
-The workspace is `./workspace` unless you pass `--workspace` or set `IAGENT_WORKSPACE`:
+By default, the workspace is the `workspace/` directory in the project, regardless of the
+directory you run `iagent` from. Pass `--workspace` or set `IAGENT_WORKSPACE` to use another
+location:
 
 ```text
 workspace/

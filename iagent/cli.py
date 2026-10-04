@@ -34,7 +34,7 @@ from iagent.telemetry.source import TelemetrySource
 from iagent.workspace import Workspace, WorkspaceError
 from iagent.testing.synthetic import LapKind, SyntheticSource
 
-DEFAULT_WORKSPACE = Path("workspace")
+DEFAULT_WORKSPACE = Path(__file__).resolve().parent.parent / "workspace"
 
 
 def _emit(obj) -> None:
