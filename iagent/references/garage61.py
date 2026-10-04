@@ -22,7 +22,7 @@ from iagent.telemetry.frames import SURFACE_OFF_TRACK, SURFACE_ON_TRACK
 from iagent.telemetry.session import SessionInfo
 
 BASE_URL = "https://garage61.net/api/v1"
-TOKEN_ENV = ("GARAGE61_TOKEN", "GARAGE61_PAT")
+TOKEN_ENV = ("GARAGE61_TOKEN", "GARAGE61_PAT", "GARAGE_61_PAT")
 TOKEN_FILE = Path.home() / ".config" / "iagent" / "garage61.token"
 CSV_HZ = 60.0
 
@@ -35,10 +35,29 @@ class Garage61Error(RuntimeError):
     pass
 
 
-def find_token() -> str | None:
+def _from_dotenv(path: Path) -> str | None:
+    """Only the Garage61 token keys are read from a .env file; nothing else is loaded."""
+    if not path.is_file():
+        return None
+    values = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[len("export "):]
+        key, sep, value = line.partition("=")
+        if sep and key.strip() in TOKEN_ENV:
+            values[key.strip()] = value.strip().strip("'\"")
+    return next((values[k] for k in TOKEN_ENV if values.get(k)), None)
+
+
+def find_token(dotenv: Path | None = None) -> str | None:
+    """The token from the environment, a `.env` file in the working directory, or TOKEN_FILE."""
     for name in TOKEN_ENV:
         if os.environ.get(name):
             return os.environ[name].strip()
+    token = _from_dotenv(dotenv or Path.cwd() / ".env")
+    if token:
+        return token
     if TOKEN_FILE.exists():
         return TOKEN_FILE.read_text().strip() or None
     return None
@@ -108,6 +127,10 @@ class Garage61Client:
 
     def lap_csv(self, lap_id: str) -> str:
         return self._get(f"/laps/{lap_id}/csv").text
+
+    def ghost(self, lap_id: str) -> bytes:
+        """The lap's iRacing ghost file (`.blap`), when `ghostAvailable` is true."""
+        return self._get(f"/laps/{lap_id}/ghost.bin").content
 
 
 def g61_id_for(items: list[dict], platform_id: int | None) -> int | None:

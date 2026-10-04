@@ -124,6 +124,7 @@ has a `--help` that is accurate enough to be the documentation, and finds the wo
 | `iagent corners report/compare` | per-corner metrics for a lap, and vs a reference | done |
 | `iagent corners consistency` | per-corner spread across representative laps | done |
 | `iagent garage61 status/find/import` | find and import teammates' (and own) Garage61 laps | done |
+| `iagent garage61 ghost [--install]` | download a lap's iRacing ghost (.blap), install it for the sim | done |
 | `iagent refs list` | imported reference laps | done |
 | `iagent rules add/backtest/activate/list` | agent-defined triggers | phase 4 |
 | `iagent schedule add` | time/lap-based wake-ups | phase 4 |
@@ -223,7 +224,12 @@ a brake point from raw samples to be useful.
     SteeringWheelAngle, LatAccel, PositionType, ...) with no time column: time is rebuilt from
     the sample index, and the trailing sample past the line pins the crossing (a real export
     reproduces its 1:55.992 lap time to 0.3 ms).
-  - Ghost files (`/laps/{id}/ghost.bin`) are available for in-sim ghosts; not used yet.
+  - Ghosts: `/laps/{id}/ghost.bin` is iRacing's own `.blap` file (magic `BLAP`; header carries
+    driver, car path and track path, e.g. `okayama\full`). `iagent garage61 ghost --install`
+    copies it into `Documents/iRacing/lapfiles/<track>[/<config>]` (an existing folder if iRacing
+    made one) under a `g61_` name, never over the driver's own file.
+  - Observed: a lap's `canViewTelemetry` can be false on `/laps/{id}` while its CSV downloads
+    fine (and true in search results); the download is treated as the authority.
 - Later: theoretical best (best corner segments stitched), manual `.ibt`/CSV imports.
 
 ## 8. Rules, schedules and events

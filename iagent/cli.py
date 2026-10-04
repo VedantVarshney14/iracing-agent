@@ -30,6 +30,7 @@ from iagent.laps.recorder import record
 from iagent.laps.store import LapRecord, ParquetLapStore
 from iagent.laps.tracks import load_track_info, update_track_info
 from iagent.references import garage61 as g61
+from iagent.references import ghosts
 from iagent.telemetry.session import SessionInfo
 from iagent.telemetry.ibt import IbtSource
 from iagent.telemetry.source import TelemetrySource
@@ -652,6 +653,7 @@ def _summarize_g61_lap(lap: dict) -> dict:
         "track_usage_pct": lap.get("trackUsage"),
         "clean": lap.get("clean"),
         "can_view_telemetry": lap.get("canViewTelemetry"),
+        "ghost_available": lap.get("ghostAvailable"),
     }
 
 
@@ -727,11 +729,11 @@ def garage61_find(ctx: Ctx, track: str, car: str | None, teams: tuple[str, ...],
         _emit({"track": track, "car": car, "your_best": own_best, "laps": rows})
         return
     click.echo(f"{track} / {car}: your best {own_best:.3f}s" if own_best else f"{track} / {car}")
-    click.echo(f"{'garage61 id':<28} {'driver':<22} {'time':>9} {'vs you':>7} {'rating':>6} {'date':<10} {'track °C':>8} {'telemetry':>9}")
+    click.echo(f"{'garage61 id':<28} {'driver':<22} {'time':>9} {'vs you':>7} {'rating':>6} {'date':<10} {'track °C':>8} {'telemetry':>9} {'ghost':>5}")
     for r in rows:
         click.echo(f"{r['garage61_id']:<28} {(r['driver'] or '')[:22]:<22} {_fmt(r['lap_time'], '9.3f'):>9} "
                    f"{_fmt(r.get('vs_your_best_pct'), '+6.1f'):>6}% {_fmt(r['driver_rating'], '6.0f'):>6} "
-                   f"{r['date']:<10} {_fmt(r['track_temp_c'], '8.1f'):>8} {'yes' if r['can_view_telemetry'] else 'no':>9}")
+                   f"{r['date']:<10} {_fmt(r['track_temp_c'], '8.1f'):>8} {'yes' if r['can_view_telemetry'] else 'no':>9} {'yes' if r['ghost_available'] else 'no':>5}")
 
 
 @garage61.command("import")
@@ -771,9 +773,13 @@ def garage61_import(ctx: Ctx, garage61_ids: tuple[str, ...], as_json: bool):
                 car_path=car_key or car_name,
                 car_id=car_pid,
             )
-            if not meta.get("canViewTelemetry", True):
-                raise click.ClickException(f"Garage61 doesn't let you view the telemetry of {gid}.")
-            lap = g61.csv_to_lap(client.lap_csv(gid), session, meta.get("lapTime"), meta.get("lapNumber"))
+            # The download itself is the authority: Garage61's per-lap `canViewTelemetry` flag has
+            # been seen to say False for laps whose CSV downloads fine.
+            try:
+                csv_text = client.lap_csv(gid)
+            except g61.Garage61Error as e:
+                raise click.ClickException(f"Couldn't download the telemetry of {gid}: {e}") from e
+            lap = g61.csv_to_lap(csv_text, session, meta.get("lapTime"), meta.get("lapNumber"))
             rec = ctx.refs(create=True).save(lap, "garage61")
             path = _meta_path(ctx, rec.lap_id)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -792,6 +798,66 @@ def garage61_import(ctx: Ctx, garage61_ids: tuple[str, ...], as_json: bool):
     for r in out:
         note = "" if r["same_car_as_yours"] else "  (a car you haven't recorded: not comparable with your laps)"
         click.echo(f"{r['lap_id']}: {r['driver']} {_fmt(r['lap_time'], '.3f')}s on {r['track']} / {r['car']}{note}")
+
+
+@garage61.command("ghost")
+@click.argument("garage61_id")
+@click.option("--install", is_flag=True,
+              help="Also copy it into iRacing's lapfiles folder (run this on the sim PC).")
+@click.option("--lapfiles", type=click.Path(file_okay=False, path_type=Path),
+              help="iRacing's lapfiles folder (default: Documents/iRacing/lapfiles, or IAGENT_IRACING_LAPFILES).")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def garage61_ghost(ctx: Ctx, garage61_id: str, install: bool, lapfiles: Path | None, as_json: bool):
+    """Download a Garage61 lap's ghost (iRacing .blap file) to drive against in the sim.
+
+    Saved under the workspace; with --install also copied to iRacing's lapfiles folder for that
+    track. In iRacing: Options > Driving Aids > Load Comparison Lap, and tick "Display Reference
+    Car" to see the ghost car.
+    """
+    client = _garage61_client()
+    try:
+        meta = client.lap(garage61_id)
+        if meta.get("ghostAvailable") is False:
+            raise click.ClickException(f"Garage61 has no ghost lap for {garage61_id}.")
+        data = client.ghost(garage61_id)
+    except g61.Garage61Error as e:
+        raise click.ClickException(str(e)) from e
+    finally:
+        client.close()
+    try:
+        info = ghosts.read_info(data)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+    summary = _summarize_g61_lap(meta)
+    name = ghosts.file_name(summary["driver_slug"] or "driver", info.car_path, summary["lap_time"])
+    track_dir = (info.track_path or "unknown").replace("\\", "-").replace(" ", "-")
+    saved = ctx.workspace / "reference" / "ghosts" / track_dir / name
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    saved.write_bytes(data)
+    out = {**summary, "car_path": info.car_path, "track_path": info.track_path, "saved": str(saved), "installed": None}
+
+    if install:
+        root = lapfiles or ghosts.default_lapfiles()
+        if not root.is_dir():
+            raise click.ClickException(
+                f"iRacing's lapfiles folder isn't at {root} (is this the sim PC?). The ghost is saved at "
+                f"{saved}: copy it to the PC, or pass --lapfiles."
+            )
+        target = ghosts.install_dir(root, info) / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        out["installed"] = str(target)
+
+    if as_json:
+        _emit(out)
+        return
+    click.echo(f"Ghost: {summary['driver']} {_fmt(summary['lap_time'], '.3f')}s, {info.car_path} at {info.track_path}")
+    click.echo(f"Saved: {saved}")
+    if out["installed"]:
+        click.echo(f"Installed for iRacing: {out['installed']}")
+    click.echo('In iRacing: Options > Driving Aids > Load Comparison Lap; tick "Display Reference Car".')
 
 
 def _all_track_info(ctx: Ctx) -> list[dict]:

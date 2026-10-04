@@ -126,8 +126,37 @@ def test_import_needs_a_recorded_track(run, monkeypatch, driven):
 
 
 def test_missing_token_explains_setup(tmp_path, monkeypatch):
-    monkeypatch.delenv("GARAGE61_TOKEN", raising=False)
-    monkeypatch.delenv("GARAGE61_PAT", raising=False)
+    for name in ("GARAGE61_TOKEN", "GARAGE61_PAT", "GARAGE_61_PAT"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.chdir(tmp_path)  # no .env here
     monkeypatch.setattr("iagent.references.garage61.TOKEN_FILE", tmp_path / "none")
     result = CliRunner().invoke(cli, ["garage61", "status"])
     assert result.exit_code != 0 and "GARAGE61_TOKEN" in result.output
+
+
+def test_token_from_dotenv_reads_only_garage61_keys(tmp_path, monkeypatch):
+    from iagent.references.garage61 import find_token
+
+    for name in ("GARAGE61_TOKEN", "GARAGE61_PAT", "GARAGE_61_PAT"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("iagent.references.garage61.TOKEN_FILE", tmp_path / "none")
+    env = tmp_path / ".env"
+    env.write_text("OTHER_SECRET=nope\nexport GARAGE61_PAT='abc123'\n")
+    assert find_token(env) == "abc123"
+    env.write_text("OTHER_SECRET=nope\n")
+    assert find_token(env) is None
+
+
+def test_ghost_download_and_install(run, tmp_path):
+    lapfiles = tmp_path / "iRacing" / "lapfiles"
+    (lapfiles / "synthetic").mkdir(parents=True)
+    out = json.loads(run("garage61", "ghost", "01FASTLAP000001", "--install", "--lapfiles", str(lapfiles), "--json").output)
+    assert out["track_path"] == "synthetic\\full" and out["car_path"] == "synthcar"
+    installed = lapfiles / "synthetic" / out["installed"].split("/")[-1]
+    assert installed.read_bytes().startswith(b"BLAP")
+    assert out["saved"].endswith(".blap")
+
+
+def test_ghost_install_without_iracing_explains(run, tmp_path):
+    result = run("garage61", "ghost", "01FASTLAP000001", "--install", "--lapfiles", str(tmp_path / "missing"))
+    assert result.exit_code != 0 and "lapfiles folder" in result.output and "saved at" in result.output
