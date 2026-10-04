@@ -19,6 +19,7 @@ class SessionInfo:
     track_code: str | None = None  # iRacing's internal TrackName, e.g. "spa 2024 up": one per layout
     track_config: str | None = None  # e.g. "Grand Prix"
     car_path: str | None = None  # iRacing's internal car id, e.g. "formulair04"
+    car_id: int | None = None  # iRacing's numeric car id, e.g. 148
 
     @property
     def track_key(self) -> str:
@@ -53,6 +54,7 @@ def parse_session_yaml(text: str, session_id: str = "session") -> SessionInfo:
 
     car_name = "unknown"
     car_path = None
+    car_id = None
     idx = _first(r"^\s*DriverCarIdx:[ \t]*(\d+)", text, re.M)
     if idx is not None:
         block = re.search(
@@ -61,6 +63,7 @@ def parse_session_yaml(text: str, session_id: str = "session") -> SessionInfo:
         if block:
             car_name = _first(r"^\s*CarScreenName:[ \t]*(.+)$", block.group(1), re.M) or car_name
             car_path = _first(r"^\s*CarPath:[ \t]*(.+)$", block.group(1), re.M)
+            car_id = _first(r"^\s*CarID:[ \t]*(\d+)", block.group(1), re.M)
 
     return SessionInfo(
         track_name=track_name,
@@ -71,4 +74,5 @@ def parse_session_yaml(text: str, session_id: str = "session") -> SessionInfo:
         track_code=track_code,
         track_config=track_config,
         car_path=car_path,
+        car_id=int(car_id) if car_id else None,
     )

@@ -41,6 +41,7 @@ def session_yaml(session: SessionInfo) -> str:
         "   UserName: Test Driver\n"
         f"   CarScreenName: {session.car_name}\n"
         f"   CarPath: {session.car_path or session.car_key}\n"
+        f"   CarID: {session.car_id or 0}\n"
         " - CarIdx: 1\n"
         "   UserName: Someone Else\n"
         "   CarScreenName: Other Car\n"

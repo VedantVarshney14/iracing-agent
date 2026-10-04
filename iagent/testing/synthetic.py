@@ -184,6 +184,8 @@ class SyntheticSource:
             session_id=f"synthetic-{seed}",
             track_code="synthetic",
             car_path="synthcar",
+            track_id=9999,
+            car_id=999,
         )
 
     @property

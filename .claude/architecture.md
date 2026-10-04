@@ -97,6 +97,7 @@ coach/                            # the plugin (harness-agnostic content)
     telemetry/SKILL.md            # how to find, inspect and compare laps and corners
     lap-review/SKILL.md           # review a session's laps and give one focus
     name-corners/SKILL.md         # name derived corners, record track knowledge
+    reference-laps/SKILL.md       # pick, import and coach from a faster Garage61 lap
     (planned) pick-focus, write-cue, debrief, set-trigger
 iagent/                           # Python package; installs the `iagent` CLI
 workspace/                        # per-user data (git-ignored); the agent's working dir
@@ -122,6 +123,8 @@ has a `--help` that is accurate enough to be the documentation, and finds the wo
 | `iagent corners landmarks` | CrewChief corner-name hints matched to the map | done |
 | `iagent corners report/compare` | per-corner metrics for a lap, and vs a reference | done |
 | `iagent corners consistency` | per-corner spread across representative laps | done |
+| `iagent garage61 status/find/import` | find and import teammates' (and own) Garage61 laps | done |
+| `iagent refs list` | imported reference laps | done |
 | `iagent rules add/backtest/activate/list` | agent-defined triggers | phase 4 |
 | `iagent schedule add` | time/lap-based wake-ups | phase 4 |
 | `iagent say "<text>"` | speak through the arbiter | phase 4 |
@@ -160,7 +163,9 @@ workspace/
   index.sqlite
   tracks/<track_key>/corners.json               # derived geometry + names (agent-editable)
   tracks/<track_key>/knowledge.md               # researched names, quirks, sources
-  cache/                                        # downloaded reference data (CrewChief landmarks)
+  tracks/<track_key>/track.json                 # iRacing track/car ids, names, length (from ingest)
+  reference/                                    # other drivers' laps: own lap store + meta/<lap_id>.json
+  cache/                                        # downloaded catalogues (CrewChief landmarks, Garage61 tracks/cars)
   notes/driver.md                               # who the driver is, goals, preferences
   notes/<track_key>.md                          # per-track learnings, current focus
   notes/sessions/<date>.md                      # debrief summaries
@@ -205,9 +210,21 @@ a brake point from raw samples to be useful.
 - Also: distance splits, section comparison, channel traces.
 - **Next (phase 4)**: the same metric code runs live at each corner exit, so analysis, rules and
   backtests agree.
-- References: own best, theoretical best (best corner segments stitched), imported laps
-  (`.ibt`/CSV dropped into the workspace). Garage61 remains a possible source (a v1 client is in git history); whether its API
-  allows laps from outside the user's team is unverified.
+- **References**: own best (default), and other drivers' laps from **Garage61**, kept in a
+  separate reference store so they never count as the driver's best or affect the pace filter.
+  Any command that takes a lap id accepts a reference lap id. Garage61 facts (from its OpenAPI
+  spec, `garage61.net/api/openapi/v1.json`):
+  - A personal access token reaches the user's own laps and their Garage61 **teammates'** laps.
+    Searching all visible laps needs an application approved by Garage61. Per-lap
+    `canViewTelemetry` says whether the CSV can be downloaded; filtering on it needs a Pro plan.
+  - Laps are matched exactly by iRacing ids (`platform_id` = TrackID / CarID), recorded per track
+    at ingest in `track.json`.
+  - The CSV is 60 Hz iRacing channels (Speed m/s, LapDistPct, Brake, Throttle, Gear,
+    SteeringWheelAngle, LatAccel, PositionType, ...) with no time column: time is rebuilt from
+    the sample index, and the trailing sample past the line pins the crossing (a real export
+    reproduces its 1:55.992 lap time to 0.3 ms).
+  - Ghost files (`/laps/{id}/ghost.bin`) are available for in-sim ghosts; not used yet.
+- Later: theoretical best (best corner segments stitched), manual `.ibt`/CSV imports.
 
 ## 8. Rules, schedules and events
 
@@ -308,4 +325,5 @@ iagent/
 - Corner maps are derived from one car's laps; a much faster car may take some corners flat that
   another brakes for. Geometry is shared per track for now.
 - STT/TTS CPU impact on iRacing frame times: unmeasured.
-- Garage61 external reference laps: unverified; own best and imports cover the need.
+- Garage61 reach is limited to teammates for personal tokens; a broader reference pool needs an
+  approved Garage61 application or laps shared by coaches.

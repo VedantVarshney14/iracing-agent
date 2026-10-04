@@ -21,6 +21,7 @@ DriverInfo:
    UserName: Vedant
    CarScreenName: Porsche 911 GT3 R (992)
    CarPath: porsche992rgt3
+   CarID: 169
 ...
 """
 
@@ -52,6 +53,7 @@ def test_keys_use_internal_names_so_layouts_and_cars_stay_apart():
     assert info.track_key == "spa-up"
     assert info.track_config == "Grand Prix Pits: Long"
     assert info.car_key == "porsche992rgt3"
+    assert info.car_id == 169
 
 
 def test_keys_fall_back_to_display_names():

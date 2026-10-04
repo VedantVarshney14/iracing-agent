@@ -60,6 +60,8 @@ workspace/
   laps/<track>/<car>/<lap_id>.parquet   raw 60 Hz samples (+ .grid.parquet on a 1 m grid)
   tracks/<track>/corners.json           corner map: geometry + names with their sources
   tracks/<track>/knowledge.md           what's known about each corner
+  tracks/<track>/track.json             iRacing ids, names and length (from ingest)
+  reference/                            other drivers' laps (e.g. Garage61), kept apart from yours
   notes/<track>.md                      the coach's notes: focus, evidence, progress
 ```
 
@@ -116,6 +118,25 @@ there, so that "gain" is the reference's mistake.
   different layouts or cars are never compared.
 - Each lap is stored raw (60 Hz) and on a 1 m distance grid, so laps compare point for point.
 
+### Reference laps from Garage61
+
+Compare against faster drivers' laps from [Garage61](https://garage61.net). Create a personal
+access token at https://garage61.net/developer, then set `GARAGE61_TOKEN` (or save it to
+`~/.config/iagent/garage61.token`).
+
+```bash
+iagent garage61 status                         # token check, your teams
+iagent garage61 find --track spa-2024-up       # best lap per driver, same layout and car
+iagent garage61 import 01K2...                 # store it as a reference lap (id starts g61-)
+iagent corners compare 20250723-202727-L005 g61-<driver>-<id>-L000
+```
+
+A personal token reaches **your own and your Garage61 teammates'** laps (Garage61 only lets
+approved applications search everyone's). Whether a lap's telemetry can be downloaded depends on
+the driver's privacy settings and your plan; `find` shows it per lap. Reference laps are stored
+separately and never count as your best. Laps are matched by iRacing track and car id, recorded
+when you ingest your own laps (re-run `iagent ingest` on older workspaces).
+
 ## Using the coach
 
 Skills in [coach/skills/](coach/skills/):
@@ -125,6 +146,7 @@ Skills in [coach/skills/](coach/skills/):
 | `telemetry` | How to find, inspect and compare laps and corners with the CLI, and how to read the numbers |
 | `lap-review` | Reviews a session corner by corner, finds the most *repeatable* time loss, gives one focus and writes it to the notes |
 | `name-corners` | Names the derived corners (driver, CrewChief, web, own knowledge, with confidence) and records track knowledge |
+| `reference-laps` | Picks a faster Garage61 lap (yours or a teammate's), imports it and coaches from the corner-by-corner difference |
 
 ### Claude Code
 
@@ -162,6 +184,7 @@ iagent/
   telemetry/   frames, session info, sources (.ibt replay)
   laps/        segmentation, distance resampling, lap store, pace filter, recorder
   analysis/    corner map and metrics, CrewChief landmarks, splits, traces
+  references/  Garage61 client and CSV import
   testing/     synthetic lap generator, .ibt writer
   cli.py       the `iagent` command
 tests/        pytest suite (no sim, GPU, model or network needed)

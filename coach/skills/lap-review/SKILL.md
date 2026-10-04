@@ -30,7 +30,10 @@ Use the `telemetry` skill for commands and how to read their output.
 6. **Explain the habit** from the corner numbers: braking earlier (`brake` < 0), less minimum
    speed, later full throttle, slower exit. If the numbers alone don't explain it, `trace` the
    best lap and a typical lap through that corner (from ~100 m before its entry to its exit).
-7. **Write it down.** Append a dated entry to `notes/<track>.md`: session id, best time, the
+7. **Optional: a faster reference.** If the driver has stopped improving against their own best,
+   or asks how others drive it, use the `reference-laps` skill to compare against a teammate's
+   Garage61 lap.
+8. **Write it down.** Append a dated entry to `notes/<track>.md`: session id, best time, the
    focus, the evidence (numbers), and what to watch next time. Create the file if needed.
 
 ## Answer format
