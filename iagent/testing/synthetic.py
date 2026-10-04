@@ -27,6 +27,8 @@ V_MAX = 60.0  # m/s (~216 km/h)
 A_ACCEL = 6.0  # m/s^2 out of corners
 A_BRAKE_MAX = 15.0  # m/s^2 -> brake pedal = decel / A_BRAKE_MAX
 PICKUP_M = 15.0  # throttle applied this far after the apex
+LAT_PEAK = 18.0  # m/s^2 of lateral acceleration at each apex
+CORNER_WIDTH_M = 60.0  # how quickly curvature fades either side of an apex
 SLOW_FACTOR = 1.15
 
 
@@ -36,7 +38,7 @@ class SyntheticCorner:
     apex_m: float
     brake_m: float  # nominal distance at which braking starts
     min_speed: float  # m/s at the apex
-    direction: int = 1  # +1 right, -1 left
+    direction: int = 1  # +1 right, -1 left (channels follow iRacing: left turns are positive)
 
 
 @dataclass(frozen=True)
@@ -87,6 +89,7 @@ class _Profile:
     brake: np.ndarray
     throttle: np.ndarray
     steer: np.ndarray
+    lat_accel: np.ndarray
     long_accel: np.ndarray
     t: np.ndarray  # cumulative time at each grid point
     truth_brake: dict[str, float] = field(default_factory=dict)
@@ -106,6 +109,7 @@ def build_profile(
     v = np.full_like(d, V_MAX)
     brake = np.zeros_like(d)
     steer = np.zeros_like(d)
+    curvature = np.zeros_like(d)  # signed 1/m, positive = left
     truth_brake: dict[str, float] = {}
     truth_min: dict[str, float] = {}
 
@@ -127,7 +131,9 @@ def build_profile(
         v_post = np.sqrt(v_min**2 + 2.0 * A_ACCEL * np.maximum(d - c.apex_m, 0.0))
         v = np.where(post, np.minimum(v, v_post), v)
 
-        steer += c.direction * 2.0 * np.exp(-(((d - c.apex_m) / 60.0) ** 2))
+        shape = np.exp(-(((d - c.apex_m) / CORNER_WIDTH_M) ** 2))
+        steer -= c.direction * 2.0 * shape  # iRacing: steering and lateral g are negative to the right
+        curvature -= c.direction * (LAT_PEAK / v_min**2) * shape
 
     dt = GRID_M / np.maximum((v[:-1] + v[1:]) / 2.0, 1e-3)
     t = np.concatenate([[0.0], np.cumsum(dt)])
@@ -138,7 +144,8 @@ def build_profile(
         throttle = np.where((d > c.apex_m - 30) & (d < c.apex_m + PICKUP_M), 0.0, throttle)
 
     long_accel = np.gradient(v, t) if len(t) > 1 else np.zeros_like(v)
-    return _Profile(d, v, brake, throttle, steer, long_accel, t, truth_brake, truth_min)
+    lat_accel = v**2 * curvature
+    return _Profile(d, v, brake, throttle, steer, lat_accel, long_accel, t, truth_brake, truth_min)
 
 
 class SyntheticSource:
@@ -266,6 +273,7 @@ class SyntheticSource:
                 "Throttle": float(np.interp(d, p.d, p.throttle)),
                 "Brake": float(np.interp(d, p.d, p.brake)),
                 "SteeringWheelAngle": float(np.interp(d, p.d, p.steer)),
+                "LatAccel": float(np.interp(d, p.d, p.lat_accel)),
                 "LongAccel": float(np.interp(d, p.d, p.long_accel)),
                 "Gear": float(min(6, 1 + int(speed // 10))),
                 "OnPitRoad": on_pit,

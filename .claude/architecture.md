@@ -1,7 +1,7 @@
 # Architecture (v2)
 
-Status: phase 1 (telemetry sources, lap segmentation, lap store) and the CLI/skills slice are
-implemented; the rest is design. Supersedes the two-agent LangGraph design.
+Status: phases 1–3 are implemented (telemetry sources, laps, agent-facing CLI and skills, corner
+analysis); live telemetry, rules, voice and UI are design. Supersedes the two-agent LangGraph design.
 
 ## 1. Goals
 
@@ -94,9 +94,10 @@ per lap/event, never per frame, and keeping in-lap cues deterministic.
 coach/                            # the plugin (harness-agnostic content)
   .claude-plugin/plugin.json
   skills/
-    telemetry/SKILL.md            # how to find, inspect and compare laps with the CLI
+    telemetry/SKILL.md            # how to find, inspect and compare laps and corners
     lap-review/SKILL.md           # review a session's laps and give one focus
-    (planned) pick-focus, write-cue, debrief, research-track, name-corners, set-trigger
+    name-corners/SKILL.md         # name derived corners, record track knowledge
+    (planned) pick-focus, write-cue, debrief, set-trigger
 iagent/                           # Python package; installs the `iagent` CLI
 workspace/                        # per-user data (git-ignored); the agent's working dir
 ```
@@ -117,7 +118,10 @@ has a `--help` that is accurate enough to be the documentation, and finds the wo
 | `iagent laps show <id>` | lap summary and distance splits | done |
 | `iagent laps compare <id> [ref]` | time gained/lost per section vs a reference | done (sections; corners later) |
 | `iagent laps trace <id>` | channel samples over a distance range (CSV) | done |
-| `iagent corners map/report` | corner map and per-corner metrics | phase 3 |
+| `iagent corners map/list/name` | derive, show and name the corner map | done |
+| `iagent corners landmarks` | CrewChief corner-name hints matched to the map | done |
+| `iagent corners report/compare` | per-corner metrics for a lap, and vs a reference | done |
+| `iagent corners consistency` | per-corner spread across representative laps | done |
 | `iagent rules add/backtest/activate/list` | agent-defined triggers | phase 4 |
 | `iagent schedule add` | time/lap-based wake-ups | phase 4 |
 | `iagent say "<text>"` | speak through the arbiter | phase 4 |
@@ -156,6 +160,7 @@ workspace/
   index.sqlite
   tracks/<track_key>/corners.json               # derived geometry + names (agent-editable)
   tracks/<track_key>/knowledge.md               # researched names, quirks, sources
+  cache/                                        # downloaded reference data (CrewChief landmarks)
   notes/driver.md                               # who the driver is, goals, preferences
   notes/<track_key>.md                          # per-track learnings, current focus
   notes/sessions/<date>.md                      # debrief summaries
@@ -169,13 +174,13 @@ Memory is markdown the agent reads and edits with its harness's normal file tool
 
 Two layers:
 
-1. **Geometry (derived)**: corner positions from speed minima, steering and distance.
-2. **Knowledge (researched)**: names and character (Eau Rouge/Raidillon compression, Pouhon
-   double apex, Blanchimont flat), in `knowledge.md`, researched once and cached, sources noted.
-   Sources by trust: CrewChief's MIT-licensed `trackLandmarksData.json` (corner names with lap
-   distances; to be verified against our `LapDist`), web search, the model's own memory (flagged
-   unverified). The agent aligns names to derived corners by order and distance and records its
-   confidence; the driver's corrections persist.
+1. **Geometry (derived)**: the corner map (section 7), saved as `corners.json`.
+2. **Names and knowledge (attached)**: each corner carries an optional name with its source
+   (`driver`, `crewchief`, `web`, `model`) and confidence; names survive re-mapping. Character
+   and quirks go in `knowledge.md`. Sources by trust: the driver's corrections; CrewChief's
+   MIT-licensed `trackLandmarksData.json` (about 25 iRacing tracks, last updated 2019, names
+   sometimes misspelled or generic; its Spa distances match our `LapDist` to within ~50 m);
+   web search; the model's own memory (low confidence). The `name-corners` skill drives this.
 
 ## 7. Analysis
 
@@ -183,10 +188,23 @@ The deterministic layer that makes the agent cheap and reliable: the CLI compute
 the model chooses what matters and how to say it. Small or large, the model never has to derive
 a brake point from raw samples to be useful.
 
-- **Now:** distance splits, section comparison against a reference lap, channel traces.
-- **Phase 3:** corner map; a **corner tracker** that computes per-corner metrics (brake point,
-  min speed, apex distance, throttle pickup, time in corner). The same code runs offline over
-  stored laps and live at each corner exit, so analysis, rules and backtests agree.
+- **Corner map** (`iagent/analysis/corners.py`): a corner is a stretch of sustained lateral g in
+  the median profile of representative laps (smoothed over ~30 m; on above 45% and off below 20%
+  of the car's 98th-percentile lateral g, so it adapts to the car). A direction change splits a
+  corner (chicanes); same-direction parts closer than 60 m merge (double apexes). The apex is the
+  slowest point, or the peak lateral g for corners taken flat. The map also tiles the lap into
+  one **segment** per corner, bounded by the last top-speed point before each braking zone, so
+  per-corner time deltas sum exactly to the lap delta. On real Spa laps this finds 16 corners
+  that line up with the circuit's named corners; Okayama, Watkins Glen and Silverstone look
+  plausible.
+- **Per-corner metrics**: segment time, brake onset (searched from 50 m before the segment, since
+  braking starts just before the speed peak), entry/min/exit speed, full-throttle point (held
+  20 m), minimum gear, and metres off track (so an incident is visible as an incident).
+- **Comparison and consistency**: corner-by-corner differences against a reference lap, and the
+  spread (std dev) of each metric across representative laps, the main track-learning measure.
+- Also: distance splits, section comparison, channel traces.
+- **Next (phase 4)**: the same metric code runs live at each corner exit, so analysis, rules and
+  backtests agree.
 - References: own best, theoretical best (best corner segments stitched), imported laps
   (`.ibt`/CSV dropped into the workspace). Garage61 remains a possible source (a v1 client is in git history); whether its API
   allows laps from outside the user's team is unverified.
@@ -262,7 +280,7 @@ Test data: synthetic laps with exact ground truth (committed); real `.ibt` recor
 iagent/
   telemetry/   frames, session info, sources (ibt; irsdk live later)
   laps/        segmenter, resampling, store, pace, recorder
-  analysis/    splits, comparison (corner tracker in phase 3)
+  analysis/    corner map and metrics, landmarks, splits, comparison
   testing/     synthetic generator, .ibt writer
   cli.py       the `iagent` command
 ```
@@ -272,8 +290,9 @@ iagent/
 1. **Foundations** (done): sources, segmentation, store, pace filter.
 2. **CLI + skills slice** (done): agent-facing CLI, `coach` plugin with `telemetry` and
    `lap-review` skills, verified headless with `claude -p` on real recordings.
-3. **Analysis**: corner map, corner tracker, per-corner report and comparison, track knowledge
-   and naming. *Exit: a Spa per-corner report from real laps, with corner names.*
+3. **Analysis** (done): corner map, per-corner metrics, comparison and consistency, CrewChief
+   landmark hints, `name-corners` skill. Verified headless: the agent named Spa's corners and
+   reviewed the session corner by corner.
 4. **Live**: irsdk source, service, rules/schedules/backtest, `say`, wake-up adapter, TTS.
    *Exit: corner-exit feedback spoken on the real rig; frame-time impact measured.*
 5. **UI**: web app over the store, analysis and agent activity.
@@ -285,7 +304,8 @@ iagent/
 - Local models in a coding-agent harness on this hardware; mitigated by deterministic analysis,
   short skills and the eval gate, with Claude via subscription as the primary.
 - Subscription usage limits under frequent wake-ups; mitigated by per-lap/event cadence.
-- Corner segmentation on flowing sections (Spa's Eau Rouge, Blanchimont) needs real data.
-- CrewChief landmark distances vs iRacing `LapDist`: unverified.
+- Corner maps from very few laps (Silverstone has one) are noisier; re-map as laps accumulate.
+- Corner maps are derived from one car's laps; a much faster car may take some corners flat that
+  another brakes for. Geometry is shared per track for now.
 - STT/TTS CPU impact on iRacing frame times: unmeasured.
 - Garage61 external reference laps: unverified; own best and imports cover the need.

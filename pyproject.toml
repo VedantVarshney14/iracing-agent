@@ -5,6 +5,7 @@ description = "Local AI coach for learning tracks in iRacing"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "certifi>=2026.7.22",
     "click>=8.1",
     "numpy>=2.0",
     "pandas>=2.3.1",

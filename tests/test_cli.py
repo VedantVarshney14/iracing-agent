@@ -78,3 +78,44 @@ def test_unknown_lap_is_a_clean_error(run, ingested):
 def test_workspace_reports_paths(run, tmp_path):
     info = json.loads(run("workspace", "--json").output)
     assert info["workspace"] == str(tmp_path.resolve()) and info["has_laps"] is False
+
+
+def test_corners_are_mapped_on_first_use_and_can_be_named(run, ingested, tmp_path):
+    listed = json.loads(run("corners", "list", "--track", "synthetic", "--json").output)
+    assert len(listed["corners"]) == 4
+    assert (tmp_path / "tracks" / "synthetic" / "corners.json").exists()
+
+    assert run("corners", "name", "--track", "synthetic", "1", "Turn One").exit_code == 0
+    remapped = json.loads(run("corners", "map", "--track", "synthetic", "--json").output)
+    assert remapped["corners"][0]["name"] == "Turn One"  # names survive re-mapping
+    assert remapped["corners"][0]["name_source"] == "driver"
+
+    assert run("corners", "name", "--track", "synthetic", "1", "--clear").exit_code == 0
+    assert run("corners", "name", "--track", "synthetic", "9", "Nope").exit_code != 0
+
+
+def test_corner_report_compare_and_consistency(run, ingested):
+    valid = json.loads(run("laps", "list", "--valid-only", "--json").output)
+    a = valid[0]["lap_id"]
+    report = json.loads(run("corners", "report", a, "--json").output)
+    assert len(report["corners"]) == 4 and report["corners"][0]["brake_m"] is not None
+    compared = json.loads(run("corners", "compare", a, "--json").output)
+    assert compared["ref"] == valid[1]["lap_id"]
+    assert sum(c["delta_s"] for c in compared["corners"]) == pytest.approx(compared["total_delta_s"], abs=0.01)
+    spread = json.loads(run("corners", "consistency", "--track", "synthetic", "--json").output)
+    assert len(spread["laps"]) == 2 and spread["corners"][0]["brake_spread_m"] is not None
+    for cmd in (["corners", "report", a], ["corners", "compare", a], ["corners", "consistency", "--track", "synthetic"]):
+        assert run(*cmd).exit_code == 0  # human-readable tables
+
+
+def test_corner_landmarks_from_cache(run, ingested, tmp_path):
+    cache = tmp_path / "cache" / "crewchief-landmarks.json"
+    cache.parent.mkdir(parents=True)
+    cache.write_text(json.dumps({"TrackLandmarksData": [{"irTrackName": "synthetic", "trackLandmarks": [
+        {"landmarkName": "first_bend", "distanceRoundLapStart": 560, "distanceRoundLapEnd": 640},
+        {"landmarkName": "turn2", "distanceRoundLapStart": 1150, "distanceRoundLapEnd": 1250},
+    ]}]}))
+    out = json.loads(run("corners", "landmarks", "--track", "synthetic", "--apply", "--json").output)
+    assert out["applied"] == [1]  # the generic "turn2" is not applied
+    listed = json.loads(run("corners", "list", "--track", "synthetic", "--json").output)
+    assert listed["corners"][0]["name"] == "First Bend" and listed["corners"][0]["name_source"] == "crewchief"

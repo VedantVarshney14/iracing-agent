@@ -112,3 +112,28 @@ def test_watkins_glen_slow_and_untimed_laps_are_excluded(tmp_path):
         assert kept == set(range(3, 11))
     finally:
         store.close()
+
+
+def test_spa_corner_map_finds_the_known_corners(tmp_path):
+    from iagent.analysis.corners import corner_metrics, derive_corner_map
+
+    path = find("formulair04_spa*")
+    store = ParquetLapStore(tmp_path)
+    try:
+        kept = representative(record(IbtSource(path), store, "spa"))
+        grids = [store.load(r.lap_id) for r in kept]
+        cmap = derive_corner_map(grids, "spa-2024-up", "formulair04", [r.lap_id for r in kept])
+        # 16 corners: chicanes (Les Combes, Bus Stop) split by direction, Pouhon's double apex merged.
+        assert len(cmap.corners) == 16
+        apexes = {c.id: c.apex_m for c in cmap.corners}
+        assert 360 < apexes[1] < 430  # La Source (CrewChief: 360-430 m)
+        pouhon = cmap.corners[8]
+        assert pouhon.direction == "L" and pouhon.entry_m < 3750 and pouhon.exit_m > 4100
+        assert [c.direction for c in cmap.corners[-2:]] == ["R", "L"]  # Bus Stop
+        for rec, grid in zip(kept, grids):
+            rows = corner_metrics(grid, rec.lap_time, cmap)
+            assert sum(r["time_s"] for r in rows) == pytest.approx(rec.lap_time, abs=0.005)
+            assert rows[0]["brake_m"] == pytest.approx(273, abs=5)  # La Source brake point
+            assert rows[6]["brake_m"] == pytest.approx(2891, abs=5)  # Bruxelles, braking before the segment edge
+    finally:
+        store.close()

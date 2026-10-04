@@ -4,8 +4,8 @@ An iRacing coach built as **skills for an existing agent harness** plus a **CLI 
 telemetry work**. The first goal is helping a driver learn a new track: find where time is lost,
 pick one thing to work on, and (later) cue it by voice at the right place on track.
 
-> **Status: rewrite in progress (branch `rewrite/v2`).** Telemetry, laps, the analysis CLI and
-> the first coaching skills work on recorded sessions. Live telemetry, voice and the UI are next.
+> **Status: rewrite in progress (branch `rewrite/v2`).** Telemetry, laps, corner analysis and the
+> first coaching skills work on recorded sessions. Live telemetry, rules and voice are next.
 > The v1 two-agent LangGraph prototype has been removed; it lives on in the history of `main`.
 
 The design lives in [.claude/architecture.md](.claude/architecture.md). In short:
@@ -28,8 +28,8 @@ The design lives in [.claude/architecture.md](.claude/architecture.md). In short
 | --- | --- | --- |
 | 1 | Telemetry sources (`.ibt` replay, synthetic), lap segmentation, lap store, pace filter | **Done** |
 | 2 | Agent-facing CLI, `coach` plugin (`telemetry`, `lap-review` skills), headless harness test | **Done** |
-| 3 | Corner map, per-corner metrics and comparison, corner names and track knowledge | Next |
-| 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | |
+| 3 | Corner map, per-corner metrics, comparison and consistency, corner names and track knowledge | **Done** |
+| 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | Next |
 | 5 | Web UI: laps, corner comparisons, traces, rules, agent activity | |
 | 6 | Push-to-talk voice, debrief and focus skills, memory across sessions, local-model evals | |
 
@@ -44,7 +44,9 @@ iagent ingest path/to/*.ibt
 iagent tracks                          # track/car keys, lap counts, best times
 iagent workspace                       # where laps and notes are stored
 iagent laps list --track spa-2024-up --representative
-iagent laps compare 20250723-202727-L002      # vs the fastest other valid lap
+iagent corners list --track spa-2024-up        # corner map, derived from your laps on first use
+iagent corners compare 20250723-202727-L002    # corner by corner vs the fastest other valid lap
+iagent corners consistency --track spa-2024-up # how repeatable each corner is
 iagent laps trace 20250723-202727-L005 --from 250 --to 450 --channels Speed,Brake,Gear
 ```
 
@@ -56,6 +58,8 @@ The workspace is `./workspace` unless you pass `--workspace` or set `IAGENT_WORK
 workspace/
   index.sqlite                          lap index
   laps/<track>/<car>/<lap_id>.parquet   raw 60 Hz samples (+ .grid.parquet on a 1 m grid)
+  tracks/<track>/corners.json           corner map: geometry + names with their sources
+  tracks/<track>/knowledge.md           what's known about each corner
   notes/<track>.md                      the coach's notes: focus, evidence, progress
 ```
 
@@ -72,16 +76,32 @@ synthetic-0-L005    58.135    +0.0%     0.0  True
 synthetic-0-L006    58.353    +0.4%     1.0  True
 ```
 
+### Corners
+
+The corner map is derived from your own laps: a corner is a stretch of sustained lateral g, with
+thresholds relative to the car's grip, so it works for any car. Chicanes split into one corner
+per direction, double apexes merge, and the lap is tiled into one segment per corner so corner
+time deltas add up to the lap delta. Names come separately: from you, CrewChief's landmark data
+(`iagent corners landmarks`), or the coach's research, each with a recorded source.
+
+On a real Spa recording (F4), after the coach named the corners:
+
 ```text
-$ iagent laps compare synthetic-0-L006 --sections 6
-synthetic-0-L006 vs synthetic-0-L005: +0.217s  (biggest losses in sections [4, 5, 6])
-sec   from     to   delta  min kph    ref  brake@    ref
-  1      0    500  -0.011    202.8  205.1     481    485
-  2    500   1000  -0.081    102.4   99.3       -      -
-  3   1000   1500  +0.019    116.0  118.7    1091   1080
-  4   1500   2000  +0.152     86.0   90.9    1771   1772
-  ...
+$ iagent corners compare 20250723-202727-L002
+20250723-202727-L002 vs 20250723-202727-L005: +0.532s  (biggest losses: T16, T9, T7)
+corner                     delta  brake  min kph  full thr  exit kph  off m (lap/ref)
+T1 La Source              +0.131     -2     -4.9        +0      -5.9
+...
+T7 Bruxelles              +0.342     +0     -6.5         -      -4.2
+T8                        -0.543      -     +1.1      -105     +25.3  0/39
+T9 Pouhon                 +0.480      -     -0.9      +103     -20.1
+...
+T16 Bus Stop (exit)       +0.538      -     -6.1        -1      -6.3
 ```
+
+Signs read from the driver's side: `brake` > 0 braked later, `min kph` > 0 carried more speed,
+`full thr` > 0 back on full throttle later. `0/39` means the reference lap ran 39 m off track
+there, so that "gain" is the reference's mistake.
 
 ### How laps are judged
 
@@ -102,8 +122,9 @@ Skills in [coach/skills/](coach/skills/):
 
 | Skill | What it does |
 | --- | --- |
-| `telemetry` | How to find, inspect and compare laps with the CLI, and how to read the numbers |
-| `lap-review` | Reviews a session, finds the most *repeatable* time loss, gives one focus and writes it to the notes |
+| `telemetry` | How to find, inspect and compare laps and corners with the CLI, and how to read the numbers |
+| `lap-review` | Reviews a session corner by corner, finds the most *repeatable* time loss, gives one focus and writes it to the notes |
+| `name-corners` | Names the derived corners (driver, CrewChief, web, own knowledge, with confidence) and records track knowledge |
 
 ### Claude Code
 
@@ -113,8 +134,8 @@ claude plugin install coach@iracing-agent
 ```
 
 Or, while developing, load it for one session: `claude --plugin-dir coach`. Then ask *"How did my
-last Spa session go?"*. The `lap-review` skill finds the laps, compares them, traces the problem
-area and writes a note to `workspace/notes/<track>.md`.
+last Spa session go?"*. The coach names the track's corners if needed (`name-corners`), compares
+your laps corner by corner (`lap-review`) and writes its focus to `workspace/notes/<track>.md`.
 
 Headless (what the live service will do):
 
@@ -140,7 +161,7 @@ coach/                            the coach plugin: skills/<name>/SKILL.md
 iagent/
   telemetry/   frames, session info, sources (.ibt replay)
   laps/        segmentation, distance resampling, lap store, pace filter, recorder
-  analysis/    lap summaries, section comparison, traces
+  analysis/    corner map and metrics, CrewChief landmarks, splits, traces
   testing/     synthetic lap generator, .ibt writer
   cli.py       the `iagent` command
 tests/        pytest suite (no sim, GPU, model or network needed)
