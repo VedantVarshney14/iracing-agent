@@ -75,6 +75,7 @@ def test_ui_actions_need_a_successful_ui_show():
 
 
 def test_screen_context():
+    assert "corner view" in screen_context({"page": "corner"})
     text = screen_context({"track": "spa-2024-up", "car": "formulair04", "lap": "L2", "ref": "g61-x",
                            "ref_driver": "Teammate", "corners": [9, 16], "range": [3550.4, 4300]})
     assert "ghost: g61-x (Teammate)" in text and "selected corners: T9, T16" in text

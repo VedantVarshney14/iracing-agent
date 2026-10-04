@@ -180,3 +180,58 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .send:disabled { opacity: 0.4; cursor: default; }
 .send.stop { background: var(--raised); color: var(--text); border: 1px solid var(--line-strong); }
 @media (max-width: 1140px) { .chat { margin: 0 20px 24px; position: static; height: 640px; } }
+
+/* --- corner view (screen 2) ------------------------------------------------------------- */
+.open-corner { margin-top: 6px; min-height: 32px; font-size: 12px; }
+.corner-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.corner-title { display: flex; flex-direction: column; gap: 2px; margin-right: auto; }
+.corner-title h1 { margin: 0; font-size: 20px; font-weight: 700; }
+.corner-head .delta-pill { border: 1px solid var(--line-strong); background: var(--panel); }
+.corner-body { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.lines-card { flex: 3 1 560px; }
+.corner-side { flex: 2 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.metric { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.metric-value { font-size: 20px; }
+.corner-lines { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.corner-lines svg { display: block; width: 100%; aspect-ratio: 4 / 3; background: #10151a; border-radius: 8px; }
+.line.speed { stroke-width: 3.5; }
+.line.speed.loss-strong { stroke: var(--loss-strong); }
+.line.speed.loss { stroke: var(--loss); }
+.line.speed.neutral { stroke: #9aa5b1; }
+.line.speed.gain { stroke: var(--gain); }
+.line.speed.gain-strong { stroke: var(--gain-strong); }
+.rung { stroke: #5d6a77; stroke-width: 1; }
+.rung-label { fill: var(--text-soft); font-family: var(--mono); }
+.tick circle { fill: #5d6a77; }
+.tick text { fill: var(--muted); }
+.scale-note { color: var(--warn); }
+.corner-lines .legend { gap: 6px 10px; }
+.legend-gap { width: 8px; }
+.legend-band { display: inline-flex; align-items: center; gap: 4px; }
+.legend-band i { width: 16px; height: 5px; border-radius: 3px; }
+.band-loss-strong { background: var(--loss-strong); }
+.band-loss { background: var(--loss); }
+.band-neutral { background: #9aa5b1; }
+.band-gain { background: var(--gain); }
+.band-gain-strong { background: var(--gain-strong); }
+
+/* lanes chart (shared) */
+.lanes-chart { display: flex; flex-direction: column; }
+.marker-strip { position: relative; height: 30px; font-size: 11px; }
+.marker-strip span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.marker-strip .you { color: var(--you); }
+.marker-strip .ghost { color: var(--ghost); }
+.fill { stroke: none; }
+.fill.gain { fill: var(--gain-strong); fill-opacity: 0.28; }
+.fill.loss { fill: var(--loss-strong); fill-opacity: 0.28; }
+.fill.neutral-a { fill: var(--you); fill-opacity: 0.2; }
+.fill.neutral-b { fill: var(--muted); fill-opacity: 0.18; }
+.trace.offset { stroke: var(--you); stroke-width: 1.8; }
+.event { stroke-width: 1; }
+.event.you { stroke: var(--you); }
+.event.ghost { stroke: var(--ghost); }
+.event.dashed { stroke-dasharray: 3 3; }
+.band.soft { fill: #fff; fill-opacity: 0.035; }
+.readout .offset { color: var(--you); }
+.readout .gap { color: var(--text); }

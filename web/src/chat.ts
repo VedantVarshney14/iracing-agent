@@ -21,6 +21,7 @@ export type ChatEvent =
 
 /** What's on screen, sent with every message so the coach knows what "this corner" means. */
 export interface ScreenContext {
+  page?: "review" | "corner";
   track?: string;
   car?: string;
   lap?: string;

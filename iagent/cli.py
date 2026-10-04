@@ -213,7 +213,8 @@ def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool):
 @click.option("--corner", "corners", type=int, multiple=True, help="Corner number to highlight (repeatable).")
 @click.option("--from", "start_m", type=float, help="Zoom the traces from this distance (m).")
 @click.option("--to", "end_m", type=float, help="Zoom the traces to this distance (m).")
-@click.option("--view", type=click.Choice(["lap", "corner"]), help="Map view: whole lap, or both racing lines.")
+@click.option("--view", type=click.Choice(["lap", "corner"]),
+              help="corner: open the corner view for the first --corner; lap: back to the whole lap.")
 @click.option("--lap", "lap_id", help="Switch the review to this lap.")
 @click.option("--ref", "ref_id", help="Switch the ghost to this lap.")
 @click.pass_obj

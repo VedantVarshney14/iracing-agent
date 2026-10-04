@@ -63,3 +63,48 @@ export function useWidth(ref: RefObject<HTMLElement | null>): number {
   }, [ref]);
   return width;
 }
+
+/** Areas between two series (or a series and zero) on a lane: `above` where `a` > `b`, `below`
+ * where `a` < `b`. Each run of one sign becomes its own closed path. */
+export function fillBetween(
+  x: number[],
+  a: Series,
+  b: Series | null,
+  lo: number,
+  hi: number,
+  from = 0,
+  to = x.length,
+): { above: string; below: string } {
+  const ya = toLane(a, lo, hi);
+  const yb = b ? toLane(b, lo, hi) : toLane(a.map(() => 0), lo, hi);
+  const out = { above: "", below: "" };
+  let run: number[] = [];
+  let sign = 0;
+  const close = () => {
+    if (run.length > 1) {
+      const top = run.map((i) => `${x[i].toFixed(1)},${ya[i]!.toFixed(2)}`);
+      const bottom = [...run].reverse().map((i) => `${x[i].toFixed(1)},${yb[i]!.toFixed(2)}`);
+      const d = `M${top.join("L")}L${bottom.join("L")}Z`;
+      if (sign > 0) out.above += d;
+      else out.below += d;
+    }
+    run = [];
+  };
+  for (let i = from; i < to; i++) {
+    const va = a[i];
+    const vb = b ? b[i] : 0;
+    if (va == null || vb == null) {
+      close();
+      continue;
+    }
+    const s = Math.sign(va - vb);
+    if (s !== sign && run.length) {
+      run.push(i); // share the crossing point so adjacent areas meet
+      close();
+    }
+    sign = s;
+    run.push(i);
+  }
+  close();
+  return out;
+}

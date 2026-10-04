@@ -95,8 +95,14 @@ export interface Review {
   ref: LapInfo;
   total_delta_s: number | null;
   corners: Corner[];
-  trace: { distance_m: number[]; gap_s: Series; lap: Channels; ref: Channels };
-  position: { lap: Line; ref: Line } | null;
+  trace: {
+    distance_m: number[];
+    gap_s: Series;
+    offset_m: Series | null; // your line's distance from the ghost's, + to the left of travel
+    lap: Channels;
+    ref: Channels;
+  };
+  position: { lap: Line; ref: Line; ref_index: number[] } | null;
 }
 
 export interface Garage61Lap {

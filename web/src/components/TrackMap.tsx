@@ -14,9 +14,10 @@ interface Props {
   cursor: number | null;
   onMode: (mode: "lap" | "corner") => void;
   onPickCorner: (id: number) => void;
+  onOpenCorner: (id: number) => void;
 }
 
-export function TrackMap({ review, mode, window, selected, primary, cursor, onMode, onPickCorner }: Props) {
+export function TrackMap({ review, mode, window, selected, primary, cursor, onMode, onPickCorner, onOpenCorner }: Props) {
   const boxRef = useRef<HTMLDivElement>(null);
   const width = useWidth(boxRef);
   const pos = review.position;
@@ -149,7 +150,9 @@ export function TrackMap({ review, mode, window, selected, primary, cursor, onMo
           {cursorLap && <circle cx={cursorLap[0]} cy={cursorLap[1]} r={5 * u} className="dot you" />}
         </svg>
 
-        {primaryCorner && <CornerCard corner={primaryCorner} lineGap={cornerMode ? lineGap : null} />}
+        {primaryCorner && (
+          <CornerCard corner={primaryCorner} lineGap={cornerMode ? lineGap : null} onOpen={() => onOpenCorner(primaryCorner.id)} />
+        )}
       </div>
       <p className="legend">
         {cornerMode ? (
@@ -224,7 +227,7 @@ function ScaleBar({ x, y, u, span }: { x: number; y: number; u: number; span: nu
   );
 }
 
-function CornerCard({ corner: c, lineGap }: { corner: Corner; lineGap: number | null }) {
+function CornerCard({ corner: c, lineGap, onOpen }: { corner: Corner; lineGap: number | null; onOpen: () => void }) {
   const off = c.ref_off_track_m ?? 0;
   return (
     <div className="corner-card">
@@ -238,6 +241,7 @@ function CornerCard({ corner: c, lineGap }: { corner: Corner; lineGap: number | 
       </span>
       {lineGap != null && <span className="muted">line gap here {lineGap.toFixed(1)} m</span>}
       {off > 0 && <span className="warn">Ghost ran {Math.round(off)} m off track here</span>}
+      <button type="button" className="btn open-corner" onClick={onOpen}>Open corner view →</button>
     </div>
   );
 }

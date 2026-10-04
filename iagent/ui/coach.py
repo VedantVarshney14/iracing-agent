@@ -39,8 +39,9 @@ with a <screen> block saying what is on screen: the lap, the ghost, the selected
 zoomed distance range. Use the `iagent` CLI (see the telemetry skill) for every number; never guess.
 
 Point at what you talk about: run `iagent ui show` with `--corner N` (repeatable), `--from M --to M`
-(metres) to zoom the traces, `--view corner` to show both racing lines, or `--lap ID --ref ID` to
-switch laps. Do this whenever you discuss a specific corner or stretch of track.
+(metres) to zoom the traces, `--view corner` to open the corner view (both racing lines, the line
+offset and the corner's traces) for the first --corner, `--view lap` to go back to the whole lap, or
+`--lap ID --ref ID` to switch laps. Do this whenever you discuss a specific corner or stretch.
 
 Keep replies short: a few sentences, numbers with units, and one thing to work on."""
 
@@ -48,6 +49,8 @@ Keep replies short: a few sentences, numbers with units, and one thing to work o
 def screen_context(ctx: dict) -> str:
     """The <screen> block sent with each message, from the browser's view of the review."""
     lines = []
+    if ctx.get("page") == "corner":
+        lines.append("view: corner view (racing lines, line offset and traces for one corner)")
     if ctx.get("track"):
         lines.append(f"track: {ctx['track']}  car: {ctx.get('car', '')}")
     if ctx.get("lap"):

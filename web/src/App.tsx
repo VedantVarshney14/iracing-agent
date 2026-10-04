@@ -3,6 +3,7 @@ import { api } from "./api";
 import type { UiAction } from "./chat";
 import { Chat } from "./components/Chat";
 import { CornerTable } from "./components/CornerTable";
+import { CornerView } from "./components/CornerView";
 import { Telemetry } from "./components/Telemetry";
 import { TopBar } from "./components/TopBar";
 import { TrackMap } from "./components/TrackMap";
@@ -33,6 +34,7 @@ export function App() {
   const [cursor, setCursor] = useState<number | null>(null);
   const [zoom, setZoom] = useState<[number, number] | null>(null);
   const [mapMode, setMapMode] = useState<"lap" | "corner">(params.get("view") === "corner" ? "corner" : "lap");
+  const [page, setPage] = useState<"review" | "corner">(params.get("page") === "corner" ? "corner" : "review");
   const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
   // A coach action that switched laps: applied once the new review has loaded.
   const pendingAction = useRef<UiAction | null>(null);
@@ -129,8 +131,9 @@ export function App() {
     const q = new URLSearchParams({ track: group.track, car: group.car, lap: review.lap.lap_id, ref: review.ref.lap_id });
     if (primary != null) q.set("corner", String(primary));
     if (mapMode === "corner") q.set("view", "corner");
+    if (page === "corner") q.set("page", "corner");
     window.history.replaceState(null, "", `?${q}`);
-  }, [group, review, primary, mapMode]);
+  }, [group, review, primary, mapMode, page]);
 
   const pick = (id: number, add = false) => {
     if (add) {
@@ -179,8 +182,16 @@ export function App() {
       setZoom(a.range);
       setMapMode("corner");
     }
-    if (a.view) setMapMode(a.view);
+    if (a.view === "corner") setPage("corner");
+    if (a.view === "lap") setPage("review");
   }
+
+  const openCorner = (id: number) => {
+    setSelected([id]);
+    setPrimary(id);
+    setZoom(null);
+    setPage("corner");
+  };
 
   const onUiAction = (a: UiAction) => {
     const switchLap = a.lap && a.lap !== review?.lap.lap_id;
@@ -198,6 +209,13 @@ export function App() {
   const length = review?.track.length_m ?? 1;
   const range: [number, number] = zoom ?? [0, length];
   const primaryCorner = review?.corners.find((c) => c.id === primary);
+  // The corner view shows the corner with some run-up and run-out, or the zoomed range around it.
+  const cornerWindow: [number, number] | null = primaryCorner
+    ? zoom && zoom[0] <= primaryCorner.exit_m && zoom[1] >= primaryCorner.entry_m
+      ? zoom
+      : [Math.max(0, primaryCorner.entry_m - 120), Math.min(length, primaryCorner.exit_m + 120)]
+    : null;
+  const ask = (text: string) => setPrefill({ text, nonce: Date.now() });
   const mapWindow: [number, number] | null =
     zoom ?? (primaryCorner ? [primaryCorner.entry_m - 80, primaryCorner.exit_m + 80] : null);
 
@@ -226,6 +244,18 @@ export function App() {
       {error && <div className="error" role="alert">{error}</div>}
       {review && group ? (
         <div className="workspace">
+        {page === "corner" && primaryCorner && cornerWindow ? (
+          <CornerView
+            review={review}
+            corner={primaryCorner}
+            window={cornerWindow}
+            cursor={cursor}
+            onCursor={setCursor}
+            onCorner={openCorner}
+            onBack={() => setPage("review")}
+            onAsk={ask}
+          />
+        ) : (
         <main className={`layout${loading ? " loading" : ""}`}>
           <div className="upper">
             <TrackMap
@@ -237,6 +267,7 @@ export function App() {
               cursor={cursor}
               onMode={setMapMode}
               onPickCorner={(id) => pick(id)}
+              onOpenCorner={openCorner}
             />
             <CornerTable
               corners={review.corners}
@@ -262,12 +293,14 @@ export function App() {
               const about = zoom
                 ? `between ${Math.round(zoom[0])} and ${Math.round(zoom[1])} m`
                 : primaryCorner ? `in ${primaryCorner.label}` : "on this lap";
-              setPrefill({ text: `What am I doing differently from the ghost ${about}?`, nonce: Date.now() });
+              ask(`What am I doing differently from the ghost ${about}?`);
             }}
           />
         </main>
+        )}
         <Chat
           context={{
+            page,
             track: group.track,
             car: group.car,
             lap: review.lap.lap_id,

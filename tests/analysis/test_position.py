@@ -53,3 +53,28 @@ def test_synthetic_line_widens_with_apex_speed():
     assert gap[np.searchsorted(base.d, apex)] == pytest.approx(3.0 * LINE_WIDENING_M, abs=0.01)
     assert np.hypot(fx, fy)[np.searchsorted(base.d, apex)] > np.hypot(bx, by)[np.searchsorted(base.d, apex)]  # outward
     assert gap[np.abs(base.d - apex) > 4 * CORNER_WIDTH_M].max() < 0.01  # the rest of the lap is unchanged
+
+
+def test_line_offset_recovers_the_known_widening():
+    from iagent.analysis.position import line_offset
+
+    track = DEFAULT_TRACK
+    base = build_profile(track)
+    faster = build_profile(track, speed_offsets={"T2": 3.0})  # T2: 6 m wider at the apex
+    step = 4  # coarser grid (2 m), as the UI uses
+    bx, by = to_local_xy(base.lat[::step], base.lon[::step], ORIGIN)
+    fx, fy = to_local_xy(faster.lat[::step], faster.lon[::step], ORIGIN)
+    offset, nearest = line_offset(fx, fy, bx, by)
+    apex = int(np.searchsorted(base.d[::step], track.corners[1].apex_m))
+    # The synthetic circle runs anticlockwise, so "wider" (outward) is to the right: negative.
+    assert offset[apex] == pytest.approx(-3.0 * LINE_WIDENING_M, abs=0.05)
+    assert abs(nearest[apex] - apex) <= 1
+    far = np.abs(base.d[::step] - track.corners[1].apex_m) > 4 * CORNER_WIDTH_M
+    assert np.abs(offset[far]).max() < 0.05
+
+    same, _ = line_offset(bx, by, bx, by)
+    assert np.nanmax(np.abs(same)) < 1e-9
+    gappy = fx.copy()
+    gappy[:5] = np.nan
+    off, idx = line_offset(gappy, fy, bx, by)
+    assert np.isnan(off[:5]).all() and (idx[:5] == -1).all()

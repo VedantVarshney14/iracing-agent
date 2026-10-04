@@ -11,7 +11,7 @@ import pandas as pd
 
 from iagent.analysis.compare import MS_TO_KPH
 from iagent.analysis.corners import compare_corners, corner_metrics
-from iagent.analysis.position import has_position, to_local_xy
+from iagent.analysis.position import has_position, line_offset, to_local_xy
 from iagent.laps.pace import best_times, group_of, representative
 from iagent.laps.store import LapRecord
 from iagent.workspace import Workspace, WorkspaceError
@@ -136,13 +136,17 @@ def review(ws: Workspace, lap_id: str, ref_id: str | None = None, step_m: float 
     a, b = _on(lap_grid, dist), _on(ref_grid, dist)
     gap = a["lap_time_s"] - b["lap_time_s"]
 
-    position = None
+    position, offset = None, None
     if has_position(lap_grid) and has_position(ref_grid):
         origin = (float(np.nanmean(b["Lat"])), float(np.nanmean(b["Lon"])))
-        position = {}
-        for key, grid in (("lap", a), ("ref", b)):
-            x, y = to_local_xy(grid["Lat"], grid["Lon"], origin)
-            position[key] = {"x": _list(x, 2), "y": _list(y, 2)}
+        lx, ly = to_local_xy(a["Lat"], a["Lon"], origin)
+        rx, ry = to_local_xy(b["Lat"], b["Lon"], origin)
+        offset, nearest = line_offset(lx, ly, rx, ry, search=max(1, int(60 / step_m)))
+        position = {
+            "lap": {"x": _list(lx, 2), "y": _list(ly, 2)},
+            "ref": {"x": _list(rx, 2), "y": _list(ry, 2)},
+            "ref_index": [int(i) for i in nearest],  # the ghost's point nearest each of yours
+        }
 
     return {
         "track": {"key": rec.track_key, "name": rec.track, "car": rec.car_key, "car_name": rec.car,
@@ -154,6 +158,8 @@ def review(ws: Workspace, lap_id: str, ref_id: str | None = None, step_m: float 
         "trace": {
             "distance_m": _list(dist, 1),
             "gap_s": _list(gap, 3),
+            # Your line's distance from the ghost's (m), + to the left of its direction of travel.
+            "offset_m": _list(offset, 2) if offset is not None else None,
             "lap": _channels(a),
             "ref": _channels(b),
         },

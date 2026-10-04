@@ -161,6 +161,10 @@ garage61 id                  driver                      time  vs you rating dat
 - **Traces.** Gap to ghost, speed, throttle, brake, gear and steering against distance. Hover
   to follow both cars on the map, drag to zoom, double-click to reset.
 
+- **Corner view.** One corner at a time (open it from the corner card, or the coach opens it):
+  both racing lines with the sideways gap exaggerated ×3/×5/×10 (distance along the track stays
+  true), a gap ladder, your line coloured by speed against the ghost, the corner's numbers and its
+  traces, shaded where you're ahead or behind, including how far your line runs wider or tighter.
 - **Coach chat.** Ask about the lap beside the analysis. The coach is your own Claude Code
   (`claude -p` with the coach plugin: your subscription, no API key) and knows what's on screen.
   When it talks about a corner it points at it, running `iagent ui show --corner 9 --view corner`
