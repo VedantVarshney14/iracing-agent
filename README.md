@@ -30,7 +30,7 @@ The design lives in [.claude/architecture.md](.claude/architecture.md). In short
 | 3 | Corner map, per-corner metrics, comparison and consistency, corner names and track knowledge | **Done** |
 | 3b | Garage61 reference laps (own and teammates'), iRacing ghost download and install | **Done** |
 | 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | Next |
-| 5 | Web UI: laps, corner comparisons, traces, rules, agent activity | |
+| 5 | Web UI: lap review against a ghost, racing lines, coach chat, session library | In progress |
 | 6 | Push-to-talk voice, debrief and focus skills, memory across sessions, local-model evals | |
 
 ## Quick start
@@ -152,6 +152,28 @@ garage61 id                  driver                      time  vs you rating dat
   `Documents/iRacing/lapfiles/<track>` folder without touching your own best-lap file. In iRacing:
   Options > Driving Aids > Load Comparison Lap, and tick "Display Reference Car".
 
+## Lap review in the browser
+
+`iagent ui` opens a lap review in your browser:
+- **Track map.** Your line, coloured by the time you gained or lost in each corner. The
+  **Corner** view overlays your line on the ghost's, with brake and full-throttle points.
+- **Corner table.** Each corner's comparison against the ghost.
+- **Traces.** Gap to ghost, speed, throttle, brake, gear and steering against distance. Hover
+  to follow both cars on the map, drag to zoom, double-click to reset.
+
+The ghost defaults to the fastest Garage61 reference lap you've imported (a teammate's), else your
+next-best lap. Both laps are selectable, and the URL (lap, ghost, corner, view) can be bookmarked.
+
+The UI is a React app in [web/](web/). Build it once (needs [Node.js](https://nodejs.org) 20+), then run:
+
+```bash
+npm --prefix web install && npm --prefix web run build   # writes iagent/ui/static/
+iagent ui                                                 # http://127.0.0.1:8765, Ctrl+C to stop
+```
+
+While working on the UI, run `iagent ui --no-browser` and `npm --prefix web run dev` (hot
+reload on http://localhost:5173, API calls forwarded to the server).
+
 ## Using the coach
 
 Skills in [coach/skills/](coach/skills/):
@@ -201,7 +223,10 @@ iagent/
   analysis/    corner map and metrics, CrewChief landmarks, splits, traces, position
   references/  Garage61 client, CSV import, iRacing ghost files
   testing/     synthetic lap generator, .ibt writer
+  ui/          `iagent ui`: the local API server and what the screens show (review.py)
+  workspace.py lap stores, reference laps and corner maps, shared by the CLI and the UI
   cli.py       the `iagent` command
+web/          the browser UI (React + Vite + TypeScript), built into iagent/ui/static/
 tests/        pytest suite (no sim, GPU, model or network needed)
 ```
 
@@ -218,8 +243,8 @@ times against iRacing's `LapLastLapTime`; those tests skip when the files are ab
 
 Python 3.12+ and [uv](https://docs.astral.sh/uv/). For the coach: Claude Code (with a Claude
 subscription, or [Ollama](https://ollama.com) v0.14+ for local models) or another skills-capable
-harness. iRacing itself is only needed for live telemetry (phase 4); everything else runs on
-recorded `.ibt` files.
+harness. For the browser UI: Node.js 20+ to build it. iRacing itself is only needed for live
+telemetry (phase 4); everything else runs on recorded `.ibt` files.
 
 ## License
 

@@ -191,3 +191,7 @@ data/telemetry/
 .DS_Store/
 # Coach workspace (lap store, notes)
 workspace/
+
+# Web UI: dependencies, and the build `iagent ui` serves (made by `npm --prefix web run build`)
+web/node_modules/
+iagent/ui/static/

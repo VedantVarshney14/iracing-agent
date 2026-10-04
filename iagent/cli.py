@@ -10,7 +10,6 @@ import logging
 from pathlib import Path
 
 import click
-import pandas as pd
 
 from iagent import utils
 from iagent.analysis import landmarks
@@ -21,19 +20,19 @@ from iagent.analysis.corners import (
     compare_corners,
     consistency,
     corner_metrics,
-    derive_corner_map,
     load_map,
     save_map,
 )
 from iagent.laps.pace import DEFAULT_WITHIN, best_times, group_of, representative
 from iagent.laps.recorder import record
-from iagent.laps.store import LapRecord, ParquetLapStore
+from iagent.laps.store import LapRecord
 from iagent.laps.tracks import load_track_info, update_track_info
 from iagent.references import garage61 as g61
 from iagent.references import ghosts
 from iagent.telemetry.session import SessionInfo
 from iagent.telemetry.ibt import IbtSource
 from iagent.telemetry.source import TelemetrySource
+from iagent.workspace import Workspace, WorkspaceError
 from iagent.testing.synthetic import LapKind, SyntheticSource
 
 DEFAULT_WORKSPACE = Path("workspace")
@@ -63,78 +62,23 @@ def _print_laps(records: list[LapRecord], best: dict) -> None:
         )
 
 
-class Ctx:
-    def __init__(self, workspace: Path):
-        self.workspace = workspace
-        self._store: ParquetLapStore | None = None
-        self._refs: ParquetLapStore | None = None
-
-    def store(self, create: bool = False) -> ParquetLapStore:
-        if self._store is None:
-            if not create and not (self.workspace / "index.sqlite").exists():
-                raise click.ClickException(
-                    f"No lap store in {self.workspace}. Run `iagent ingest <file.ibt>` first, or "
-                    "set --workspace / IAGENT_WORKSPACE."
-                )
-            try:
-                self._store = ParquetLapStore(self.workspace)
-            except RuntimeError as e:
-                raise click.ClickException(str(e)) from e
-        return self._store
-
-    def refs(self, create: bool = False) -> ParquetLapStore | None:
-        """Reference laps (other drivers', e.g. from Garage61), kept apart from the driver's own
-        laps so they never count towards "your best" or the pace filter."""
-        root = self.workspace / "reference"
-        if self._refs is None and (create or (root / "index.sqlite").exists()):
-            self._refs = ParquetLapStore(root)
-        return self._refs
-
-    def close(self) -> None:
-        for store in (self._store, self._refs):
-            if store is not None:
-                store.close()
+class Ctx(Workspace):
+    @property
+    def workspace(self) -> Path:
+        return self.root
 
 
-def _find(ctx: Ctx, lap_id: str) -> LapRecord:
-    """A lap by id: the driver's own laps first, then reference laps."""
-    for store in (ctx.store(), ctx.refs()):
-        if store is not None:
-            matches = [r for r in store.list() if r.lap_id == lap_id]
-            if matches:
-                return matches[0]
-    raise click.ClickException(f"Unknown lap {lap_id!r}. See `iagent laps list` or `iagent refs list`.")
+class _Cli(click.Group):
+    """Reports workspace errors (unknown lap, empty store, ...) as clean CLI errors."""
+
+    def invoke(self, ctx: click.Context):
+        try:
+            return super().invoke(ctx)
+        except WorkspaceError as e:
+            raise click.ClickException(str(e)) from e
 
 
-def _load(ctx: Ctx, lap_id: str) -> pd.DataFrame:
-    """The distance-gridded lap, from whichever store holds it."""
-    try:
-        return ctx.store().load(lap_id)
-    except KeyError:
-        refs = ctx.refs()
-        if refs is None:
-            raise
-        return refs.load(lap_id)
-
-
-def _reference(ctx: Ctx, rec: LapRecord, ref_id: str | None) -> LapRecord:
-    """REF_ID's record, or the fastest other valid lap on the same track and car."""
-    if ref_id is None:
-        candidates = [r for r in ctx.store().list(track=rec.track_key, car=rec.car_key, valid_only=True)
-                      if r.lap_id != rec.lap_id and r.lap_time is not None]
-        if not candidates:
-            raise click.ClickException("No other valid lap on this track and car to compare against.")
-        return min(candidates, key=lambda r: r.lap_time)
-    ref = _find(ctx, ref_id)
-    if group_of(ref) != group_of(rec):
-        raise click.ClickException(
-            f"{ref_id} is {ref.track_key}/{ref.car_key}, {rec.lap_id} is {rec.track_key}/{rec.car_key}: "
-            "laps on different tracks or cars can't be compared."
-        )
-    return ref
-
-
-@click.group()
+@click.group(cls=_Cli)
 @click.option("--workspace", type=click.Path(file_okay=False, path_type=Path), envvar="IAGENT_WORKSPACE",
               default=DEFAULT_WORKSPACE, show_default=True, help="Workspace directory (env: IAGENT_WORKSPACE).")
 @click.option("--debug", is_flag=True, help="Verbose logging (to stderr).")
@@ -238,6 +182,30 @@ def tracks(ctx: Ctx, as_json: bool):
         )
 
 
+@cli.command()
+@click.option("--host", default="127.0.0.1", show_default=True, help="Address to serve on.")
+@click.option("--port", default=8765, show_default=True, help="Port to serve on.")
+@click.option("--no-browser", is_flag=True, help="Don't open a browser tab.")
+@click.pass_obj
+def ui(ctx: Ctx, host: str, port: int, no_browser: bool):
+    """Open the lap analysis UI in your browser (runs until Ctrl+C)."""
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    from iagent.ui.server import STATIC_DIR, create_app
+
+    ctx.store()  # fail early, with the usual message, when there are no laps yet
+    if not (STATIC_DIR / "index.html").exists():
+        click.echo("The UI isn't built yet: run `npm --prefix web install && npm --prefix web run build`.", err=True)
+    url = f"http://{host}:{port}/"
+    click.echo(f"iRacing Coach UI on {url} (workspace: {ctx.workspace.resolve()}). Ctrl+C to stop.")
+    if not no_browser:
+        threading.Timer(1.0, webbrowser.open, args=(url,)).start()
+    uvicorn.run(create_app(ctx.workspace), host=host, port=port, log_level="warning")
+
+
 @cli.group()
 def laps():
     """List, inspect and compare laps."""
@@ -273,10 +241,10 @@ def laps_list(ctx: Ctx, track: str | None, car: str | None, session_id: str | No
 @click.pass_obj
 def laps_show(ctx: Ctx, lap_id: str, sections: int, as_json: bool):
     """One lap: headline numbers and equal-distance splits (time, min speed, first brake point)."""
-    rec = _find(ctx, lap_id)
+    rec = ctx.find(lap_id)
     out = {
         **_record_dict(rec, best_times(ctx.store().list(track=rec.track_key, car=rec.car_key))),
-        **summarize(_load(ctx, lap_id), rec.lap_time, sections),
+        **summarize(ctx.load(lap_id), rec.lap_time, sections),
     }
     if as_json:
         _emit(out)
@@ -303,9 +271,9 @@ def laps_compare(ctx: Ctx, lap_id: str, ref_id: str | None, sections: int, as_js
     REF_ID defaults to the fastest other valid lap on the same track and car. A positive
     `delta_s` means LAP_ID was slower in that section.
     """
-    rec = _find(ctx, lap_id)
-    ref = _reference(ctx, rec, ref_id)
-    result = compare(_load(ctx, lap_id), rec.lap_time, _load(ctx, ref.lap_id), ref.lap_time,
+    rec = ctx.find(lap_id)
+    ref = ctx.reference(rec, ref_id)
+    result = compare(ctx.load(lap_id), rec.lap_time, ctx.load(ref.lap_id), ref.lap_time,
                      sections)
     out = {"lap": lap_id, "lap_time": rec.lap_time, "ref": ref.lap_id, "ref_lap_time": ref.lap_time, **result}
     if as_json:
@@ -335,45 +303,15 @@ def laps_trace(ctx: Ctx, lap_id: str, channels: str, start_m: float, end_m: floa
 
     Keep ranges short (a corner is ~100-300 m) to avoid flooding the output.
     """
-    _find(ctx, lap_id)
+    ctx.find(lap_id)
     names = [c.strip() for c in channels.split(",") if c.strip() not in ("", "LapDist", "lap_time_s")]
     try:
-        df = trace(_load(ctx, lap_id), names, start_m, end_m, step_m)
+        df = trace(ctx.load(lap_id), names, start_m, end_m, step_m)
     except KeyError as e:
         raise click.ClickException(str(e.args[0])) from e
     click.echo(df.to_csv(index=False), nl=False)
 
 # --- corners --------------------------------------------------------------------------------
-
-logger = logging.getLogger("iagent.cli")
-
-
-def _derive_map(ctx: Ctx, track: str, car: str | None) -> CornerMap:
-    reps = representative(ctx.store().list(track=track, car=car))
-    if not reps:
-        raise click.ClickException(f"No representative laps for track {track!r}; see `iagent tracks`.")
-    if car is None:  # use the car with the most representative laps
-        counts: dict[str, int] = {}
-        for r in reps:
-            counts[r.car_key] = counts.get(r.car_key, 0) + 1
-        car = max(counts, key=counts.__getitem__)
-        reps = [r for r in reps if r.car_key == car]
-    grids = [ctx.store().load(r.lap_id) for r in reps]
-    try:
-        return derive_corner_map(grids, track, car, [r.lap_id for r in reps])
-    except ValueError as e:
-        raise click.ClickException(str(e)) from e
-
-
-def _corner_map(ctx: Ctx, track: str) -> CornerMap:
-    """The saved map for a track, derived (and saved) on first use."""
-    cmap = load_map(ctx.workspace, track)
-    if cmap is None:
-        cmap = _derive_map(ctx, track, None)
-        path = save_map(ctx.workspace, cmap)
-        logger.info("No corner map for %s yet: derived %d corners into %s", track, len(cmap.corners), path)
-    return cmap
-
 
 def _corner_dicts(cmap: CornerMap) -> list[dict]:
     return [dataclasses.asdict(c) for c in cmap.corners]
@@ -416,7 +354,7 @@ def corners_map(ctx: Ctx, track: str, car: str | None, as_json: bool):
     Corners are stretches of sustained lateral g; chicanes split into one corner per direction.
     Names from an existing map are kept for corners that still line up.
     """
-    cmap = _derive_map(ctx, track, car)
+    cmap = ctx.derive_map(track, car)
     old = load_map(ctx.workspace, track)
     if old is not None:
         cmap = carry_names(old, cmap)
@@ -433,7 +371,7 @@ def corners_map(ctx: Ctx, track: str, car: str | None, as_json: bool):
 @click.pass_obj
 def corners_list(ctx: Ctx, track: str, as_json: bool):
     """The corner map: direction, entry/apex/exit distances (m), reference minimum speed, names."""
-    cmap = _corner_map(ctx, track)
+    cmap = ctx.corner_map(track)
     if as_json:
         _emit(dataclasses.asdict(cmap))
     else:
@@ -453,7 +391,7 @@ def corners_name(ctx: Ctx, track: str, corner_id: int, name: str | None, source:
     """Name corner CORNER_ID (e.g. `iagent corners name --track spa-2024-up 1 "La Source"`)."""
     if not clear and not name:
         raise click.UsageError("Give a NAME, or --clear.")
-    cmap = _corner_map(ctx, track)
+    cmap = ctx.corner_map(track)
     try:
         c = cmap.get(corner_id)
     except KeyError as e:
@@ -476,7 +414,7 @@ def corners_landmarks(ctx: Ctx, track: str, apply: bool, refresh: bool, as_json:
     Coverage is partial (~25 iRacing tracks) and names can be misspelled or generic ("turn9");
     treat them as hints. Downloads the data once into the workspace.
     """
-    cmap = _corner_map(ctx, track)
+    cmap = ctx.corner_map(track)
     try:
         data = landmarks.load(ctx.workspace / "cache" / "crewchief-landmarks.json", refresh)
     except OSError as e:
@@ -521,9 +459,9 @@ def corners_report(ctx: Ctx, lap_id: str, as_json: bool):
     corner was taken without braking (min_throttle shows any lift). `off m` is metres driven off
     the track in that corner: the corner's numbers then describe an incident.
     """
-    rec = _find(ctx, lap_id)
-    cmap = _corner_map(ctx, rec.track_key)
-    rows = corner_metrics(_load(ctx, lap_id), rec.lap_time, cmap)
+    rec = ctx.find(lap_id)
+    cmap = ctx.corner_map(rec.track_key)
+    rows = corner_metrics(ctx.load(lap_id), rec.lap_time, cmap)
     if as_json:
         _emit({"lap": lap_id, "lap_time": rec.lap_time, "track": rec.track_key, "corners": rows})
         return
@@ -552,12 +490,12 @@ def corners_compare(ctx: Ctx, lap_id: str, ref_id: str | None, as_json: bool):
     > 0 full throttle later; exit_speed_diff_kph > 0 faster exit. Off-track metres are shown when
     either lap left the track in a corner: that corner's difference is then an incident, not technique.
     """
-    rec = _find(ctx, lap_id)
-    ref = _reference(ctx, rec, ref_id)
-    cmap = _corner_map(ctx, rec.track_key)
+    rec = ctx.find(lap_id)
+    ref = ctx.reference(rec, ref_id)
+    cmap = ctx.corner_map(rec.track_key)
     rows = compare_corners(
-        corner_metrics(_load(ctx, lap_id), rec.lap_time, cmap),
-        corner_metrics(_load(ctx, ref.lap_id), ref.lap_time, cmap),
+        corner_metrics(ctx.load(lap_id), rec.lap_time, cmap),
+        corner_metrics(ctx.load(ref.lap_id), ref.lap_time, cmap),
     )
     total = round(rec.lap_time - ref.lap_time, 3) if rec.lap_time and ref.lap_time else None
     losses = sorted((r for r in rows if (r.get("delta_s") or 0) > 0), key=lambda r: -r["delta_s"])
@@ -587,7 +525,7 @@ def corners_compare(ctx: Ctx, lap_id: str, ref_id: str | None, as_json: bool):
 def corners_consistency(ctx: Ctx, track: str, car: str | None, session_id: str | None, as_json: bool):
     """How repeatable each corner is across representative laps: spread (std dev) of corner time,
     brake point, minimum speed and full-throttle point. Lower spread = more consistent."""
-    cmap = _corner_map(ctx, track)
+    cmap = ctx.corner_map(track)
     reps = [r for r in representative(ctx.store().list(track=track, car=car))
             if session_id is None or r.session_id == session_id]
     if len(reps) < 2:
@@ -628,15 +566,6 @@ def _cached(ctx: Ctx, name: str, fetch) -> list[dict]:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(items))
     return items
-
-
-def _meta_path(ctx: Ctx, lap_id: str) -> Path:
-    return ctx.workspace / "reference" / "meta" / f"{lap_id}.json"
-
-
-def _ref_meta(ctx: Ctx, lap_id: str) -> dict:
-    path = _meta_path(ctx, lap_id)
-    return json.loads(path.read_text()) if path.exists() else {}
 
 
 def _summarize_g61_lap(lap: dict) -> dict:
@@ -781,7 +710,7 @@ def garage61_import(ctx: Ctx, garage61_ids: tuple[str, ...], as_json: bool):
                 raise click.ClickException(f"Couldn't download the telemetry of {gid}: {e}") from e
             lap = g61.csv_to_lap(csv_text, session, meta.get("lapTime"), meta.get("lapNumber"))
             rec = ctx.refs(create=True).save(lap, "garage61")
-            path = _meta_path(ctx, rec.lap_id)
+            path = ctx.meta_path(rec.lap_id)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(summary, indent=2) + "\n")
             out.append({**summary, "lap_id": rec.lap_id, "track": rec.track_key, "car": rec.car_key,
@@ -879,7 +808,7 @@ def refs_list(ctx: Ctx, track: str | None, car: str | None, as_json: bool):
     """Imported reference laps, fastest first, with driver and conditions."""
     store = ctx.refs()
     records = sorted(store.list(track=track, car=car) if store else [], key=lambda r: r.lap_time or float("inf"))
-    rows = [{**_ref_meta(ctx, r.lap_id), "lap_id": r.lap_id, "track": r.track_key, "car": r.car_key,
+    rows = [{**ctx.ref_meta(r.lap_id), "lap_id": r.lap_id, "track": r.track_key, "car": r.car_key,
              "lap_time": r.lap_time, "valid": r.valid, "off_track_s": r.off_track_s} for r in records]
     if as_json:
         _emit(rows)
