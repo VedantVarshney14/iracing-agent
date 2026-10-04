@@ -117,7 +117,7 @@ has a `--help` that is accurate enough to be the documentation, and finds the wo
 | `iagent laps show <id>` | lap summary and distance splits | done |
 | `iagent laps compare <id> [ref]` | time gained/lost per section vs a reference | done (sections; corners later) |
 | `iagent laps trace <id>` | channel samples over a distance range (CSV) | done |
-| `iagent corners map/report` | corner map and per-corner metrics | phase 2 |
+| `iagent corners map/report` | corner map and per-corner metrics | phase 3 |
 | `iagent rules add/backtest/activate/list` | agent-defined triggers | phase 4 |
 | `iagent schedule add` | time/lap-based wake-ups | phase 4 |
 | `iagent say "<text>"` | speak through the arbiter | phase 4 |
@@ -184,11 +184,11 @@ the model chooses what matters and how to say it. Small or large, the model neve
 a brake point from raw samples to be useful.
 
 - **Now:** distance splits, section comparison against a reference lap, channel traces.
-- **Phase 2:** corner map; a **corner tracker** that computes per-corner metrics (brake point,
+- **Phase 3:** corner map; a **corner tracker** that computes per-corner metrics (brake point,
   min speed, apex distance, throttle pickup, time in corner). The same code runs offline over
   stored laps and live at each corner exit, so analysis, rules and backtests agree.
 - References: own best, theoretical best (best corner segments stitched), imported laps
-  (`.ibt`/CSV dropped into the workspace). Garage61 remains a possible source; whether its API
+  (`.ibt`/CSV dropped into the workspace). Garage61 remains a possible source (a v1 client is in git history); whether its API
   allows laps from outside the user's team is unverified.
 
 ## 8. Rules, schedules and events
@@ -262,10 +262,9 @@ Test data: synthetic laps with exact ground truth (committed); real `.ibt` recor
 iagent/
   telemetry/   frames, session info, sources (ibt; irsdk live later)
   laps/        segmenter, resampling, store, pace, recorder
-  analysis/    splits, comparison (corner tracker in phase 2)
+  analysis/    splits, comparison (corner tracker in phase 3)
   testing/     synthetic generator, .ibt writer
   cli.py       the `iagent` command
-  audio/ garage/ serialize/   kept from v1, to be adapted (TTS, Garage61 client)
 ```
 
 ## 12. Phasing

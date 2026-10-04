@@ -125,8 +125,6 @@ iagent/
   laps/        segmentation, distance resampling, lap store, pace filter, recorder
   analysis/    lap summaries, section comparison, traces
   testing/     synthetic lap generator, .ibt writer
-  audio/       Kokoro TTS wrapper (to be reworked)
-  garage/      Garage61 client (possible reference-lap source)
   cli.py       the `iagent` command
 tests/        pytest suite (no sim, GPU, model or network needed)
 ```
@@ -139,7 +137,6 @@ uv run pytest
 
 `tests/real/` replays your own recordings from `data/telemetry/` (git-ignored) and checks our lap
 times against iRacing's `LapLastLapTime`; those tests skip when the files are absent.
-`tests/test_tts.py` is a leftover manual test that is always skipped.
 
 ## Requirements
 
