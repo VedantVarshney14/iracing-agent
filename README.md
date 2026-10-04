@@ -4,9 +4,8 @@ An iRacing coach built as **skills for an existing agent harness** plus a **CLI 
 telemetry work**. The first goal is helping a driver learn a new track: find where time is lost,
 pick one thing to work on, and (later) cue it by voice at the right place on track.
 
-> **Status: rewrite in progress (branch `rewrite/v2`).** Telemetry, laps, corner analysis and the
-> first coaching skills work on recorded sessions. Live telemetry, rules and voice are next.
-> The v1 two-agent LangGraph prototype has been removed; it lives on in the history of `main`.
+> **Status:** works today on recorded sessions: telemetry, laps, corner analysis, Garage61
+> reference laps and ghosts, and the coaching skills. Live telemetry, rules and voice are next.
 
 The design lives in [.claude/architecture.md](.claude/architecture.md). In short:
 
@@ -29,6 +28,7 @@ The design lives in [.claude/architecture.md](.claude/architecture.md). In short
 | 1 | Telemetry sources (`.ibt` replay, synthetic), lap segmentation, lap store, pace filter | **Done** |
 | 2 | Agent-facing CLI, `coach` plugin (`telemetry`, `lap-review` skills), headless harness test | **Done** |
 | 3 | Corner map, per-corner metrics, comparison and consistency, corner names and track knowledge | **Done** |
+| 3b | Garage61 reference laps (own and teammates'), iRacing ghost download and install | **Done** |
 | 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | Next |
 | 5 | Web UI: laps, corner comparisons, traces, rules, agent activity | |
 | 6 | Push-to-talk voice, debrief and focus skills, memory across sessions, local-model evals | |

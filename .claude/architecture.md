@@ -1,7 +1,7 @@
-# Architecture (v2)
+# Architecture
 
 Status: phases 1–3 are implemented (telemetry sources, laps, agent-facing CLI and skills, corner
-analysis); live telemetry, rules, voice and UI are design. Supersedes the two-agent LangGraph design.
+analysis, Garage61 reference laps); live telemetry, rules, voice and UI are design.
 
 ## 1. Goals
 
