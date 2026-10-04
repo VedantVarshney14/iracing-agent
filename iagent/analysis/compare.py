@@ -137,4 +137,5 @@ def trace(
     out = part.iloc[::stride][["LapDist", "lap_time_s", *channels]].copy()
     if "Speed" in out:
         out["Speed"] = out["Speed"] * MS_TO_KPH
-    return out.round(3).reset_index(drop=True)
+    # Degrees need more places than the rest: 7 is ~1 cm, 3 would be ~100 m.
+    return out.round({c: 7 if c in ("Lat", "Lon") else 3 for c in out.columns}).reset_index(drop=True)

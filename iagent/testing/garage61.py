@@ -13,8 +13,8 @@ def to_garage61_csv(raw: pd.DataFrame, track_length_m: float) -> str:
     out = pd.DataFrame({
         "Speed": raw["Speed"],
         "LapDistPct": raw["LapDistPct"],
-        "Lat": 0.0,
-        "Lon": 0.0,
+        "Lat": raw.get("Lat", 0.0),
+        "Lon": raw.get("Lon", 0.0),
         "Brake": raw["Brake"],
         "Throttle": raw["Throttle"],
         "RPM": 7000.0,

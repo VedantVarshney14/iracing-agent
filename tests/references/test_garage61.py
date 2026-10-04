@@ -55,6 +55,16 @@ def test_csv_off_track_and_flags(tmp_path):
     assert "ABSActive" in lap.frames and set(lap.frames["ABSActive"].unique()) == {0.0}
 
 
+def test_csv_keeps_position_when_the_export_has_it(driven):
+    source, store, records = driven
+    raw = store.load(records[2].lap_id, grid=False)
+    lap = csv_to_lap(to_garage61_csv(raw, 3000.0), source.session, records[2].lap_time)
+    assert lap.frames["Lat"].to_numpy() == pytest.approx(raw["Lat"].to_numpy(), abs=1e-9)
+
+    no_gps = to_garage61_csv(raw.drop(columns=["Lat", "Lon"]), 3000.0)  # exported as zeros
+    assert "Lat" not in csv_to_lap(no_gps, source.session, records[2].lap_time).frames
+
+
 def test_rejects_non_garage61_csv(driven):
     source, _, _ = driven
     with pytest.raises(ValueError, match="Not a Garage61"):
