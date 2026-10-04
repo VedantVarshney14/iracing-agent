@@ -12,6 +12,8 @@ dependencies = [
     "pandas>=2.3.1",
     "pyarrow>=17",
     "pyirsdk>=1.3.5",
+    "starlette>=1.7.0",
+    "uvicorn>=0.54.0",
 ]
 
 [dependency-groups]
@@ -27,6 +29,9 @@ iagent = "iagent.cli:cli"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["iagent*"]
+
+[tool.setuptools.package-data]
+iagent = ["ui/static/**/*"]  # the built web UI (`npm --prefix web run build`)
 
 [tool.uv]
 package = true
