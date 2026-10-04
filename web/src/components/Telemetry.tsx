@@ -25,9 +25,10 @@ interface Props {
   onCursor: (d: number | null) => void;
   onZoom: (range: [number, number] | null) => void;
   onPickCorner: (id: number) => void;
+  onAsk: () => void;
 }
 
-export function Telemetry({ review, range, cursor, selected, primary, onCursor, onZoom, onPickCorner }: Props) {
+export function Telemetry({ review, range, cursor, selected, primary, onCursor, onZoom, onPickCorner, onAsk }: Props) {
   const { trace, corners } = review;
   const dist = trace.distance_m;
   const plotRef = useRef<HTMLDivElement>(null);
@@ -121,6 +122,9 @@ export function Telemetry({ review, range, cursor, selected, primary, onCursor, 
           Telemetry <span className="muted">· drag to zoom, double-click to reset</span>
         </h2>
         <div className="row">
+          <button type="button" className="btn" onClick={onAsk}>
+            Ask coach
+          </button>
           {primaryCorner && (
             <button
               type="button"

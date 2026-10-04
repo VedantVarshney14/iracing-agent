@@ -26,10 +26,10 @@ from iagent.analysis.corners import (
 from iagent.laps.pace import DEFAULT_WITHIN, best_times, group_of, representative
 from iagent.laps.recorder import record
 from iagent.laps.store import LapRecord
-from iagent.laps.tracks import load_track_info, update_track_info
+from iagent.laps.tracks import update_track_info
 from iagent.references import garage61 as g61
 from iagent.references import ghosts
-from iagent.telemetry.session import SessionInfo
+from iagent.references import imports as g61_imports
 from iagent.telemetry.ibt import IbtSource
 from iagent.telemetry.source import TelemetrySource
 from iagent.workspace import Workspace, WorkspaceError
@@ -182,13 +182,16 @@ def tracks(ctx: Ctx, as_json: bool):
         )
 
 
-@cli.command()
+@cli.group(invoke_without_command=True)
 @click.option("--host", default="127.0.0.1", show_default=True, help="Address to serve on.")
 @click.option("--port", default=8765, show_default=True, help="Port to serve on.")
 @click.option("--no-browser", is_flag=True, help="Don't open a browser tab.")
-@click.pass_obj
-def ui(ctx: Ctx, host: str, port: int, no_browser: bool):
+@click.pass_context
+def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool):
     """Open the lap analysis UI in your browser (runs until Ctrl+C)."""
+    if click_ctx.invoked_subcommand is not None:
+        return
+    ctx: Ctx = click_ctx.obj
     import threading
     import webbrowser
 
@@ -204,6 +207,44 @@ def ui(ctx: Ctx, host: str, port: int, no_browser: bool):
     if not no_browser:
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
     uvicorn.run(create_app(ctx.workspace), host=host, port=port, log_level="warning")
+
+
+@ui.command("show")
+@click.option("--corner", "corners", type=int, multiple=True, help="Corner number to highlight (repeatable).")
+@click.option("--from", "start_m", type=float, help="Zoom the traces from this distance (m).")
+@click.option("--to", "end_m", type=float, help="Zoom the traces to this distance (m).")
+@click.option("--view", type=click.Choice(["lap", "corner"]), help="Map view: whole lap, or both racing lines.")
+@click.option("--lap", "lap_id", help="Switch the review to this lap.")
+@click.option("--ref", "ref_id", help="Switch the ghost to this lap.")
+@click.pass_obj
+def ui_show(ctx: Ctx, corners: tuple[int, ...], start_m: float | None, end_m: float | None, view: str | None,
+            lap_id: str | None, ref_id: str | None):
+    """Point at something in the open lap review (for the coach in the UI's chat).
+
+    Prints a `ui_action` the UI applies: e.g. `iagent ui show --corner 9 --view corner`, or
+    `iagent ui show --from 3600 --to 4200`.
+    """
+    if (start_m is None) != (end_m is None):
+        raise click.UsageError("Give both --from and --to.")
+    if start_m is not None and end_m <= start_m:
+        raise click.UsageError("--to must be after --from.")
+    if any(c < 1 for c in corners):
+        raise click.UsageError("Corners are numbered from 1 (T1).")
+    lap = ctx.find(lap_id) if lap_id else None
+    if ref_id:
+        ref = ctx.find(ref_id)
+        if lap is not None and group_of(ref) != group_of(lap):
+            raise click.UsageError(f"{ref_id} is on a different track or car from {lap_id}.")
+    action = {k: v for k, v in {
+        "corners": list(corners) or None,
+        "range": [start_m, end_m] if start_m is not None else None,
+        "view": view,
+        "lap": lap_id,
+        "ref": ref_id,
+    }.items() if v is not None}
+    if not action:
+        raise click.UsageError("Nothing to show: give --corner, --from/--to, --view, --lap or --ref.")
+    _emit({"ui_action": action})
 
 
 @cli.group()
@@ -548,42 +589,7 @@ def corners_consistency(ctx: Ctx, track: str, car: str | None, session_id: str |
 
 
 def _garage61_client() -> g61.Garage61Client:
-    token = g61.find_token()
-    if not token:
-        raise click.ClickException(
-            "No Garage61 token. Create a personal access token at https://garage61.net/developer, "
-            f"then set GARAGE61_TOKEN or save it to {g61.TOKEN_FILE}."
-        )
-    return g61.Garage61Client(token)
-
-
-def _cached(ctx: Ctx, name: str, fetch) -> list[dict]:
-    """Garage61's track/car catalogues change rarely: cache them in the workspace."""
-    path = ctx.workspace / "cache" / f"garage61-{name}.json"
-    if path.exists():
-        return json.loads(path.read_text())
-    items = fetch()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(items))
-    return items
-
-
-def _summarize_g61_lap(lap: dict) -> dict:
-    driver = lap.get("driver") or {}
-    return {
-        "garage61_id": lap.get("id"),
-        "driver": f"{driver.get('firstName', '')} {driver.get('lastName', '')}".strip() or driver.get("slug"),
-        "driver_slug": driver.get("slug"),
-        "lap_time": lap.get("lapTime"),
-        "driver_rating": lap.get("driverRating"),
-        "date": (lap.get("startTime") or "")[:10],
-        "session_type": {1: "practice", 2: "qualifying", 3: "race"}.get(lap.get("sessionType")),
-        "track_temp_c": round(lap["trackTemp"], 1) if lap.get("trackTemp") else None,
-        "track_usage_pct": lap.get("trackUsage"),
-        "clean": lap.get("clean"),
-        "can_view_telemetry": lap.get("canViewTelemetry"),
-        "ghost_available": lap.get("ghostAvailable"),
-    }
+    return g61_imports.client_from_env()
 
 
 @cli.group()
@@ -623,39 +629,16 @@ def garage61_find(ctx: Ctx, track: str, car: str | None, teams: tuple[str, ...],
     `telemetry` says whether you can import the lap. A personal token only reaches you and your
     Garage61 teammates.
     """
-    info = load_track_info(ctx.workspace, track)
-    if not info or not info.get("track_id"):
-        raise click.ClickException(f"No iRacing ids recorded for {track}. Re-run `iagent ingest` on a recording of it.")
-    cars = info.get("cars", {})
-    if car is None:
-        if len(cars) != 1:
-            raise click.ClickException(f"Pick a car with --car: {', '.join(cars) or 'none recorded'}.")
-        car = next(iter(cars))
-    if car not in cars or not cars[car].get("car_id"):
-        raise click.ClickException(f"No iRacing car id recorded for {car} on {track}.")
-
     client = _garage61_client()
     try:
-        g_track = g61.g61_id_for(_cached(ctx, "tracks", client.tracks), info["track_id"])
-        g_car = g61.g61_id_for(_cached(ctx, "cars", client.cars), cars[car]["car_id"])
-        if g_track is None or g_car is None:
-            raise click.ClickException("Garage61 doesn't list this track or car.")
-        team_slugs = list(teams) or [t["slug"] for t in client.teams() if t.get("slug")]
-        laps_found = client.find_laps(g_track, g_car, team_slugs, limit)
+        found = g61_imports.find(ctx, client, track, car, teams, limit)
     except g61.Garage61Error as e:
         raise click.ClickException(str(e)) from e
     finally:
         client.close()
-
-    own_best = best_times(ctx.store().list(track=track, car=car)).get((track, car))
-    rows = []
-    for lap in laps_found:
-        row = _summarize_g61_lap(lap)
-        if own_best and row["lap_time"]:
-            row["vs_your_best_pct"] = round((row["lap_time"] / own_best - 1) * 100, 2)
-        rows.append(row)
+    car, own_best, rows = found["car"], found["your_best"], found["laps"]
     if as_json:
-        _emit({"track": track, "car": car, "your_best": own_best, "laps": rows})
+        _emit(found)
         return
     click.echo(f"{track} / {car}: your best {own_best:.3f}s" if own_best else f"{track} / {car}")
     click.echo(f"{'garage61 id':<28} {'driver':<22} {'time':>9} {'vs you':>7} {'rating':>6} {'date':<10} {'track °C':>8} {'telemetry':>9} {'ghost':>5}")
@@ -676,48 +659,9 @@ def garage61_import(ctx: Ctx, garage61_ids: tuple[str, ...], as_json: bool):
     your laps. Use the printed lap id with `iagent corners compare YOUR_LAP REF_LAP`.
     """
     client = _garage61_client()
-    out = []
     try:
-        for gid in garage61_ids:
-            meta = client.lap(gid)
-            summary = _summarize_g61_lap(meta)
-            track_pid = int((meta.get("track") or {}).get("platform_id") or 0)
-            car_pid = int((meta.get("car") or {}).get("platform_id") or 0)
-            info = next((i for i in _all_track_info(ctx) if i.get("track_id") == track_pid), None)
-            if info is None:
-                raise click.ClickException(
-                    f"{gid} is on {(meta.get('track') or {}).get('name')} (iRacing track {track_pid}), "
-                    "which you haven't recorded. Ingest one of your own laps there first."
-                )
-            car_key = next((k for k, c in info["cars"].items() if c.get("car_id") == car_pid), None)
-            car_name = (meta.get("car") or {}).get("name", "unknown")
-            session = SessionInfo(
-                track_name=info["name"],
-                track_length_m=info["length_m"],
-                car_name=car_name,
-                track_id=info["track_id"],
-                session_id=f"g61-{summary['driver_slug'] or 'driver'}-{gid[-6:].lower()}",
-                track_code=info.get("track_code"),
-                track_config=info.get("config"),
-                car_path=car_key or car_name,
-                car_id=car_pid,
-            )
-            # The download itself is the authority: Garage61's per-lap `canViewTelemetry` flag has
-            # been seen to say False for laps whose CSV downloads fine.
-            try:
-                csv_text = client.lap_csv(gid)
-            except g61.Garage61Error as e:
-                raise click.ClickException(f"Couldn't download the telemetry of {gid}: {e}") from e
-            lap = g61.csv_to_lap(csv_text, session, meta.get("lapTime"), meta.get("lapNumber"))
-            rec = ctx.refs(create=True).save(lap, "garage61")
-            path = ctx.meta_path(rec.lap_id)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(summary, indent=2) + "\n")
-            out.append({**summary, "lap_id": rec.lap_id, "track": rec.track_key, "car": rec.car_key,
-                        "valid": rec.valid, "same_car_as_yours": car_key is not None})
+        out = [g61_imports.import_lap(ctx, client, gid) for gid in garage61_ids]
     except g61.Garage61Error as e:
-        raise click.ClickException(str(e)) from e
-    except ValueError as e:
         raise click.ClickException(str(e)) from e
     finally:
         client.close()
@@ -759,7 +703,7 @@ def garage61_ghost(ctx: Ctx, garage61_id: str, install: bool, lapfiles: Path | N
     except ValueError as e:
         raise click.ClickException(str(e)) from e
 
-    summary = _summarize_g61_lap(meta)
+    summary = g61_imports.summarize(meta)
     name = ghosts.file_name(summary["driver_slug"] or "driver", info.car_path, summary["lap_time"])
     track_dir = (info.track_path or "unknown").replace("\\", "-").replace(" ", "-")
     saved = ctx.workspace / "reference" / "ghosts" / track_dir / name
@@ -787,11 +731,6 @@ def garage61_ghost(ctx: Ctx, garage61_id: str, install: bool, lapfiles: Path | N
     if out["installed"]:
         click.echo(f"Installed for iRacing: {out['installed']}")
     click.echo('In iRacing: Options > Driving Aids > Load Comparison Lap; tick "Display Reference Car".')
-
-
-def _all_track_info(ctx: Ctx) -> list[dict]:
-    root = ctx.workspace / "tracks"
-    return [json.loads(p.read_text()) for p in sorted(root.glob("*/track.json"))] if root.exists() else []
 
 
 @cli.group()

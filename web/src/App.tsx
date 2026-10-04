@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import type { UiAction } from "./chat";
+import { Chat } from "./components/Chat";
 import { CornerTable } from "./components/CornerTable";
 import { Telemetry } from "./components/Telemetry";
 import { TopBar } from "./components/TopBar";
 import { TrackMap } from "./components/TrackMap";
-import type { LapsResponse, Review, TrackRow } from "./types";
+import type { Garage61Lap, Garage61Laps, LapsResponse, Review, TrackRow } from "./types";
 
 type Group = { track: string; car: string };
 
@@ -31,6 +33,13 @@ export function App() {
   const [cursor, setCursor] = useState<number | null>(null);
   const [zoom, setZoom] = useState<[number, number] | null>(null);
   const [mapMode, setMapMode] = useState<"lap" | "corner">(params.get("view") === "corner" ? "corner" : "lap");
+  const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
+  // A coach action that switched laps: applied once the new review has loaded.
+  const pendingAction = useRef<UiAction | null>(null);
+  const [garage61, setGarage61] = useState<Garage61Laps | null>(null);
+  const [importing, setImporting] = useState<string | null>(null);
+  // Once the driver (or the URL) picks a ghost, the Garage61 default no longer overrides it.
+  const ghostChosen = useRef(params.has("ref"));
 
   useEffect(() => {
     let stale = false;
@@ -65,10 +74,25 @@ export function App() {
         urlState.lap = urlState.ref = null;
       })
       .catch((e: Error) => !stale && setError(e.message));
+    setGarage61(null);
+    api
+      .garage61Laps(group.track, group.car)
+      .then((data) => !stale && setGarage61(data))
+      .catch(() => !stale && setGarage61({ available: false, reason: "Garage61 couldn't be reached.", laps: [] }));
     return () => {
       stale = true;
     };
   }, [group]);
+
+  // Default ghost: the fastest Garage61 lap (a teammate's), imported on first use.
+  useEffect(() => {
+    if (!review || !garage61?.available || ghostChosen.current) return;
+    const fastest = [...garage61.laps].filter((l) => l.lap_time != null).sort((a, b) => a.lap_time! - b.lap_time!)[0];
+    ghostChosen.current = true;
+    if (!fastest || fastest.lap_id === review.ref.lap_id) return;
+    if (fastest.lap_id) setRefId(fastest.lap_id);
+    else importGhost(fastest);
+  }, [review, garage61]);
 
   useEffect(() => {
     if (!lapId) return;
@@ -80,13 +104,18 @@ export function App() {
         if (stale) return;
         setReview(data);
         setError(null);
+        setZoom(null);
+        if (pendingAction.current) {
+          applyAction(pendingAction.current);
+          pendingAction.current = null;
+          return;
+        }
         // Start on the corner from the URL, else the one that cost the most time.
         const worst = [...data.corners].sort((a, b) => (b.delta_s ?? 0) - (a.delta_s ?? 0))[0];
         const start = data.corners.find((c) => c.id === urlState.corner) ?? worst;
         urlState.corner = null;
         setSelected(start ? [start.id] : []);
         setPrimary(start ? start.id : null);
-        setZoom(null);
       })
       .catch((e: Error) => !stale && setError(e.message))
       .finally(() => !stale && setLoading(false));
@@ -113,6 +142,59 @@ export function App() {
     }
   };
 
+  /** Download a Garage61 lap as a reference lap, then compare against it. */
+  async function importGhost(lap: Garage61Lap) {
+    if (!group) return;
+    setImporting(lap.driver ?? lap.garage61_id);
+    try {
+      const { lap_id } = await api.garage61Import(lap.garage61_id);
+      const [lapsNow, g61Now] = await Promise.all([api.laps(group.track, group.car), api.garage61Laps(group.track, group.car)]);
+      setLaps(lapsNow);
+      setGarage61(g61Now);
+      setRefId(lap_id);
+    } catch (e) {
+      setError(`Couldn't import ${lap.driver ?? "the"} lap from Garage61: ${(e as Error).message}`);
+    } finally {
+      setImporting(null);
+    }
+  }
+
+  const onRef = (value: string) => {
+    ghostChosen.current = true;
+    if (value.startsWith("g61:")) {
+      const lap = garage61?.laps.find((l) => l.garage61_id === value.slice(4));
+      if (lap) importGhost(lap);
+    } else {
+      setRefId(value);
+    }
+  };
+
+  /** Show what the coach pointed at: corners, a zoomed range, the map view. */
+  function applyAction(a: UiAction) {
+    if (a.corners?.length) {
+      setSelected(a.corners);
+      setPrimary(a.corners[0]);
+    }
+    if (a.range) {
+      setZoom(a.range);
+      setMapMode("corner");
+    }
+    if (a.view) setMapMode(a.view);
+  }
+
+  const onUiAction = (a: UiAction) => {
+    const switchLap = a.lap && a.lap !== review?.lap.lap_id;
+    const switchRef = a.ref && a.ref !== review?.ref.lap_id;
+    if (a.ref) ghostChosen.current = true;
+    if (switchLap || switchRef) {
+      pendingAction.current = a;
+      if (switchLap) setLapId(a.lap!);
+      if (a.ref) setRefId(a.ref);
+    } else {
+      applyAction(a);
+    }
+  };
+
   const length = review?.track.length_m ?? 1;
   const range: [number, number] = zoom ?? [0, length];
   const primaryCorner = review?.corners.find((c) => c.id === primary);
@@ -128,18 +210,22 @@ export function App() {
         lapId={lapId}
         refId={review?.ref.lap_id ?? refId}
         review={review}
+        garage61={garage61}
+        importing={importing}
         onGroup={(track, car) => {
           setReview(null);
+          ghostChosen.current = false;
           setGroup({ track, car });
         }}
         onLap={(id) => {
           setLapId(id);
           if (id === (review?.ref.lap_id ?? refId)) setRefId(null);
         }}
-        onRef={setRefId}
+        onRef={onRef}
       />
       {error && <div className="error" role="alert">{error}</div>}
-      {review ? (
+      {review && group ? (
+        <div className="workspace">
         <main className={`layout${loading ? " loading" : ""}`}>
           <div className="upper">
             <TrackMap
@@ -172,8 +258,38 @@ export function App() {
               if (r) setMapMode("corner");
             }}
             onPickCorner={(id) => pick(id)}
+            onAsk={() => {
+              const about = zoom
+                ? `between ${Math.round(zoom[0])} and ${Math.round(zoom[1])} m`
+                : primaryCorner ? `in ${primaryCorner.label}` : "on this lap";
+              setPrefill({ text: `What am I doing differently from the ghost ${about}?`, nonce: Date.now() });
+            }}
           />
         </main>
+        <Chat
+          context={{
+            track: group.track,
+            car: group.car,
+            lap: review.lap.lap_id,
+            ref: review.ref.lap_id,
+            ref_driver: review.ref.driver,
+            corners: selected,
+            range: zoom,
+          }}
+          contextLabel={[
+            `Lap ${review.lap.seq} vs ${review.ref.driver ?? `lap ${review.ref.seq}`}`,
+            ...(selected.length ? [`${selected.map((c) => `T${c}`).join(", ")} selected`] : []),
+            ...(zoom ? [`${Math.round(zoom[0])}–${Math.round(zoom[1])} m`] : []),
+          ]}
+          suggestions={[
+            "Where am I losing the most time to the ghost?",
+            ...(primaryCorner ? [`What am I doing differently in ${primaryCorner.label}?`] : []),
+            "What one thing should I work on next session?",
+          ]}
+          prefill={prefill}
+          onUiAction={onUiAction}
+        />
+        </div>
       ) : (
         !error && <p className="muted placeholder">Loading…</p>
       )}

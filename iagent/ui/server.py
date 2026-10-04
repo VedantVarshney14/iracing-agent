@@ -7,11 +7,14 @@ from typing import Callable
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from iagent.references import garage61 as g61
+from iagent.references import imports
 from iagent.ui import review
+from iagent.ui.coach import CoachRuns
 from iagent.workspace import Workspace, WorkspaceError
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -26,7 +29,14 @@ npm --prefix web run build</pre>
 </body>"""
 
 
-def create_app(workspace: Path, static_dir: Path = STATIC_DIR) -> Starlette:
+def create_app(
+    workspace: Path,
+    static_dir: Path = STATIC_DIR,
+    coach: CoachRuns | None = None,
+    garage61: Callable[[], g61.Garage61Client] = imports.client_from_env,
+) -> Starlette:
+    coach = coach or CoachRuns(workspace)
+
     async def call(fn: Callable[[Workspace], object]) -> JSONResponse:
         # Each request opens its own workspace: SQLite connections can't cross threads.
         def run():
@@ -56,6 +66,56 @@ def create_app(workspace: Path, static_dir: Path = STATIC_DIR) -> Starlette:
             return JSONResponse({"error": "lap is required"}, status_code=400)
         return await call(lambda ws: review.review(ws, lap, request.query_params.get("ref") or None))
 
+    async def garage61_laps(request: Request) -> JSONResponse:
+        track, car = request.query_params.get("track"), request.query_params.get("car")
+        if not track or not car:
+            return JSONResponse({"error": "track and car are required"}, status_code=400)
+
+        def find(ws: Workspace) -> dict:
+            # Garage61 is optional: say why it's unavailable instead of failing the screen.
+            try:
+                client = garage61()
+            except WorkspaceError as e:
+                return {"available": False, "reason": str(e), "laps": []}
+            try:
+                return {"available": True, **imports.find(ws, client, track, car)}
+            except (WorkspaceError, g61.Garage61Error) as e:
+                return {"available": False, "reason": str(e), "laps": []}
+            finally:
+                client.close()
+
+        return await call(find)
+
+    async def garage61_import(request: Request) -> JSONResponse:
+        gid = (await request.json()).get("garage61_id")
+        if not gid:
+            return JSONResponse({"error": "garage61_id is required"}, status_code=400)
+
+        def run_import(ws: Workspace) -> dict:
+            if lap_id := imports.imported(ws).get(gid):
+                return {"lap_id": lap_id, "garage61_id": gid}
+            client = garage61()
+            try:
+                return imports.import_lap(ws, client, gid)
+            except g61.Garage61Error as e:
+                raise WorkspaceError(f"Garage61: {e}") from e
+            finally:
+                client.close()
+
+        return await call(run_import)
+
+    async def chat(request: Request) -> StreamingResponse | JSONResponse:
+        body = await request.json()
+        message = (body.get("message") or "").strip()
+        if not message:
+            return JSONResponse({"error": "message is required"}, status_code=400)
+        events = coach.run(message, body.get("context") or {}, body.get("session_id") or None)
+        return StreamingResponse(events, media_type="application/x-ndjson")
+
+    async def chat_stop(request: Request) -> JSONResponse:
+        body = await request.json()
+        return JSONResponse({"stopped": coach.stop(body.get("run_id", ""))})
+
     async def not_built(request: Request) -> HTMLResponse:
         return HTMLResponse(_NOT_BUILT)
 
@@ -63,6 +123,10 @@ def create_app(workspace: Path, static_dir: Path = STATIC_DIR) -> Starlette:
         Route("/api/tracks", tracks),
         Route("/api/laps", laps),
         Route("/api/review", review_lap),
+        Route("/api/garage61/laps", garage61_laps),
+        Route("/api/garage61/import", garage61_import, methods=["POST"]),
+        Route("/api/chat", chat, methods=["POST"]),
+        Route("/api/chat/stop", chat_stop, methods=["POST"]),
     ]
     if (static_dir / "index.html").exists():
         routes.append(Mount("/", StaticFiles(directory=static_dir, html=True)))

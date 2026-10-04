@@ -1,5 +1,5 @@
 import { lapTime, sessionDate, signed } from "../format";
-import type { LapsResponse, Review, TrackRow } from "../types";
+import type { Garage61Laps, LapsResponse, Review, TrackRow } from "../types";
 
 interface Props {
   tracks: TrackRow[];
@@ -8,14 +8,19 @@ interface Props {
   lapId: string | null;
   refId: string | null;
   review: Review | null;
+  garage61: Garage61Laps | null;
+  importing: string | null; // whose Garage61 lap is being imported
   onGroup: (track: string, car: string) => void;
   onLap: (id: string) => void;
-  onRef: (id: string) => void;
+  onRef: (id: string) => void; // a lap id, or "g61:<garage61 id>" for a lap still to import
 }
 
-export function TopBar({ tracks, group, laps, lapId, refId, review, onGroup, onLap, onRef }: Props) {
+export function TopBar({ tracks, group, laps, lapId, refId, review, garage61, importing, onGroup, onLap, onRef }: Props) {
   const own = laps?.laps.filter((l) => l.lap_time != null) ?? [];
-  const refs = laps?.references ?? [];
+  // Garage61's list (imported or not), plus any imported reference laps it no longer lists.
+  const g61 = garage61?.laps ?? [];
+  const listed = new Set(g61.map((l) => l.lap_id).filter(Boolean));
+  const otherRefs = (laps?.references ?? []).filter((r) => !listed.has(r.lap_id));
   const delta = review?.total_delta_s ?? null;
   return (
     <>
@@ -61,14 +66,25 @@ export function TopBar({ tracks, group, laps, lapId, refId, review, onGroup, onL
         <label className="field">
           <span className="legend-key"><span className="swatch ghost dashed" />vs ghost</span>
           <select value={refId ?? ""} onChange={(e) => onRef(e.target.value)}>
-            {refs.length > 0 && (
+            {(g61.length > 0 || otherRefs.length > 0) && (
               <optgroup label="Garage61">
-                {refs.map((r) => (
+                {g61.map((l) => (
+                  <option key={l.garage61_id} value={l.lap_id ?? `g61:${l.garage61_id}`}>
+                    {lapTime(l.lap_time)} · {l.driver ?? l.garage61_id}{l.date ? ` · ${l.date}` : ""}
+                    {l.lap_id ? "" : " · import"}
+                  </option>
+                ))}
+                {otherRefs.map((r) => (
                   <option key={r.lap_id} value={r.lap_id}>
                     {lapTime(r.lap_time)} · {r.driver ?? r.lap_id}{r.date ? ` · ${r.date}` : ""}
                   </option>
                 ))}
               </optgroup>
+            )}
+            {garage61 && !garage61.available && (
+              <option disabled value="">
+                {garage61.reason?.startsWith("No Garage61 token") ? "Garage61: add a token to see teammates' laps" : "Garage61: unavailable"}
+              </option>
             )}
             <optgroup label="Your laps">
               {own
@@ -81,6 +97,7 @@ export function TopBar({ tracks, group, laps, lapId, refId, review, onGroup, onL
             </optgroup>
           </select>
         </label>
+        {importing && <span className="muted">Importing {importing}'s lap from Garage61…</span>}
         {delta != null && (
           <div className={`delta-pill ${delta > 0 ? "slower" : "faster"}`}>
             <span className="mono">{signed(delta)} s</span>

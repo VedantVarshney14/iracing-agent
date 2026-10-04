@@ -161,8 +161,16 @@ garage61 id                  driver                      time  vs you rating dat
 - **Traces.** Gap to ghost, speed, throttle, brake, gear and steering against distance. Hover
   to follow both cars on the map, drag to zoom, double-click to reset.
 
-The ghost defaults to the fastest Garage61 reference lap you've imported (a teammate's), else your
-next-best lap. Both laps are selectable, and the URL (lap, ghost, corner, view) can be bookmarked.
+- **Coach chat.** Ask about the lap beside the analysis. The coach is your own Claude Code
+  (`claude -p` with the coach plugin: your subscription, no API key) and knows what's on screen.
+  When it talks about a corner it points at it, running `iagent ui show --corner 9 --view corner`
+  to select, zoom and switch the map. Set `IAGENT_CLAUDE` if `claude` isn't on your PATH, and
+  `IAGENT_COACH_MODEL` to pick a model.
+
+The ghost picker lists your laps and your Garage61 teammates' laps for the track and car (with a
+Garage61 token, see below). A Garage61 lap is imported when you pick it. The ghost defaults to the
+fastest Garage61 lap, imported on first open, otherwise your next-best lap. The URL (lap, ghost,
+corner, view) can be bookmarked.
 
 The UI is a React app in [web/](web/). Build it once (needs [Node.js](https://nodejs.org) 20+), then run:
 

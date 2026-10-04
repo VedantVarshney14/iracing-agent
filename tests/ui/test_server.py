@@ -10,6 +10,7 @@ from iagent.references.garage61 import csv_to_lap
 from iagent.testing.garage61 import to_garage61_csv
 from iagent.testing.synthetic import SyntheticSource
 from iagent.ui.server import create_app
+from iagent.workspace import WorkspaceError
 
 
 @pytest.fixture
@@ -105,3 +106,50 @@ def test_unbuilt_ui_explains_how_to_build(workspace, tmp_path):
     root, _, _ = workspace
     page = client(root, static_dir=tmp_path / "no-build").get("/")
     assert page.status_code == 200 and "npm --prefix web run build" in page.text
+
+
+@pytest.fixture
+def garage61(tmp_path):
+    """A workspace ingested through the CLI (so track ids are recorded) and a mock Garage61 with
+    one teammate lap: the driver's own lap 2, renamed."""
+    from click.testing import CliRunner
+
+    from iagent.cli import cli
+    from iagent.references.garage61 import Garage61Client
+    from iagent.testing.garage61 import lap_meta, mock_api
+
+    root = tmp_path / "ws"
+    assert CliRunner().invoke(cli, ["--workspace", str(root), "ingest", "synthetic", "--laps", "4", "--seed", "5"]).exit_code == 0
+    store = ParquetLapStore(root)
+    rec = [r for r in store.list() if r.valid][1]
+    csv = to_garage61_csv(store.load(rec.lap_id, grid=False), 3000.0)
+    store.close()
+    transport = mock_api(9999, 999, {"01FASTLAP000001": (lap_meta("01FASTLAP000001", rec.lap_time, 9999, 999), csv)})
+    factory = lambda: Garage61Client("test-token", "https://g61.test/api/v1", transport)
+    return TestClient(create_app(root, static_dir=tmp_path / "no-build", garage61=factory))
+
+
+def test_garage61_laps_can_be_listed_and_imported_as_ghosts(garage61):
+    params = {"track": "synthetic", "car": "synthcar"}
+    found = garage61.get("/api/garage61/laps", params=params).json()
+    assert found["available"] and [l["garage61_id"] for l in found["laps"]] == ["01FASTLAP000001"]
+    assert found["laps"][0]["driver"] == "Fast Friend" and found["laps"][0]["lap_id"] is None
+
+    imported = garage61.post("/api/garage61/import", json={"garage61_id": "01FASTLAP000001"}).json()
+    lap_id = imported["lap_id"]
+    assert garage61.get("/api/garage61/laps", params=params).json()["laps"][0]["lap_id"] == lap_id
+    again = garage61.post("/api/garage61/import", json={"garage61_id": "01FASTLAP000001"}).json()
+    assert again["lap_id"] == lap_id  # not downloaded twice
+
+    laps = garage61.get("/api/laps", params=params).json()
+    assert laps["default_ghost"] == lap_id and laps["references"][0]["driver"] == "Fast Friend"
+
+
+def test_garage61_without_a_token_is_reported_not_fatal(workspace, tmp_path):
+    def no_token():
+        raise WorkspaceError("No Garage61 token.")
+
+    root, _, _ = workspace
+    app = TestClient(create_app(root, static_dir=tmp_path / "no-build", garage61=no_token))
+    res = app.get("/api/garage61/laps", params={"track": "synthetic", "car": "synthcar"})
+    assert res.status_code == 200 and res.json() == {"available": False, "reason": "No Garage61 token.", "laps": []}

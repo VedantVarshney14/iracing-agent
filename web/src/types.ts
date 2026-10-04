@@ -98,3 +98,21 @@ export interface Review {
   trace: { distance_m: number[]; gap_s: Series; lap: Channels; ref: Channels };
   position: { lap: Line; ref: Line } | null;
 }
+
+export interface Garage61Lap {
+  garage61_id: string;
+  driver: string | null;
+  driver_slug: string | null;
+  lap_time: number | null;
+  date: string;
+  driver_rating: number | null;
+  vs_your_best_pct?: number;
+  can_view_telemetry: boolean | null;
+  lap_id: string | null; // set once imported as a reference lap
+}
+
+export interface Garage61Laps {
+  available: boolean;
+  reason?: string; // why Garage61 isn't available (no token, track not on Garage61, ...)
+  laps: Garage61Lap[];
+}
