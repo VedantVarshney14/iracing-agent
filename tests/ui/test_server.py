@@ -126,7 +126,9 @@ def garage61(tmp_path):
     store.close()
     transport = mock_api(9999, 999, {"01FASTLAP000001": (lap_meta("01FASTLAP000001", rec.lap_time, 9999, 999), csv)})
     factory = lambda: Garage61Client("test-token", "https://g61.test/api/v1", transport)
-    return TestClient(create_app(root, static_dir=tmp_path / "no-build", garage61=factory))
+    app = create_app(root, static_dir=tmp_path / "no-build", garage61=factory)
+    app.state.workspace, app.state.garage61 = root, factory
+    return TestClient(app)
 
 
 def test_garage61_laps_can_be_listed_and_imported_as_ghosts(garage61):
@@ -153,3 +155,36 @@ def test_garage61_without_a_token_is_reported_not_fatal(workspace, tmp_path):
     app = TestClient(create_app(root, static_dir=tmp_path / "no-build", garage61=no_token))
     res = app.get("/api/garage61/laps", params={"track": "synthetic", "car": "synthcar"})
     assert res.status_code == 200 and res.json() == {"available": False, "reason": "No Garage61 token.", "laps": []}
+
+
+def test_ghosts_install_on_the_sim_pc_and_download_elsewhere(garage61, tmp_path):
+    gid = "01FASTLAP000001"
+    app = garage61.app
+    lapfiles = tmp_path / "iRacing" / "lapfiles"
+    (lapfiles / "synthetic").mkdir(parents=True)
+
+    sim_pc = TestClient(create_app(app.state.workspace, static_dir=tmp_path / "no-build", garage61=app.state.garage61,
+                                   lapfiles=lapfiles))
+    assert sim_pc.get("/api/system").json()["lapfiles_found"] is True
+    out = sim_pc.post("/api/garage61/ghost", json={"garage61_id": gid, "install": True}).json()
+    assert out["installed"] and (lapfiles / "synthetic" / out["installed"].split("/")[-1]).exists()
+
+    mac = TestClient(create_app(app.state.workspace, static_dir=tmp_path / "no-build", garage61=app.state.garage61,
+                                lapfiles=tmp_path / "no-iracing"))
+    assert mac.get("/api/system").json()["lapfiles_found"] is False
+    out = mac.post("/api/garage61/ghost", json={"garage61_id": gid}).json()
+    assert out["installed"] is None
+    blap = mac.get(out["download"])
+    assert blap.status_code == 200 and blap.content.startswith(b"BLAP")
+    assert mac.get("/api/ghost-file", params={"name": "../../index.sqlite"}).status_code == 404
+
+
+def test_system_reports_the_telemetry_watcher(workspace, tmp_path):
+    from iagent.laps.watch import TelemetryWatcher
+
+    root, _, _ = workspace
+    folder = tmp_path / "telemetry"
+    folder.mkdir()
+    app = TestClient(create_app(root, static_dir=tmp_path / "no-build", watcher=TelemetryWatcher(root, folder)))
+    telemetry = app.get("/api/system").json()["telemetry"]
+    assert telemetry["found"] is True and telemetry["folder"] == str(folder) and telemetry["version"] == 0

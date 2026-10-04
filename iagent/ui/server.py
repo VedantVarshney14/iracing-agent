@@ -1,17 +1,20 @@
 """The local web server behind `iagent ui`: a JSON API over the workspace, plus the built
 React app (web/, built into iagent/ui/static/)."""
 
+import sys
 from pathlib import Path
 from typing import Callable
 
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from iagent.laps.watch import TelemetryWatcher, default_telemetry_dir
 from iagent.references import garage61 as g61
+from iagent.references import ghosts
 from iagent.references import imports
 from iagent.ui import review
 from iagent.ui.coach import CoachRuns
@@ -34,8 +37,11 @@ def create_app(
     static_dir: Path = STATIC_DIR,
     coach: CoachRuns | None = None,
     garage61: Callable[[], g61.Garage61Client] = imports.client_from_env,
+    watcher: TelemetryWatcher | None = None,
+    lapfiles: Path | None = None,
 ) -> Starlette:
     coach = coach or CoachRuns(workspace)
+    ghost_dir = (workspace / "reference" / "ghosts").resolve()
 
     async def call(fn: Callable[[Workspace], object]) -> JSONResponse:
         # Each request opens its own workspace: SQLite connections can't cross threads.
@@ -104,6 +110,41 @@ def create_app(
 
         return await call(run_import)
 
+    async def system(request: Request) -> JSONResponse:
+        """What this machine can do: is iRacing here (ghosts install), is its telemetry watched."""
+        lap_dir = lapfiles or ghosts.default_lapfiles()
+        telemetry = watcher.status() if watcher else {
+            "folder": str(default_telemetry_dir()), "found": default_telemetry_dir().is_dir(), "watching": False,
+            "files_ingested": 0, "last": None, "error": None, "version": 0,
+        }
+        return JSONResponse({"platform": sys.platform, "lapfiles": str(lap_dir), "lapfiles_found": lap_dir.is_dir(),
+                             "telemetry": telemetry})
+
+    async def garage61_ghost(request: Request) -> JSONResponse:
+        body = await request.json()
+        gid = body.get("garage61_id")
+        if not gid:
+            return JSONResponse({"error": "garage61_id is required"}, status_code=400)
+
+        def run_ghost(ws: Workspace) -> dict:
+            client = garage61()
+            try:
+                out = imports.ghost(ws, client, gid, install=bool(body.get("install")), lapfiles=lapfiles)
+            except g61.Garage61Error as e:
+                raise WorkspaceError(f"Garage61: {e}") from e
+            finally:
+                client.close()
+            out["download"] = "/api/ghost-file?name=" + Path(out["saved"]).resolve().relative_to(ghost_dir).as_posix()
+            return out
+
+        return await call(run_ghost)
+
+    async def ghost_file(request: Request) -> Response:
+        path = (ghost_dir / request.query_params.get("name", "")).resolve()
+        if not path.is_file() or ghost_dir not in path.parents:
+            return JSONResponse({"error": "No such ghost file."}, status_code=404)
+        return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+
     async def chat(request: Request) -> StreamingResponse | JSONResponse:
         body = await request.json()
         message = (body.get("message") or "").strip()
@@ -125,6 +166,9 @@ def create_app(
         Route("/api/review", review_lap),
         Route("/api/garage61/laps", garage61_laps),
         Route("/api/garage61/import", garage61_import, methods=["POST"]),
+        Route("/api/garage61/ghost", garage61_ghost, methods=["POST"]),
+        Route("/api/ghost-file", ghost_file),
+        Route("/api/system", system),
         Route("/api/chat", chat, methods=["POST"]),
         Route("/api/chat/stop", chat_stop, methods=["POST"]),
     ]

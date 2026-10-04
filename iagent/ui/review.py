@@ -176,6 +176,8 @@ def _lap_info(ws: Workspace, rec: LapRecord) -> dict:
         "lap_time": rec.lap_time,
         "reference": rec.source == "garage61",
         "driver": meta.get("driver"),
+        "garage61_id": meta.get("garage61_id"),
+        "ghost_available": meta.get("ghost_available"),
     }
 
 

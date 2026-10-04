@@ -28,7 +28,6 @@ from iagent.laps.recorder import record
 from iagent.laps.store import LapRecord
 from iagent.laps.tracks import update_track_info
 from iagent.references import garage61 as g61
-from iagent.references import ghosts
 from iagent.references import imports as g61_imports
 from iagent.telemetry.ibt import IbtSource
 from iagent.telemetry.source import TelemetrySource
@@ -186,8 +185,12 @@ def tracks(ctx: Ctx, as_json: bool):
 @click.option("--host", default="127.0.0.1", show_default=True, help="Address to serve on.")
 @click.option("--port", default=8765, show_default=True, help="Port to serve on.")
 @click.option("--no-browser", is_flag=True, help="Don't open a browser tab.")
+@click.option("--telemetry-dir", type=click.Path(file_okay=False, path_type=Path),
+              help="iRacing telemetry folder to watch for new recordings (default: Documents/iRacing/telemetry, "
+              "or IAGENT_TELEMETRY_DIR).")
+@click.option("--no-watch", is_flag=True, help="Don't watch the telemetry folder.")
 @click.pass_context
-def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool):
+def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool, telemetry_dir: Path | None, no_watch: bool):
     """Open the lap analysis UI in your browser (runs until Ctrl+C)."""
     if click_ctx.invoked_subcommand is not None:
         return
@@ -197,6 +200,7 @@ def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool):
 
     import uvicorn
 
+    from iagent.laps.watch import TelemetryWatcher, default_telemetry_dir
     from iagent.ui.server import STATIC_DIR, create_app
 
     ctx.store()  # fail early, with the usual message, when there are no laps yet
@@ -206,7 +210,13 @@ def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool):
     click.echo(f"iRacing Coach UI on {url} (workspace: {ctx.workspace.resolve()}). Ctrl+C to stop.")
     if not no_browser:
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
-    uvicorn.run(create_app(ctx.workspace), host=host, port=port, log_level="warning")
+    watcher = None
+    folder = telemetry_dir or default_telemetry_dir()
+    if not no_watch and folder.is_dir():
+        watcher = TelemetryWatcher(ctx.workspace, folder)
+        watcher.start()
+        click.echo(f"Watching {folder} for new recordings.")
+    uvicorn.run(create_app(ctx.workspace, watcher=watcher), host=host, port=port, log_level="warning")
 
 
 @ui.command("show")
@@ -691,44 +701,16 @@ def garage61_ghost(ctx: Ctx, garage61_id: str, install: bool, lapfiles: Path | N
     """
     client = _garage61_client()
     try:
-        meta = client.lap(garage61_id)
-        if meta.get("ghostAvailable") is False:
-            raise click.ClickException(f"Garage61 has no ghost lap for {garage61_id}.")
-        data = client.ghost(garage61_id)
+        out = g61_imports.ghost(ctx, client, garage61_id, install, lapfiles)
     except g61.Garage61Error as e:
         raise click.ClickException(str(e)) from e
     finally:
         client.close()
-    try:
-        info = ghosts.read_info(data)
-    except ValueError as e:
-        raise click.ClickException(str(e)) from e
-
-    summary = g61_imports.summarize(meta)
-    name = ghosts.file_name(summary["driver_slug"] or "driver", info.car_path, summary["lap_time"])
-    track_dir = (info.track_path or "unknown").replace("\\", "-").replace(" ", "-")
-    saved = ctx.workspace / "reference" / "ghosts" / track_dir / name
-    saved.parent.mkdir(parents=True, exist_ok=True)
-    saved.write_bytes(data)
-    out = {**summary, "car_path": info.car_path, "track_path": info.track_path, "saved": str(saved), "installed": None}
-
-    if install:
-        root = lapfiles or ghosts.default_lapfiles()
-        if not root.is_dir():
-            raise click.ClickException(
-                f"iRacing's lapfiles folder isn't at {root} (is this the sim PC?). The ghost is saved at "
-                f"{saved}: copy it to the PC, or pass --lapfiles."
-            )
-        target = ghosts.install_dir(root, info) / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-        out["installed"] = str(target)
-
     if as_json:
         _emit(out)
         return
-    click.echo(f"Ghost: {summary['driver']} {_fmt(summary['lap_time'], '.3f')}s, {info.car_path} at {info.track_path}")
-    click.echo(f"Saved: {saved}")
+    click.echo(f"Ghost: {out['driver']} {_fmt(out['lap_time'], '.3f')}s, {out['car_path']} at {out['track_path']}")
+    click.echo(f"Saved: {out['saved']}")
     if out["installed"]:
         click.echo(f"Installed for iRacing: {out['installed']}")
     click.echo('In iRacing: Options > Driving Aids > Load Comparison Lap; tick "Display Reference Car".')

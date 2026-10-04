@@ -5,11 +5,13 @@ driver can fix are `WorkspaceError`s; Garage61's own failures are `Garage61Error
 """
 
 import json
+from pathlib import Path
 from typing import Callable
 
 from iagent.laps.pace import best_times
 from iagent.laps.tracks import load_track_info
 from iagent.references import garage61 as g61
+from iagent.references import ghosts
 from iagent.telemetry.session import SessionInfo
 from iagent.workspace import Workspace, WorkspaceError
 
@@ -145,3 +147,38 @@ def import_lap(ws: Workspace, client: g61.Garage61Client, gid: str) -> dict:
     path.write_text(json.dumps(summary, indent=2) + "\n")
     return {**summary, "lap_id": rec.lap_id, "track": rec.track_key, "car": rec.car_key,
             "valid": rec.valid, "same_car_as_yours": car_key is not None}
+
+
+def ghost(ws: Workspace, client: g61.Garage61Client, gid: str, install: bool = False,
+          lapfiles: Path | None = None) -> dict:
+    """Download a Garage61 lap's iRacing ghost (.blap) into the workspace and, with `install`,
+    copy it into iRacing's lapfiles folder for that track (on the sim PC)."""
+    meta = client.lap(gid)
+    if meta.get("ghostAvailable") is False:
+        raise WorkspaceError(f"Garage61 has no ghost lap for {gid}.")
+    data = client.ghost(gid)
+    try:
+        info = ghosts.read_info(data)
+    except ValueError as e:
+        raise WorkspaceError(str(e)) from e
+
+    summary = summarize(meta)
+    name = ghosts.file_name(summary["driver_slug"] or "driver", info.car_path, summary["lap_time"])
+    track_dir = (info.track_path or "unknown").replace("\\", "-").replace(" ", "-")
+    saved = ws.root / "reference" / "ghosts" / track_dir / name
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    saved.write_bytes(data)
+    out = {**summary, "car_path": info.car_path, "track_path": info.track_path, "saved": str(saved), "installed": None}
+
+    if install:
+        root = lapfiles or ghosts.default_lapfiles()
+        if not root.is_dir():
+            raise WorkspaceError(
+                f"iRacing's lapfiles folder isn't at {root} (is this the sim PC?). The ghost is saved at "
+                f"{saved}: copy it to the PC, or pass --lapfiles."
+            )
+        target = ghosts.install_dir(root, info) / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        out["installed"] = str(target)
+    return out

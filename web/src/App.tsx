@@ -7,7 +7,7 @@ import { CornerView } from "./components/CornerView";
 import { Telemetry } from "./components/Telemetry";
 import { TopBar } from "./components/TopBar";
 import { TrackMap } from "./components/TrackMap";
-import type { Garage61Lap, Garage61Laps, LapsResponse, Review, TrackRow } from "./types";
+import type { Garage61Lap, Garage61Laps, LapsResponse, Review, SystemInfo, TrackRow } from "./types";
 
 type Group = { track: string; car: string };
 
@@ -40,6 +40,9 @@ export function App() {
   const pendingAction = useRef<UiAction | null>(null);
   const [garage61, setGarage61] = useState<Garage61Laps | null>(null);
   const [importing, setImporting] = useState<string | null>(null);
+  const [system, setSystem] = useState<SystemInfo | null>(null);
+  const groupRef = useRef<Group | null>(null);
+  groupRef.current = group;
   // Once the driver (or the URL) picks a ghost, the Garage61 default no longer overrides it.
   const ghostChosen = useRef(params.has("ref"));
 
@@ -85,6 +88,29 @@ export function App() {
       stale = true;
     };
   }, [group]);
+
+  // Machine status every 10 s; when the telemetry watcher brings in new laps, refresh the lists
+  // (without moving the driver off what they're looking at).
+  useEffect(() => {
+    let seen: number | null = null;
+    const poll = () =>
+      api
+        .system()
+        .then((info) => {
+          setSystem(info);
+          const version = info.telemetry.version;
+          if (seen != null && version !== seen) {
+            api.tracks().then(setTracks).catch(() => {});
+            const g = groupRef.current;
+            if (g) api.laps(g.track, g.car).then(setLaps).catch(() => {});
+          }
+          seen = version;
+        })
+        .catch(() => {});
+    poll();
+    const timer = window.setInterval(poll, 10000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Default ghost: the fastest Garage61 lap (a teammate's), imported on first use.
   useEffect(() => {
@@ -230,6 +256,7 @@ export function App() {
         review={review}
         garage61={garage61}
         importing={importing}
+        system={system}
         onGroup={(track, car) => {
           setReview(null);
           ghostChosen.current = false;

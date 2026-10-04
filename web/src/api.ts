@@ -1,4 +1,4 @@
-import type { Garage61Laps, LapsResponse, Review, TrackRow } from "./types";
+import type { Garage61Laps, GhostResult, LapsResponse, Review, SystemInfo, TrackRow } from "./types";
 
 async function get<T>(path: string, params: Record<string, string> = {}): Promise<T> {
   const query = new URLSearchParams(params).toString();
@@ -21,4 +21,6 @@ export const api = {
   review: (lap: string, ref?: string) => get<Review>("/api/review", ref ? { lap, ref } : { lap }),
   garage61Laps: (track: string, car: string) => get<Garage61Laps>("/api/garage61/laps", { track, car }),
   garage61Import: (garage61_id: string) => post<{ lap_id: string }>("/api/garage61/import", { garage61_id }),
+  garage61Ghost: (garage61_id: string, install: boolean) => post<GhostResult>("/api/garage61/ghost", { garage61_id, install }),
+  system: () => get<SystemInfo>("/api/system"),
 };

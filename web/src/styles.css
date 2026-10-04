@@ -235,3 +235,14 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .band.soft { fill: #fff; fill-opacity: 0.035; }
 .readout .offset { color: var(--you); }
 .readout .gap { color: var(--text); }
+
+/* --- machine status ------------------------------------------------------------------------ */
+.topbar-end { margin-left: auto; }
+.status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--muted); cursor: default; }
+.status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: #5d6a77; }
+.status-pill.ok .dot { background: #4cc38a; }
+.status-pill.warn .dot { background: var(--loss-strong); }
+.ghost-action { display: inline-flex; align-items: center; gap: 10px; }
+.ghost-note { max-width: 360px; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+

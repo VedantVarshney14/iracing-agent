@@ -161,6 +161,10 @@ garage61 id                  driver                      time  vs you rating dat
 - **Traces.** Gap to ghost, speed, throttle, brake, gear and steering against distance. Hover
   to follow both cars on the map, drag to zoom, double-click to reset.
 
+- **iRacing on this machine.** On the sim PC `iagent ui` watches Documents/iRacing/telemetry and
+  ingests each recording when the session ends (header pill; `--telemetry-dir`,
+  `IAGENT_TELEMETRY_DIR` or `--no-watch` to change that). A Garage61 ghost can be installed into
+  iRacing in one click; elsewhere (e.g. a Mac) the button downloads the `.blap` to copy over.
 - **Corner view.** One corner at a time (open it from the corner card, or the coach opens it):
   both racing lines with the sideways gap exaggerated ×3/×5/×10 (distance along the track stays
   true), a gap ladder, your line coloured by speed against the ghost, the corner's numbers and its

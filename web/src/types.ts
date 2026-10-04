@@ -82,6 +82,8 @@ export interface LapInfo {
   lap_time: number | null;
   reference: boolean;
   driver: string | null;
+  garage61_id: string | null;
+  ghost_available: boolean | null;
 }
 
 export interface Line {
@@ -121,4 +123,28 @@ export interface Garage61Laps {
   available: boolean;
   reason?: string; // why Garage61 isn't available (no token, track not on Garage61, ...)
   laps: Garage61Lap[];
+}
+
+export interface TelemetryStatus {
+  folder: string;
+  found: boolean;
+  watching: boolean;
+  files_ingested: number;
+  last: { file: string; laps?: number; track?: string | null; at: string; error?: string } | null;
+  error: string | null;
+  version: number; // bumped when new laps arrive
+}
+
+export interface SystemInfo {
+  platform: string;
+  lapfiles: string;
+  lapfiles_found: boolean; // iRacing installed here: ghosts can be installed directly
+  telemetry: TelemetryStatus;
+}
+
+export interface GhostResult {
+  driver: string | null;
+  saved: string;
+  installed: string | null;
+  download: string;
 }

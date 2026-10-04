@@ -1,5 +1,6 @@
 import { lapTime, sessionDate, signed } from "../format";
-import type { Garage61Laps, LapsResponse, Review, TrackRow } from "../types";
+import type { Garage61Laps, LapsResponse, Review, SystemInfo, TrackRow } from "../types";
+import { GhostButton, TelemetryIndicator } from "./Status";
 
 interface Props {
   tracks: TrackRow[];
@@ -10,12 +11,13 @@ interface Props {
   review: Review | null;
   garage61: Garage61Laps | null;
   importing: string | null; // whose Garage61 lap is being imported
+  system: SystemInfo | null;
   onGroup: (track: string, car: string) => void;
   onLap: (id: string) => void;
   onRef: (id: string) => void; // a lap id, or "g61:<garage61 id>" for a lap still to import
 }
 
-export function TopBar({ tracks, group, laps, lapId, refId, review, garage61, importing, onGroup, onLap, onRef }: Props) {
+export function TopBar({ tracks, group, laps, lapId, refId, review, garage61, importing, system, onGroup, onLap, onRef }: Props) {
   const own = laps?.laps.filter((l) => l.lap_time != null) ?? [];
   // Garage61's list (imported or not), plus any imported reference laps it no longer lists.
   const g61 = garage61?.laps ?? [];
@@ -49,6 +51,9 @@ export function TopBar({ tracks, group, laps, lapId, refId, review, garage61, im
             ))}
           </select>
         </label>
+        <span className="topbar-end">
+          <TelemetryIndicator system={system} />
+        </span>
       </header>
 
       <div className="lapbar">
@@ -104,6 +109,7 @@ export function TopBar({ tracks, group, laps, lapId, refId, review, garage61, im
             <span>{delta > 0 ? "slower than" : "faster than"} {review?.ref.driver ?? "ghost"}</span>
           </div>
         )}
+        {review && <GhostButton key={review.ref.lap_id} ghost={review.ref} system={system} />}
       </div>
     </>
   );
