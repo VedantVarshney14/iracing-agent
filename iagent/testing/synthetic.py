@@ -14,6 +14,7 @@ from typing import Iterator
 
 import numpy as np
 
+from iagent.analysis.position import from_local_xy
 from iagent.telemetry.frames import (
     Frame,
     SURFACE_OFF_TRACK,
@@ -30,6 +31,8 @@ PICKUP_M = 15.0  # throttle applied this far after the apex
 LAT_PEAK = 18.0  # m/s^2 of lateral acceleration at each apex
 CORNER_WIDTH_M = 60.0  # how quickly curvature fades either side of an apex
 SLOW_FACTOR = 1.15
+LINE_WIDENING_M = 2.0  # metres wider at an apex per m/s of extra apex speed
+ORIGIN = (46.0, 8.0)  # lat/lon the circuit is placed at; arbitrary, nothing depends on it
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,8 @@ class _Profile:
     lat_accel: np.ndarray
     long_accel: np.ndarray
     t: np.ndarray  # cumulative time at each grid point
+    lat: np.ndarray
+    lon: np.ndarray
     truth_brake: dict[str, float] = field(default_factory=dict)
     truth_min_speed: dict[str, float] = field(default_factory=dict)
 
@@ -145,7 +150,20 @@ def build_profile(
 
     long_accel = np.gradient(v, t) if len(t) > 1 else np.zeros_like(v)
     lat_accel = v**2 * curvature
-    return _Profile(d, v, brake, throttle, steer, lat_accel, long_accel, t, truth_brake, truth_min)
+    lat, lon = _position(track, d, speed_offsets)
+    return _Profile(d, v, brake, throttle, steer, lat_accel, long_accel, t, lat, lon, truth_brake, truth_min)
+
+
+def _position(track: SyntheticTrack, d: np.ndarray, speed_offsets: dict[str, float]) -> tuple[np.ndarray, np.ndarray]:
+    """Lat/lon along the lap: a circle as long as the lap (not the corners' real geometry), so
+    laps join up at the line. At each corner the line moves outward by `LINE_WIDENING_M` per m/s
+    of extra apex speed, which gives line differences an exact ground truth."""
+    radius = track.length_m / (2.0 * np.pi)
+    offset = np.zeros_like(d)
+    for c in track.corners:
+        offset += LINE_WIDENING_M * speed_offsets.get(c.name, 0.0) * np.exp(-(((d - c.apex_m) / CORNER_WIDTH_M) ** 2))
+    angle = 2.0 * np.pi * d / track.length_m
+    return from_local_xy((radius + offset) * np.cos(angle), (radius + offset) * np.sin(angle), ORIGIN)
 
 
 class SyntheticSource:
@@ -281,6 +299,8 @@ class SyntheticSource:
                 "OnPitRoad": on_pit,
                 "IsOnTrack": 1.0,
                 "PlayerTrackSurface": float(surface),
+                "Lat": float(np.interp(d, p.d, p.lat)),
+                "Lon": float(np.interp(d, p.d, p.lon)),
             },
         )
 

@@ -137,3 +137,28 @@ def test_spa_corner_map_finds_the_known_corners(tmp_path):
             assert rows[6]["brake_m"] == pytest.approx(2891, abs=5)  # Bruxelles, braking before the segment edge
     finally:
         store.close()
+
+
+def test_spa_position_traces_the_circuit(tmp_path):
+    from iagent.analysis.position import has_position, to_local_xy
+
+    path = find("formulair04_spa*")
+    store = ParquetLapStore(tmp_path)
+    try:
+        kept = representative(record(IbtSource(path), store, "spa"))
+        grids = [store.load(r.lap_id) for r in kept]
+        for grid in grids:
+            assert has_position(grid)
+            x, y = to_local_xy(grid["Lat"], grid["Lon"])
+            # The GPS path is as long as iRacing's lap distance: positions and LapDist agree.
+            assert float(np.hypot(np.diff(x), np.diff(y)).sum()) == pytest.approx(6929, rel=0.02)
+        # Laps 2 and 5 take different lines through Pouhon (up to ~11 m apart), the same elsewhere.
+        a, b = grids
+        origin = (float(a["Lat"].mean()), float(a["Lon"].mean()))
+        ax, ay = to_local_xy(a["Lat"], a["Lon"], origin)
+        bx, by = to_local_xy(b["Lat"], b["Lon"], origin)
+        gap = np.hypot(ax - bx, ay - by)
+        assert 8 < gap[3700:4150].max() < 15
+        assert np.median(gap) < 3
+    finally:
+        store.close()

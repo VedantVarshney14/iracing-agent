@@ -117,6 +117,9 @@ there, so that "gain" is the reference's mistake.
 - Laps are grouped by iRacing's internal track and car names (`spa-2024-up`, `formulair04`), so
   different layouts or cars are never compared.
 - Each lap is stored raw (60 Hz) and on a 1 m distance grid, so laps compare point for point.
+- The car's position (`Lat`/`Lon`) is stored when the source has it: `.ibt` recordings and
+  Garage61 exports do, iRacing's live telemetry doesn't. It is what racing-line views are drawn
+  from. Workspaces ingested before it was added: re-run `iagent ingest` on the same files.
 
 ### Reference laps and ghosts from Garage61
 
@@ -195,7 +198,7 @@ coach/                            the coach plugin: skills/<name>/SKILL.md
 iagent/
   telemetry/   frames, session info, sources (.ibt replay)
   laps/        segmentation, distance resampling, lap store, pace filter, recorder
-  analysis/    corner map and metrics, CrewChief landmarks, splits, traces
+  analysis/    corner map and metrics, CrewChief landmarks, splits, traces, position
   references/  Garage61 client, CSV import, iRacing ghost files
   testing/     synthetic lap generator, .ibt writer
   cli.py       the `iagent` command

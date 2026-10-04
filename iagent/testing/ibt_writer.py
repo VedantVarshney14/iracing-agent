@@ -14,6 +14,8 @@ from iagent.telemetry.session import SessionInfo
 _TYPES = {"?": (1, 1), "i": (2, 4), "f": (4, 4), "d": (5, 8)}
 _CHANNEL_CODES = {
     "SessionTime": "d",
+    "Lat": "d",
+    "Lon": "d",
     "SessionTick": "i",
     "Lap": "i",
     "Gear": "i",

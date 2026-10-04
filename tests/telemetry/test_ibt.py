@@ -29,6 +29,8 @@ def test_frames_round_trip(ibt_path, messy_source):
         assert b.values["Speed"] == pytest.approx(a.values["Speed"], rel=1e-5)
         assert b.values["Gear"] == a.values["Gear"]
         assert b.values["OnPitRoad"] == a.values["OnPitRoad"]
+        # Doubles in the file, as iRacing stores them: float32 would cost about half a metre.
+        assert (b.values["Lat"], b.values["Lon"]) == (a.values["Lat"], a.values["Lon"])
 
 
 def test_replayed_file_gives_the_same_laps_as_the_generator(ibt_path, messy_source, tmp_path):

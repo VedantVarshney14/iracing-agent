@@ -62,6 +62,8 @@ def test_trace_samples_a_range_in_kph(laps):
     assert df["LapDist"].iloc[0] == 400 and df["LapDist"].iloc[-1] == 700
     assert len(df) == 31
     assert df["Speed"].max() > 150  # km/h, not m/s
+    pos = trace(grid, ["Lat", "Lon"], start_m=400, end_m=420, step_m=10)
+    assert pos["Lat"].nunique() == 3  # 10 m apart: still distinct after rounding
     with pytest.raises(KeyError, match="not in this lap"):
         trace(grid, ["Nope"])
 

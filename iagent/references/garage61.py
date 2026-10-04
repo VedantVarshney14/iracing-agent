@@ -17,6 +17,7 @@ import httpx
 import numpy as np
 import pandas as pd
 
+from iagent.analysis.position import has_position
 from iagent.laps.segment import REASON_INCOMPLETE, REASON_PIT_ROAD, Lap
 from iagent.telemetry.frames import SURFACE_OFF_TRACK, SURFACE_ON_TRACK
 from iagent.telemetry.session import SessionInfo
@@ -184,7 +185,8 @@ def csv_to_lap(text: str, session: SessionInfo, lap_time: float | None, sim_lap:
         measured_end = float(t[-1] + (1.0 - pct[-1]) * length / speed[-1])
     end = lap_time if lap_time else measured_end
 
-    frames = df.drop(columns=[c for c in ("Lat", "Lon") if c in df])
+    # Keep the car's position when the export has it (otherwise the columns are all zeros).
+    frames = df.copy() if has_position(df) else df.drop(columns=[c for c in ("Lat", "Lon") if c in df])
     frames["SessionTime"] = t
     frames["lap_time_s"] = t
     frames["LapDist"] = pct * length

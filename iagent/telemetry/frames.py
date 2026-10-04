@@ -24,6 +24,9 @@ CORE_CHANNELS: tuple[str, ...] = (
     "OnPitRoad",
     "IsOnTrack",
     "PlayerTrackSurface",
+    # Position in decimal degrees: in .ibt recordings and Garage61 exports, not the live SDK.
+    "Lat",
+    "Lon",
 )
 
 # Channels whose values are categories/flags: resampled by nearest sample, never interpolated.
