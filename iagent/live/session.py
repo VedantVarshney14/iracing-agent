@@ -7,7 +7,11 @@ the page and appended to `sessions/live/<id>.jsonl` in the workspace for review 
 Everything the coach does is an event in its pipeline; the session log is a listener that writes
 the ones defined as logged. Anything the browser asks of the running coach (say an answer, change
 the focus) is posted to the pipeline as an event, handled on the coach's thread at the next frame,
-so the coach itself needs no locking; so are the narrator's replies.
+so the coach itself needs no locking; so are the engineer's replies.
+
+Each session gets its own engineer (`iagent.live.engineer`): one Claude Code conversation for the
+whole session, from the radio check to the notes written afterwards. Its session id is in the
+log, so the debrief written later on the review page continues the same conversation.
 """
 
 import json
@@ -48,15 +52,19 @@ class Options:
         return cls(**known)
 
 
+WRAP_UP_WAIT_S = 120.0  # after the session, how long the engineer has to write up its notes
+
+
 class SessionError(Exception):
     pass
 
 
 class LiveSessions:
     def __init__(self, workspace: Path, voice_factory: Callable[[str], Voice] | None = None,
-                 iracing: Callable[[], object] | None = None, narrator=None):
+                 iracing: Callable[[], object] | None = None, engineer: Callable[[], object] | None = None):
         self.workspace = workspace
-        self.narrator = narrator  # iagent.live.narrator.Narrator, or None: the coach's own phrasing only
+        self._new_engineer = engineer  # makes the session's Engineer; None: the coach's own words only
+        self.engineer = None
         self._voice_factory = voice_factory or self._pocket
         self._iracing = iracing  # makes the live source (tests inject one)
         self._voices: dict[str, Voice] = {}
@@ -123,6 +131,14 @@ class LiveSessions:
 
     def note_driver(self, text: str) -> dict:
         return self._log({"type": "driver", "at": self._now(), "text": text})
+
+    def ask(self, text: str) -> bool:
+        """A question for the session's engineer (in its conversation; the answer is spoken).
+        False if there's no engineer to ask."""
+        if self.coach is None or self.engineer is None:
+            return False
+        self.coach.post("narrate", kind="question", reply="coach_words", text=text)
+        return True
 
     def note_answer(self, text: str) -> dict:
         return self._log({"type": "answer", "at": self._now(), "text": text})
@@ -202,10 +218,14 @@ class LiveSessions:
 
             settings = Settings(learning_laps=options.learning_laps, focus=options.focus,
                                 crewchief=crewchief.resolve(options.crewchief))
-            narrator = self.narrator if options.narrate else None
+            self.engineer = self._new_engineer() if self._new_engineer and options.narrate else None
             run(self.workspace, session_of, self._frames(frames), voice, settings, options.ref, self._attach,
-                narrator, self.context)
+                self.engineer, self.context)
             self._log({"type": "status", "state": "stopped" if self._stop.is_set() else "ended"})
+            if self.engineer is not None:
+                self.engineer.close(wait_s=WRAP_UP_WAIT_S)  # let it write up its notes
+                if self.coach is not None:  # replies posted after the last frame (the notes)
+                    self.coach.pipeline.run_inbox()
         except Exception as e:  # report it on the page
             logger.exception("Live session failed")
             self.error = str(e)
@@ -236,12 +256,15 @@ class LiveSessions:
                    "ref_lap_time": coach.plan.ref_lap_time, "length_m": coach.length,
                    "source": self.options.source, "file": self.options.file,
                    "focus": coach.focus_log[-1] if coach.focus_log else None,
-                   "rules": [r.id for r in coach.rules.rules], "crewchief": coach.settings.crewchief})
+                   "rules": [r.id for r in coach.rules.rules], "crewchief": coach.settings.crewchief,
+                   "engineer": self.engineer.session_id if self.engineer is not None else None})
 
     def _event(self, e) -> None:
         """The pipeline's events that are defined as logged go in the session log."""
         if EVENTS[e.type].log:
             self._log({"type": e.type, "at": e.at, **e.public()})
+        if e.type == "coach_words" and e.get("kind") == "question":  # shown with the question on the page
+            self.note_answer(e["text"] or "(No answer: the coach said nothing)")
 
     def _log(self, event: dict) -> dict:
         event = {"seq": len(self._events), "wall": datetime.now(timezone.utc).isoformat(), **event}

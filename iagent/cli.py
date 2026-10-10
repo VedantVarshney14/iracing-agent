@@ -1138,19 +1138,20 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
 
     import shutil
 
-    from iagent.live.narrator import Narrator, ask_with
-    from iagent.ui.coach import CoachRuns
+    from iagent.agent import ClaudeCode
+    from iagent.live.engineer import Engineer
 
-    runs = CoachRuns(ctx.workspace)
+    runs = ClaudeCode(ctx.workspace)
     if narrate is None:
         narrate = shutil.which(runs.claude) is not None and (not replay or speed <= 1.0)
-    narrator = Narrator(ask_with(runs)) if narrate else None
+    engineer = Engineer.over(runs) if narrate else None  # one conversation for the whole session
     # What the terminal shows besides the lines said: events, by name.
     shown = {
         "wake": lambda e: f"[wake] {e['rule']}: {e['message']}",
         "rule": lambda e: "; ".join(f"[log] {e['rule']}: {a['log']}" for a in e.get("actions") or [] if a.get("log")),
         "debrief_words": lambda e: f"[coach] debrief: {e['status']}",
-        "coach_words": lambda e: f"[coach] {e['rule']}: {e['text'] or 'nothing to say'}",
+        "coach_words": lambda e: f"[engineer] {e['kind']}: {e['text'] or 'nothing to say'}",
+        "notes_written": lambda e: f"[engineer] notes: {e['text'] or 'nothing written'}",
     }
 
     def on_start(coach):
@@ -1158,22 +1159,28 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
         click.echo(f"Coaching {coach.session.track_name} in {coach.session.car_name}: {len(coach.plan.cues)} cues, "
                    f"following {coach.plan.ref_lap_id}." + (f" Rules: {', '.join(r.id for r in rules)}." if rules else "")
                    + (" Sharing the radio with CrewChief." if coach.settings.crewchief else "")
-                   + (" The coach words debriefs and wake-ups." if narrator else ""))
+                   + (f" Engineer: Claude Code session {engineer.session_id}." if engineer else ""))
         for event, line in shown.items():
             coach.on(event, lambda e, line=line: (text := line(e)) and click.echo(text))
     try:
         if replay:
             src = IbtSource(replay, channels=LIVE_CHANNELS)
             run(ctx.workspace, lambda: src.session, paced(src.frames(), speed, start_at), out, settings, ref_id,
-                on_start, narrator)
+                on_start, engineer)
         else:
             live_src = IrsdkSource()
             click.echo("Waiting for iRacing...")
             live_src.connect()
-            run(ctx.workspace, lambda: live_src.session, live_src.frames(), out, settings, ref_id, on_start, narrator)
+            run(ctx.workspace, lambda: live_src.session, live_src.frames(), out, settings, ref_id, on_start, engineer)
     except KeyboardInterrupt:
         pass
     finally:
+        if engineer is not None and not engineer.idle():
+            click.echo("The engineer is writing up its notes (Ctrl+C to skip)...")
+            try:
+                engineer.close(wait_s=120)
+            except KeyboardInterrupt:
+                pass
         if hasattr(out, "close"):
             out.close()
 

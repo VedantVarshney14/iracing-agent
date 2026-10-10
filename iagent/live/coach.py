@@ -56,20 +56,20 @@ class Context:
     own_best: pd.DataFrame | None = None
     carried_focus: int | None = None
     rules: list[Rule] | None = None  # the agent's
-    narrator: object | None = None  # iagent.live.narrator.Narrator
-    narrator_context: Callable[[], dict] | None = None
+    engineer: object | None = None  # iagent.live.engineer.Engineer: the session's conversation
+    radio_context: Callable[[], dict] | None = None  # what the engineer is told about the session
 
 
 class LiveCoach:
     def __init__(self, session: SessionInfo, plan: CuePlan, cmap: CornerMap, ref_grid: pd.DataFrame,
                  arbiter: Arbiter, settings: Settings | None = None, own_best: pd.DataFrame | None = None,
-                 carried_focus: int | None = None, rules: list[Rule] | None = None, narrator=None,
-                 narrator_context: Callable[[], dict] | None = None, components: tuple[type, ...] = ()):
+                 carried_focus: int | None = None, rules: list[Rule] | None = None, engineer=None,
+                 radio_context: Callable[[], dict] | None = None, components: tuple[type, ...] = ()):
         """COMPONENTS are added to the standard ones (before the rules and speech): an extension
         that only defines events, components and rules plugs in here."""
         self.ctx = Context(session, plan, cmap, ref_grid["LapDist"].to_numpy(dtype=float),
                            ref_grid["lap_time_s"].to_numpy(dtype=float), arbiter, own_best, carried_focus, rules,
-                           narrator, narrator_context)
+                           engineer, radio_context)
         self.settings = settings or Settings()
         self.pipeline = Pipeline(self.ctx, self.settings, [*COMPONENTS, *components, RuleEngine, Speaking])
 
@@ -86,7 +86,10 @@ class LiveCoach:
         self.pipeline.on(event, fn)
 
     def finish(self, now: float) -> None:
-        """End of the stream: let anything queued play out (for replays and tests)."""
+        """End of the stream: the session is over (the engineer writes up its notes); let anything
+        queued play out (for replays and tests)."""
+        self.pipeline.emit("session_end")
+        self.pipeline.run()
         end, t = now + 30.0, now
         while self.arbiter.queue and t < end:
             self.arbiter.tick(t)

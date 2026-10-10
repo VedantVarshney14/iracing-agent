@@ -82,6 +82,7 @@ def session_report(ws: Workspace, session_id: str) -> dict:
                   "car_name": start.get("car"), "length_m": start.get("length_m")},
         "ref": {"lap_id": start.get("ref"), "lap_time": ref_time, **_ref_meta(ws, start.get("ref"))},
         "source": start.get("source"),
+        "engineer": start.get("engineer"),  # the session's conversation with the coach
         "duration_s": (max(times) - min(times)) if times else None,
         "summary": {
             "laps": len(laps),

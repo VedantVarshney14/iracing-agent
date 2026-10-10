@@ -32,7 +32,7 @@ def plan_for(ws: Workspace, session: SessionInfo, ref_id: str | None = None, reb
 
 
 def start_coach(root: Path, session: SessionInfo, voice: Voice, settings: Settings | None = None,
-                ref_id: str | None = None, narrator=None, narrator_context=None) -> LiveCoach:
+                ref_id: str | None = None, engineer=None, radio_context=None) -> LiveCoach:
     ws = Workspace(root)
     try:
         plan = plan_for(ws, session, ref_id)
@@ -55,8 +55,8 @@ def start_coach(root: Path, session: SessionInfo, voice: Voice, settings: Settin
         if fixed:
             voice.prepare(fixed)
     return LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own,
-                     carried_focus=carried["focus"] if carried else None, rules=rules, narrator=narrator,
-                     narrator_context=narrator_context)
+                     carried_focus=carried["focus"] if carried else None, rules=rules, engineer=engineer,
+                     radio_context=radio_context)
 
 
 def reload_rules(root: Path, coach: LiveCoach) -> None:
@@ -76,8 +76,8 @@ def own_best(ws: Workspace, track: str, car: str):
 
 def run(root: Path, session_of: Callable[[], SessionInfo], frames: Iterator[Frame], voice: Voice,
         settings: Settings | None = None, ref_id: str | None = None,
-        on_start: Callable[[LiveCoach], None] | None = None, narrator=None,
-        narrator_context: Callable[[], dict] | None = None) -> LiveCoach | None:
+        on_start: Callable[[LiveCoach], None] | None = None, engineer=None,
+        radio_context: Callable[[], dict] | None = None) -> LiveCoach | None:
     """Coach until the frames run out. A different track or car (a new session) restarts the
     coach with that combination's plan."""
     coach: LiveCoach | None = None
@@ -90,7 +90,7 @@ def run(root: Path, session_of: Callable[[], SessionInfo], frames: Iterator[Fram
             if (session.track_key, session.car_key) != key:
                 key = (session.track_key, session.car_key)
                 rules_sig = signature(root)
-                coach = start_coach(root, session, voice, settings, ref_id, narrator, narrator_context)
+                coach = start_coach(root, session, voice, settings, ref_id, engineer, radio_context)
                 if on_start:
                     on_start(coach)
             elif (sig := signature(root)) != rules_sig:

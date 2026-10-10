@@ -66,9 +66,9 @@ def create_app(
 ) -> Starlette:
     coach = coach or CoachRuns(workspace)
     if live is None:
-        from iagent.live.narrator import Narrator, ask_with
+        from iagent.live.engineer import Engineer
 
-        live = LiveSessions(workspace, narrator=Narrator(ask_with(coach)))
+        live = LiveSessions(workspace, engineer=lambda: Engineer.over(coach))
     debriefing: set[str] = set()  # sessions whose debrief the coach is writing
     ghost_dir = (workspace / "reference" / "ghosts").resolve()
     g61_account: dict = {}  # Garage61's answer about the token, asked once
@@ -316,6 +316,8 @@ def create_app(
         if not text:
             return JSONResponse({"error": "text is required"}, status_code=400)
         live.note_driver(text)
+        if live.ask(text):  # the session's engineer answers, in its conversation
+            return JSONResponse({"ok": True})
         context = live.context()
 
         def answer() -> None:
@@ -362,7 +364,8 @@ def create_app(
         sid = str((await request.json()).get("id") or "")
         ws = Workspace(workspace)
         try:
-            lines = session_report.context_lines(session_report.session_report(ws, sid))
+            report = session_report.session_report(ws, sid)
+            lines = session_report.context_lines(report)
         except WorkspaceError as e:
             return JSONResponse({"error": str(e)}, status_code=404)
         finally:
@@ -373,11 +376,13 @@ def create_app(
         prompt = ("Write a short debrief of this coaching session for the driver: two short paragraphs, plain "
                   "text, under 90 words. What worked, what still costs the most, and the one thing to focus on "
                   "next session. Use the numbers given; don't run commands unless something is missing.")
+        # The session's engineer writes it, continuing its conversation (it was there); else a new one.
+        engineer = report.get("engineer")
 
         def write() -> None:
             try:
                 parts, error = [], None
-                for line in coach.run(prompt, {"page": "session", "live": lines}, None):
+                for line in coach.run(prompt, {"page": "session", "live": lines}, engineer):
                     event = json.loads(line)
                     if event["type"] == "text_start":
                         parts = []

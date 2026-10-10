@@ -233,13 +233,16 @@ an engineer on the radio, not a recording: brief when you're busy, fuller when y
   point a few metres a lap..."*), said instead when you're not pushing. On a cool-down lap (15 s
   or more off the pace, not just a moment) the coach debriefs: the corner costing the most over
   your last laps at pace, what to change and how, and how consistent the laps were.
-- **In the coach's own words.** Where the model has time to answer, it does the talking: the
-  cool-down debrief is asked of your Claude Code (`claude -p`) as you slow down and said in its
-  words if it answers in time (it took ~7 s in testing; it's wanted ~15 s in), and a rule with a
-  `wake` action has the coach answer on the radio. The coach is given the numbers, not asked to
-  work them out. Corner cues stay fixed text, because they must be instant and exactly timed,
-  but the coach can rewrite them between sessions (`iagent cues set ... --short ...`). No reply in
-  time, or no `claude`: the coach's own phrasing is said. `--no-narrate` turns it off.
+- **An engineer for the session.** Where the model has time to answer, it does the talking, and
+  it's the same conversation all session, like one engineer on the radio: your Claude Code
+  (`claude -p`) gives a radio check and the plan as you head out (from its notes), hears every cue
+  and lap time, answers your questions and rules that `wake` it, words the cool-down debrief
+  (asked as you slow down, said if it answers in time: ~5 s in testing, wanted ~15 s in), and
+  writes up its notes (`workspace/notes/<track>.md`) when the session ends; the next session's
+  engineer starts from them. It's given the numbers, not asked to work them out. Corner cues stay
+  fixed text, because they must be instant and exactly timed, but the coach can rewrite them
+  between sessions (`iagent cues set ... --short ...`). No reply in time, or no `claude`: the coach's
+  own phrasing is said. `--no-narrate` turns it off.
 - **One focus at a time.** After the learning laps the corner losing the most (over the last two
   laps at pace) becomes the focus: *"Focus now: Turns 15 and 16. Just a lift, no brakes."* It's
   cued every lap; other corners speak up only for a big loss or an off. Once you match the

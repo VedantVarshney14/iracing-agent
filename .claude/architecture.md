@@ -81,9 +81,32 @@ shell access, file editing, hooks, headless runs (`claude -p`) and session resum
   Claude Code-specific frontmatter is avoided; if ever needed it is optional.
 - Skills call tools by running `iagent ...` in a shell, never by harness-specific tool names.
 - Memory is plain files in the workspace.
-- Waking the agent is one adapter in the service: "send this message to the coach session". The
-  Claude Code adapter runs `claude -p --resume <session> <message>`; other adapters (Codex,
-  OpenCode, Goose) are the same few lines with a different command.
+- Running the agent is one adapter (`iagent/agent.py`): "send this message to this conversation".
+  The Claude Code adapter runs `claude -p` with `--session-id <id>` (first turn) or `--resume
+  <id>`; other adapters (Codex, OpenCode, Goose) are the same few lines with a different command.
+
+**Conversations, as a real team would have them.** One engineer per session, not one call per
+event, and not one conversation forever:
+
+| Conversation | Lives | Holds |
+| --- | --- | --- |
+| The live session's engineer (`iagent/live/engineer.py`) | one live session: radio check → wrap-up | everything said on the radio, the laps, the driver's questions, wake-ups, debriefs |
+| The lap review chat (`iagent/ui/coach.py`) | as long as the browser keeps it | the driver's questions about a lap |
+| The workspace notes (`notes/<track>.md`, written by the engineer) | across sessions | what was worked on, what changed, what to start with |
+
+- The engineer's turns are serial (one engineer can't answer two things at once), most important
+  first (the driver's question, the cool-down debrief, a rule's wake-up, the briefing, the
+  wrap-up), and a request no longer useful by its turn (a debrief once the driver is pushing
+  again) is dropped; the live coach then says its own words. It never blocks the 60 Hz loop.
+- Each turn starts with what went out on the radio and the laps since the last turn, so the
+  engineer knows what the driver heard, as a real one listening to the radio would.
+- Before the session it reads its notes and gives a radio check with the plan; after it, it
+  writes the notes up (`notes_written`). The session log records its conversation id, so the
+  debrief written later on the review page continues that conversation.
+- Isolation: each session's engineer is its own conversation, run on the workspace with the coach
+  plugin and only the tools the coach needs (`iagent`, reading and editing workspace files); the
+  driver's other Claude Code sessions are separate. A new session starts a new conversation and
+  learns from the notes, which keeps turns fast (prompt caching keeps resumed turns ~5 s).
 
 **Models.** Claude via subscription is the practical primary. Local open models are a supported
 fallback but must pass the eval suite (section 10) first: a coding-agent harness has a large
