@@ -3,9 +3,9 @@ import sys
 
 import pytest
 from click.testing import CliRunner
-from starlette.testclient import TestClient
 
 from iagent.cli import cli
+from iagent.testing.web import ui_client
 from iagent.ui.coach import CoachRuns, StreamParser, screen_context
 from iagent.ui.server import create_app
 
@@ -103,7 +103,7 @@ def test_chat_streams_a_coach_turn(tmp_path, fake_claude):
     script, record = fake_claude
     app = create_app(tmp_path, static_dir=tmp_path / "no-build", coach=CoachRuns(tmp_path, claude=str(script)))
     body = {"message": "Where do I lose time?", "session_id": SESSION, "context": {"lap": "L2", "corners": [9]}}
-    with TestClient(app).stream("POST", "/api/chat", json=body) as res:
+    with ui_client(app).stream("POST", "/api/chat", json=body) as res:
         events = [json.loads(line) for line in res.iter_lines() if line]
     assert events[0]["type"] == "run"
     assert [e["type"] for e in events[1:]] == ["session", "tool", "tool", "ui", "text_start", "text", "text", "done"]
@@ -118,10 +118,10 @@ def test_chat_streams_a_coach_turn(tmp_path, fake_claude):
 
 def test_chat_explains_a_missing_claude(tmp_path):
     app = create_app(tmp_path, static_dir=tmp_path / "no-build", coach=CoachRuns(tmp_path, claude="no-such-claude"))
-    with TestClient(app).stream("POST", "/api/chat", json={"message": "hi"}) as res:
+    with ui_client(app).stream("POST", "/api/chat", json={"message": "hi"}) as res:
         events = [json.loads(line) for line in res.iter_lines() if line]
     assert events[-1]["type"] == "error" and "IAGENT_CLAUDE" in events[-1]["message"]
-    assert TestClient(app).post("/api/chat", json={"message": " "}).status_code == 400
+    assert ui_client(app).post("/api/chat", json={"message": " "}).status_code == 400
 
 
 def test_ui_show_prints_an_action(tmp_path):

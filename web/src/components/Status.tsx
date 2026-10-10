@@ -3,7 +3,7 @@ import { api } from "../api";
 import type { LapInfo, SystemInfo } from "../types";
 
 /** Header pill: is this machine watching iRacing's telemetry folder for new recordings? */
-export function TelemetryIndicator({ system }: { system: SystemInfo | null }) {
+export function TelemetryIndicator({ system, onClick }: { system: SystemInfo | null; onClick?: () => void }) {
   if (!system) return null;
   const t = system.telemetry;
   let state: "ok" | "warn" | "off";
@@ -22,13 +22,13 @@ export function TelemetryIndicator({ system }: { system: SystemInfo | null }) {
     [state, text, detail] = ["off", "iRacing telemetry · not watching", `${t.folder} exists but isn't watched (started with --no-watch).`];
   } else {
     [state, text, detail] = ["off", "No iRacing on this computer",
-      `No telemetry folder at ${t.folder}. On the sim PC this watches it for new recordings; here, ingest .ibt files with \`iagent ingest\` or set IAGENT_TELEMETRY_DIR to a synced folder.`];
+      `No telemetry folder at ${t.folder}. On the sim PC this watches it for new recordings; here, import .ibt files in the Library or watch a folder synced from the sim PC.`];
   }
   return (
-    <span className={`status-pill ${state}`} title={detail}>
+    <button type="button" className={`status-pill ${state}`} title={`${detail} Click for the library's sources.`} onClick={onClick}>
       <span className="dot" aria-hidden="true" />
       {text}
-    </span>
+    </button>
   );
 }
 

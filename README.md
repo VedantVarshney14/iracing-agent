@@ -157,6 +157,11 @@ garage61 id                  driver                      time  vs you rating dat
 ## Lap review in the browser
 
 `iagent ui` opens a lap review in your browser:
+- **Library.** Where laps come from, every track you've driven, and each session's laps with a
+  Review and a Ghost choice (your laps or Garage61 teammates'). On the sim PC it shows the watched
+  telemetry folder; on a Mac, drop `.ibt` files onto it or point it at a folder synced from the
+  sim PC (OneDrive, Dropbox, a network share), which is then watched like iRacing's own. It also
+  shows whether Garage61 is connected (a token can be added there) and whether `claude` was found.
 - **Track map.** Your line, coloured by the time you gained or lost in each corner. The
   **Corner** view overlays your line on the ghost's, with brake and full-throttle points.
 - **Corner table.** Each corner's comparison against the ghost.
@@ -196,11 +201,15 @@ iagent ui                                                 # http://127.0.0.1:876
 While working on the UI, run `iagent ui --no-browser` and `npm --prefix web run dev` (hot
 reload on http://localhost:5173, API calls forwarded to the server).
 
-`iagent ui` also starts when the workspace has no laps yet. It opens a blank screen and watches
-the iRacing telemetry folder for completed recordings; once laps are ingested, they appear in the
-UI. The default folder is `Documents/iRacing/telemetry` (or `IAGENT_TELEMETRY_DIR`). To use
-recordings elsewhere, ingest them with `iagent ingest <file.ibt>` or point `IAGENT_WORKSPACE` /
-`--workspace` at the workspace that already contains them.
+`iagent ui` also starts when the workspace has no laps yet, on the library: drop recordings
+there, or wait for the watched folder to bring them in. The watched folder is the one last chosen
+in the library (saved in the workspace's `settings.json`), else `IAGENT_TELEMETRY_DIR`, else
+`Documents/iRacing/telemetry`; `--telemetry-dir` overrides all three. `iagent ingest <file.ibt>`
+still works from the command line.
+
+The server only answers on localhost (pass `--host 0.0.0.0` to open it from another machine) and
+refuses POSTs without the web app's `X-Iagent` header, so other sites open in your browser can't
+start the coach or write to the workspace.
 
 ## Using the coach
 

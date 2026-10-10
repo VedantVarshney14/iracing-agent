@@ -186,8 +186,8 @@ def tracks(ctx: Ctx, as_json: bool):
 @click.option("--port", default=8765, show_default=True, help="Port to serve on.")
 @click.option("--no-browser", is_flag=True, help="Don't open a browser tab.")
 @click.option("--telemetry-dir", type=click.Path(file_okay=False, path_type=Path),
-              help="iRacing telemetry folder to watch for new recordings (default: Documents/iRacing/telemetry, "
-              "or IAGENT_TELEMETRY_DIR).")
+              help="iRacing telemetry folder to watch for new recordings (default: the folder last chosen in the "
+              "UI, else IAGENT_TELEMETRY_DIR, else Documents/iRacing/telemetry).")
 @click.option("--no-watch", is_flag=True, help="Don't watch the telemetry folder.")
 @click.pass_context
 def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool, telemetry_dir: Path | None, no_watch: bool):
@@ -200,8 +200,8 @@ def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool, telemet
 
     import uvicorn
 
-    from iagent.laps.watch import TelemetryWatcher, default_telemetry_dir
-    from iagent.ui.server import STATIC_DIR, create_app
+    from iagent.laps.watch import TelemetryWatcher, default_telemetry_dir, saved_telemetry_dir
+    from iagent.ui.server import LOCAL_HOSTS, STATIC_DIR, create_app
 
     if not (STATIC_DIR / "index.html").exists():
         click.echo("The UI isn't built yet: run `npm --prefix web install && npm --prefix web run build`.", err=True)
@@ -210,12 +210,15 @@ def ui(click_ctx: click.Context, host: str, port: int, no_browser: bool, telemet
     if not no_browser:
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
     watcher = None
-    folder = telemetry_dir or default_telemetry_dir()
+    folder = telemetry_dir or saved_telemetry_dir(ctx.workspace) or default_telemetry_dir()
     if not no_watch:
         watcher = TelemetryWatcher(ctx.workspace, folder)
         watcher.start()
         click.echo(f"Watching {folder} for new recordings.")
-    uvicorn.run(create_app(ctx.workspace, watcher=watcher), host=host, port=port, log_level="warning")
+    # Bound to the network on purpose (e.g. to open it from another machine): accept that Host.
+    hosts = ["*"] if host in ("0.0.0.0", "::") else [*LOCAL_HOSTS, host]
+    uvicorn.run(create_app(ctx.workspace, watcher=watcher, allowed_hosts=hosts), host=host, port=port,
+                log_level="warning")
 
 
 @ui.command("show")
