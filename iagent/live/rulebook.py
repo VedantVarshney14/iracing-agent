@@ -21,7 +21,7 @@ import numpy as np
 from iagent.laps.tracks import load_track_info
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan, load_plan
-from iagent.live.rules import Rule, RuleEngine, RuleError, check_against_map
+from iagent.live.rules import Rule, RuleError, RuleStats, check_against_map, uses_corners
 from iagent.live.speech import Arbiter, CapturedVoice
 from iagent.telemetry.frames import Frame
 from iagent.telemetry.session import SessionInfo
@@ -105,9 +105,9 @@ def add_rule(root: Path, raw: dict, replace: bool = False, by: str = "coach") ->
         existing = None
     if existing is not None and not replace:
         raise RuleError(f"A rule {rule.id!r} exists already: pass --replace to change it, or pick another id.")
-    if rule.track is None and _uses_corners(rule):
+    if rule.track is None and uses_corners(rule):
         raise RuleError(f"{rule.id}: a rule about a corner needs a track.")
-    if rule.track is not None and _uses_corners(rule):
+    if rule.track is not None and uses_corners(rule):
         ws = Workspace(root)
         try:
             cmap = ws.corner_map(rule.track)
@@ -123,16 +123,6 @@ def add_rule(root: Path, raw: dict, replace: bool = False, by: str = "coach") ->
         rule.meta["edited_at"] = now
     rule.status = "draft"
     return rule, save_rule(root, rule)
-
-
-def _uses_corners(rule: Rule) -> bool:
-    if rule.trigger not in ("at", "corner_exit"):
-        return False
-    value = rule.when.get(rule.trigger)
-    if rule.trigger == "at":
-        return isinstance(value, str)
-    items = value if isinstance(value, list) else [value]
-    return not any(isinstance(v, str) and v.strip().lower() in ("any", "*", "all") for v in items)
 
 
 def set_status(root: Path, rule_id: str, status: str, force: bool = False) -> Rule:
@@ -262,37 +252,32 @@ def backtest(root: Path, rules: list[Rule], track: str, car: str, sessions: list
 def _replay(ws: Workspace, name: str, session: SessionInfo, frames: Iterator[Frame], plan, cmap, ref_grid,
             rules: list[Rule], testing: set[str], settings: Settings | None) -> dict:
     voice = CapturedVoice()
-    engine = RuleEngine(rules)
     own = _own_best(ws, plan.track_key, plan.car_key, exclude=session.session_id)
-    coach = LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own, rules=engine)
+    coach = LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own, rules=rules)
     lines: dict[str, list[dict]] = {}
 
-    def on_line(what, u, now):
-        if u.rule in testing:
-            lines.setdefault(u.rule, []).append({"status": what, "text": u.text, "at": round(now, 2),
-                                                 "lap": coach._laps_done, "note": u.note if what == "dropped" else None})
-    coach.arbiter.on_event = on_line
+    def on_line(e):
+        if e["rule"] in testing:
+            lines.setdefault(e["rule"], []).append({"status": e["status"], "text": e["text"], "at": round(e.at, 2),
+                                                    "lap": coach.laps, "note": e["note"]})
+    coach.on("line", on_line)
     last = None
     for frame in frames:
         coach.push(frame)
         last = frame
     if last is not None:
         coach.finish(last.session_time)
-    out = {"session": name, "laps": coach._laps_done, "laps_driven": engine._lap_no + 1, "rules": {}}
+    engine = coach.rules
+    out = {"session": name, "laps": coach.laps, "laps_driven": coach.state["laps_driven"] + 1, "rules": {}}
     for rule_id in testing:
         out["rules"][rule_id] = {
             "session": name,
-            "stats": asdict(engine.stats.get(rule_id) or _zero()),
+            "stats": asdict(engine.stats.get(rule_id) or RuleStats()),
             "firings": [f for f in engine.firings if f["rule"] == rule_id],
             "lines": lines.get(rule_id, []),
         }
     return out
 
-
-def _zero():
-    from iagent.live.rules import RuleStats
-
-    return RuleStats()
 
 
 def _own_best(ws: Workspace, track: str, car: str, exclude: str | None):

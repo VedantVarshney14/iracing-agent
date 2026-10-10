@@ -9,7 +9,6 @@ from iagent.live import rulebook
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan
 from iagent.live.narrator import Narrator, chunks, clean, debrief_prompt, final_text, wake_prompt
-from iagent.live.rules import RuleEngine
 from iagent.live.run import own_best
 from iagent.live.session import LiveSessions
 from iagent.live.speech import Arbiter, CapturedVoice
@@ -66,50 +65,71 @@ def test_one_request_of_a_kind_at_a_time_and_wakes_are_spaced():
     assert not quick.request("wake", "p", {}, lambda r: None, min_gap_s=30)
 
 
+class SlowNarrator:
+    """Answers REPLY_AFTER_S (session time) after being asked, or never (None)."""
+
+    def __init__(self, reply_after_s):
+        self.reply_after_s = reply_after_s
+        self.asked = []  # [kind, prompt, on_reply, asked at]
+        self.now = 0.0
+
+    def request(self, kind, prompt, context, on_reply, min_gap_s=0.0):
+        self.asked.append([kind, prompt, on_reply, self.now])
+        return True
+
+    def tick(self, now):
+        self.now = now
+        for a in self.asked:
+            if self.reply_after_s is not None and a[2] is not None and now >= a[3] + self.reply_after_s:
+                a[2](WORDS)
+                a[2] = None
+
+
 def drive(root, reply_after_s: float | None, settings: Settings):
     """A session with a cool-down lap; the narrator answers REPLY_AFTER_S after being asked
-    (None: never), delivered on the coach's thread like the live session does."""
+    (None: never), through the pipeline's inbox like the live session's."""
+    narrator = SlowNarrator(reply_after_s)
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)
         kinds = [LapKind.CLEAN, LapKind.CLEAN, LapKind.CLEAN, LapKind.SLOW, LapKind.CLEAN]
         src = SyntheticSource(n_laps=len(kinds), kinds=kinds, seed=11, start_m=2900.0)
         coach = LiveCoach(src.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(CapturedVoice()),
-                          settings, own_best=own_best(ws, TRACK, CAR), rules=RuleEngine([]))
+                          settings, own_best=own_best(ws, TRACK, CAR), narrator=narrator)
     finally:
         ws.close()
-    asked, said = [], []
-    coach.on_narrate = lambda facts, stretch: asked.append((facts, stretch, None))
-    coach.on_debrief = said.append
-    pending = []
+    asked, said, words = [], [], []
+    coach.on("narrate", lambda e: asked.append((e["facts"], e["stretch"], e.at)))
+    coach.on("debrief", lambda e: said.append(e.public()))
+    coach.on("debrief_words", lambda e: words.append(e.public()))
     for f in src.frames():
-        if asked and asked[-1][2] is None:
-            facts, stretch, _ = asked[-1]
-            asked[-1] = (facts, stretch, f.session_time)
-            if reply_after_s is not None:
-                pending.append((f.session_time + reply_after_s, stretch))
-        for due, stretch in [p for p in pending if p[0] <= f.session_time]:
-            pending.remove((due, stretch))
-            coach.narrated(WORDS, stretch)
+        narrator.tick(f.session_time)
         coach.push(f)
-    return coach, asked, said
+    return coach, asked, said, words
 
 
 def test_the_cool_down_debrief_is_in_the_coachs_words_when_they_come_in_time(root):
-    coach, asked, said = drive(root, 4.0, Settings(learning_laps=1))
+    coach, asked, said, words = drive(root, 4.0, Settings(learning_laps=1))
     assert asked and asked[0][0]["fallback"] and "topics" in asked[0][0]
     assert said and said[0]["by"] == "coach" and said[0]["text"] == WORDS
+    assert words[0]["status"] == "used"
     spoken = [s.text for s in coach.arbiter.voice.spoken if s.kind == "debrief"]
     assert " ".join(spoken) == WORDS and len(spoken) >= 1
 
 
 def test_without_a_reply_in_time_the_coach_uses_its_own_words(root):
-    coach, asked, said = drive(root, None, Settings(learning_laps=1, narrate_wait_s=5.0))
+    coach, asked, said, _ = drive(root, None, Settings(learning_laps=1, narrate_wait_s=5.0))
     assert asked and said and said[0]["by"] == "template"
     late = [s for s in coach.arbiter.voice.spoken if s.kind == "debrief"]
     slow_at = asked[0][2] - coach.settings.narrate_after_s
     assert late[0].at_s >= slow_at + coach.settings.debrief_after_s + 5.0 - 0.1  # it waited, then spoke
-    assert coach.narrated(WORDS, asked[0][1]) is False  # and a reply after that isn't said too
+
+
+def test_a_reply_after_the_coachs_own_words_is_not_said_too(root):
+    coach, asked, said, words = drive(root, 30.0, Settings(learning_laps=1, narrate_wait_s=5.0))
+    assert said and said[0]["by"] == "template"
+    assert words and words[0]["status"] == "too late"
+    assert WORDS not in [s.text for s in coach.arbiter.voice.spoken]
 
 
 def test_a_live_session_narrates_and_answers_rule_wake_ups(root, tmp_path):
@@ -129,8 +149,8 @@ def test_a_live_session_narrates_and_answers_rule_wake_ups(root, tmp_path):
     live.wait(timeout_s=120)
     events = live.events()
     assert [e["type"] for e in events].count("wake") == 1 and any("T1 done" in p for p in prompts)
-    narr = [e for e in events if e["type"] == "narration" and e["kind"] == "wake"]
-    assert narr and narr[0]["status"] == "said"
+    words = [e for e in events if e["type"] == "coach_words"]
+    assert words and words[0]["text"] == "Turn one's coming together, keep at it." and words[0]["rule"] == "t1-watch"
     coach_lines = [e for e in events if e["type"] == "line" and e["kind"] == "coach"]
     assert coach_lines and coach_lines[0]["text"] == "Turn one's coming together, keep at it."
     assert coach_lines[0]["rule"] == "t1-watch"

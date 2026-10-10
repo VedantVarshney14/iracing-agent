@@ -118,7 +118,7 @@ class Arbiter:
         return now < self._busy_until
 
     def tick(self, now: float, hold: bool = False, free_for_s: float = float("inf"),
-             long_ok: bool = False) -> Utterance | None:
+             long_ok: bool = False, hold_why: str = "a car was alongside") -> Utterance | None:
         """Start the next utterance if the channel is free.
 
         Args:
@@ -135,7 +135,7 @@ class Arbiter:
         if not self._queue:
             return None
         if hold:
-            self._note("a car was alongside")
+            self._note(hold_why)
             return None
         if self.speaking(now):
             urgent = any(u.priority == APPROACH for u in self._queue)

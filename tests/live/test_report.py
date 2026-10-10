@@ -7,6 +7,7 @@ from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live import report
 from iagent.live.coach import CornerResult, LiveCoach, Settings
+from iagent.live.components import CueCaller, Focus
 from iagent.live.cues import build_plan, load_next_plan, save_next_plan, use_next_plan
 from iagent.live.session import LiveSessions
 from iagent.live.speech import Arbiter, CapturedVoice
@@ -82,14 +83,14 @@ def carried_coach(root, corner):
 
 
 def pushing_lap(coach, losses):
-    coach._laps_done += 1
-    return coach._update_focus([CornerResult(c, d, None, None, d >= 0.08) for c, d in losses.items()])
+    coach.state["lap"] += 1
+    return coach.pipeline.get(Focus).update([CornerResult(c, d, None, None, d >= 0.08) for c, d in losses.items()])
 
 
 def test_a_carried_focus_is_dropped_when_it_is_fine_now(coached):
     root, _ = coached
     coach = carried_coach(root, 2)
-    assert coach.focus == 2 and coach._cue_text(coach.plan.cue_for(2)).startswith("Focus. ")
+    assert coach.focus == 2 and coach.pipeline.get(CueCaller).text(coach.plan.cue_for(2)).startswith("Focus. ")
     assert pushing_lap(coach, {1: 0.0, 2: 0.02, 3: 0.0, 4: 0.0}) is None  # one lap: not judged yet
     assert pushing_lap(coach, {1: 0.0, 2: 0.03, 3: 0.0, 4: 0.0}) == "Turn 2 is fine now."
     assert coach.focus is None

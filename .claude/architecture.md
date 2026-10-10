@@ -242,53 +242,85 @@ a brake point from raw samples to be useful.
     fine (and true in search results); the download is treated as the authority.
 - Later: theoretical best (best corner segments stitched), manual `.ibt`/CSV imports.
 
-## 8. Rules, schedules and events
+## 8. The live pipeline: events, components, rules
 
-Created by the agent via the CLI (`live-rules` skill); evaluated by the live coach on the same
-frames and events it uses itself. A rule is data, not code. Implemented in `iagent/live/`
-(`expr.py`, `rules.py`, `rulebook.py`).
+One event pipeline runs the live coach (`iagent/live/pipeline.py`). Everything is an event:
+telemetry frames, line crossings, counted laps, corner exits with their metrics, pace changes,
+the car approaching a watched point, slow stretches and cool-downs, the focus changing, lines
+said or dropped, the narrator's replies, commands from the driver or the browser. Nothing in the
+pipeline or the coach knows any event but `frame`; behaviour lives in definitions.
+
+```text
+frame ─► components (enrich_<event>, then on_<event>) ─► events ─► … ─► rule engine ─► arbiter ─► line events
+                 ▲  shared state (defined, documented)                                       ▲ speech gates
+       post() from other threads (browser, narrator), handled at the next frame
+```
+
+- **Events** (`events.py`): `define_event(name, doc, fields, log=, judged=)`, next to the
+  component that produces them; `define_fields` for fields another component adds. `log` puts
+  them in the session log (the review page reads it); `judged` marks events about driving, which
+  `pushing_only` rules ignore while the driver isn't pushing.
+- **State**: values components maintain (pace mode, focus, struggling corners, hints), each
+  defined with `define_state`. Components talk only through events and this state.
+- **Components** (`components/`, in `COMPONENTS` order): `Laps` (crossings, counted laps), `Track`
+  (on track, alongside, pit), `Clock`, `Pace` (pushing or not, slow stretches, cool-downs),
+  `Corners` (corner exits with metrics and causes), `Positions` (watched points → `approach`),
+  `CueCaller` (which cue is wanted, its text), `Focus`, `History` (struggling, hints, the
+  feedback line with "again"/"better"), `Summary`, `Debrief`, `Radio` (the narrator), then the
+  rule engine and `Speaking`. Methods are wired by name (`on_lap`, `enrich_corner_exit`), so a
+  component is only its definition.
+- **Rules decide what's said** (`rules.py`). The coach's own behaviour (cue, feedback, summary,
+  focus news, debrief, answers, the coach's replies) is a set of built-in rules
+  (`builtin_rules.py`, group `coach`), in the same format as the agent's rules (group `agent`,
+  which share a budget of 6 lines a lap and 4 s between lines). Components put what's worth
+  saying on events (`wanted` and `text` on a cue's `approach`, `feedback` on `corner_exit`,
+  `summary_text` and `focus_news` on `lap`); rules say it.
+- **Speech gates** (`components/speaking.py`): when not to speak, as data: off track (hold,
+  clear cues and feedback), a car alongside (hold), not pushing (longer lines allowed; clear
+  pending cues as it starts), just slowed down (hold), just over the line with CrewChief (cues
+  only), in a corner (cues only).
+- **Wording** (`phrasing.py`): every template, and the causes of lost time as definitions (how
+  to spot each, how to say it short, as a hint, and with the why and how).
+- **Extending**: a new event is `define_event` plus whatever emits it; a new behaviour is a rule;
+  a new detector is a component class (in `COMPONENTS`, or passed to `LiveCoach(components=)`); a
+  new reason to keep quiet is a `Gate`; a new action is an `ActionDef`; a new cause is a `Cause`.
+  `iagent rules vars` is generated from the definitions, so all of it is documented and usable
+  by rules at once. `tests/live/test_pipeline.py` shows a new detector, event and rule added
+  without touching anything else.
+
+### Rules
+
+Created by the agent via the CLI (`live-rules` skill); stored per track in the workspace
+(`rulebook.py`). A rule is data, not code:
 
 ```json
 {
   "id": "bus-stop-early-brake",
   "track": "spa-2024-up",
-  "when": {"corner_exit": "Bus Stop"},
+  "when": {"event": "corner_exit", "corner": "Bus Stop"},
   "if": "brake_diff_m < -10",
   "action": {"say": "Bus Stop: braked {round5(-brake_diff_m)} metres early.", "priority": "feedback"},
   "limits": {"cooldown_laps": 1}
 }
 ```
 
-- **Triggers** (`when`, one per rule): a track position (`at`: metres, or a corner with a point
-  and `lead_s`/`offset_m`; a spoken cue is timed to *finish* before the point at the current
-  speed, like the corner cues), a corner exit carrying that corner's metrics against the
-  reference (the same `corner_metrics` code as the lap review), lap complete, pit entry/exit, a
-  change of pace mode or focus, an edge-triggered `condition` over live channels (`for_s`,
-  `rearm_s` hysteresis), and schedules (`every_s`, `at_s`, `every_laps`, `at_lap`,
-  `session_start`). `iagent rules vars` lists every variable each trigger provides.
-- **Predicates and text**: a restricted expression language (a Python-syntax subset parsed with
-  `ast` and compiled to closures: arithmetic, comparisons, `and/or/not`, `in`, conditionals and
-  a few functions). No attribute access, subscripts or arbitrary calls in the 60 Hz loop. A
-  missing value makes a comparison false and keeps a line with that hole unsaid. Spoken text is
-  a template with `{expression:format}` holes.
-- **Actions**: `say` (queued with the speech arbiter at cue, feedback or summary priority, with
-  an optional `long` version for when the driver isn't pushing),
-  `wake` (the coach is asked, `claude -p`, with the rule, its values and the driver's state; its
-  reply is spoken, or SILENT),
-  `log`. One rule can have several.
-- **Limits**: per rule `cooldown_s`, `cooldown_laps`, `max_per_lap`, `max_per_session`, `once`,
-  and `in_a_row` (the condition held N occurrences running). `pushing_only` (default) ignores
-  corners, laps and positions while the coach judges the driver isn't pushing. Engine-wide: at
-  most 6 rule lines a lap and 4 s between rule lines (cues aside). The arbiter still decides
-  what is actually said.
-- **Lifecycle**: `add` validates (fields, variable names, corner names against the track's map)
-  and saves a draft; `backtest` replays recorded sessions (stored laps, or `.ibt` files) through
-  the *same* live coach and engine, with the other active rules competing for the voice, and
-  reports each firing with the values it saw and whether its line was said, cut or dropped (and
-  why); `activate` requires a backtest of the rule as it is now (a fingerprint of its
-  behaviour). Editing makes it a draft again. A running coach reloads rules when the files
-  change (checked every ~10 s), so the agent can adjust them mid-session.
-- Still to come: moving the built-in cues and feedback onto rules.
+- **`when`**: any defined event, with filters on its fields (a value, a list, "any"; corner
+  fields take names) and an optional `where`. `approach` takes `at` (metres, or a corner and a
+  point, with `lead_s`/`offset_m`: a spoken line is timed to finish before it); `frame` takes
+  `edge` (a condition, edge-triggered with `for_s`/`rearm_s`). The earlier forms
+  (`{"corner_exit": "T9"}`, `{"at": "T9"}`, `{"every_laps": 5}`, ...) are shorthand for these.
+- **Conditions and text**: a restricted expression language (a Python-syntax subset parsed with
+  `ast` and compiled to closures; no attribute access, subscripts or arbitrary calls). A missing
+  value makes a comparison false and keeps a line with that hole unsaid.
+- **Actions** (`ACTIONS`): `say` (priority, `long` version, kind, expiry), `wake` (the coach is
+  asked, `claude -p`, and may answer on the radio), `log`, `emit`.
+- **Limits**: `cooldown_s`, `cooldown_laps`, `max_per_lap`, `max_per_session`, `once`,
+  `in_a_row`, `pushing_only`; per group, the shared line budget.
+- **Lifecycle**: `add` validates (fields, variables, corner names) and saves a draft; `backtest`
+  replays recorded sessions through the *same* pipeline, with the other active rules competing
+  for the voice, and reports each firing and whether its line was said, cut or dropped (and why);
+  `activate` needs a backtest of the rule as it is now. A running coach reloads rules when the
+  files change.
 
 ## 9. Voice and UI
 
@@ -363,9 +395,11 @@ iagent/
   telemetry/   frames, session info, sources (ibt)
   laps/        segmenter, resampling, store, pace, recorder
   analysis/    corner map and metrics, landmarks, splits, comparison
-  live/        live coach, cue plans, speech arbiter and voice, irsdk/replay sources,
-               rules (expr: the expression language, rules: schema + engine,
-               rulebook: storage + backtest), coached-session logs and reports
+  live/        the live coach: pipeline + events (the core), components/ (laps, track, pace,
+               corners, positions, cues, focus, history, summary, debrief, speaking), rules +
+               builtin_rules (what's said), phrasing (how), expr (the rule language),
+               rulebook (storage + backtest), narrator, speech arbiter and voice, sources,
+               session (UI-run sessions and their logs), report, cues (plans), settings
   testing/     synthetic generator, .ibt writer
   ui/          `iagent ui`: local API server
   cli.py       the `iagent` command

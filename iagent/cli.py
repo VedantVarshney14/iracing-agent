@@ -863,10 +863,8 @@ def _read_rule(text: str) -> dict:
 
 
 def _when(rule) -> str:
-    t = rule.trigger
-    value = rule.when[t]
-    extra = " ".join(f"{k}={v}" for k, v in rule.when.items() if k != t)
-    return f"{t} {json.dumps(value) if not isinstance(value, str) else value}" + (f" ({extra})" if extra else "")
+    extra = " ".join(f"{k}={v}" for k, v in rule.match.items() if k != "event")
+    return rule.trigger + (f" ({extra})" if extra else "")
 
 
 def _bt_line(bt: dict | None, fingerprint: str) -> str:
@@ -947,33 +945,33 @@ def rules_show(ctx: Ctx, rule_id: str):
 
 
 @rules.command("vars")
-@click.option("--trigger", help="Only what this trigger provides.")
+@click.option("--event", "--trigger", "event", help="Only this event (and what every event has).")
 @click.option("--json", "as_json", is_flag=True, help="Output JSON.")
-def rules_vars(trigger: str | None, as_json: bool):
-    """What rules can use: triggers and their variables, live channels, functions."""
-    from iagent.live.rules import TRIGGERS, describe
+def rules_vars(event: str | None, as_json: bool):
+    """What rules can use: events and their fields, the shared state, live channels, functions
+    and actions. All of it comes from the definitions, so a new event shows up here by itself."""
+    from iagent.live.rules import describe
 
     info = describe()
-    if trigger:
-        if trigger not in TRIGGERS:
-            raise click.ClickException(f"No trigger {trigger!r}; there are: {', '.join(TRIGGERS)}.")
-        info["triggers"] = {trigger: info["triggers"][trigger]}
+    if event:
+        if event not in info["events"]:
+            raise click.ClickException(f"No event {event!r}; there are: {', '.join(info['events'])}.")
+        info["events"] = {event: info["events"][event]}
     if as_json:
         _emit(info)
         return
-    for t, names in info["triggers"].items():
-        click.echo(f"{t}:")
-        for k, v in names.items():
+    for name, d in info["events"].items():
+        notes = (" (ignored while not pushing, with pushing_only)" if d["judged"] else "") + (
+            f"; also takes: {', '.join(d['extras'])}" if d["extras"] else "")
+        click.echo(f"{name}: {d['doc']}{notes}")
+        for k, v in d["fields"].items():
             click.echo(f"  {k:<22} {v}")
-    click.echo("every trigger:")
-    for k, v in info["every_trigger"].items():
-        click.echo(f"  {k:<22} {v}")
-    click.echo("live channels (iRacing names):")
-    for k, v in info["channels"].items():
-        click.echo(f"  {k:<22} {v}")
-    click.echo("functions:")
-    for k, v in info["functions"].items():
-        click.echo(f"  {k:<22} {v}")
+    for title, key in (("state (on every event)", "state"), ("live channels (iRacing names)", "channels"),
+                       ("functions", "functions"), ("actions", "actions")):
+        click.echo(f"{title}:")
+        for k, v in info[key].items():
+            click.echo(f"  {k:<22} {v}")
+    click.echo(f"shorthand for `when`: {', '.join(info['shorthand'])}")
 
 
 @rules.command("backtest")
@@ -1138,62 +1136,41 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
             raise click.ClickException(str(e)) from e
         out = _SpokenToo(out)
 
-    import queue
     import shutil
 
-    from iagent.live.narrator import Narrator, Radio, ask_with
+    from iagent.live.narrator import Narrator, ask_with
     from iagent.ui.coach import CoachRuns
 
     runs = CoachRuns(ctx.workspace)
     if narrate is None:
         narrate = shutil.which(runs.claude) is not None and (not replay or speed <= 1.0)
-    calls: queue.Queue = queue.Queue()
-    current: dict = {}
-
-    def note(event: dict) -> None:
-        if event.get("type") == "narration" and event.get("text"):
-            click.echo(f"[coach] {event['kind']}: {event['status']}")
-
-    radio = Radio(Narrator(ask_with(runs)), calls.put, note) if narrate else None
+    narrator = Narrator(ask_with(runs)) if narrate else None
+    # What the terminal shows besides the lines said: events, by name.
+    shown = {
+        "wake": lambda e: f"[wake] {e['rule']}: {e['message']}",
+        "rule": lambda e: "; ".join(f"[log] {e['rule']}: {a['log']}" for a in e.get("actions") or [] if a.get("log")),
+        "debrief_words": lambda e: f"[coach] debrief: {e['status']}",
+        "coach_words": lambda e: f"[coach] {e['rule']}: {e['text'] or 'nothing to say'}",
+    }
 
     def on_start(coach):
         rules = coach.rules.rules
-        current["coach"] = coach
         click.echo(f"Coaching {coach.session.track_name} in {coach.session.car_name}: {len(coach.plan.cues)} cues, "
                    f"following {coach.plan.ref_lap_id}." + (f" Rules: {', '.join(r.id for r in rules)}." if rules else "")
                    + (" Sharing the radio with CrewChief." if coach.settings.crewchief else "")
-                   + (" The coach words debriefs and wake-ups." if radio else ""))
-
-        def wake(w):
-            click.echo(f"[wake] {w['rule']}: {w['message']}")
-            if radio is not None:
-                radio.wake(coach, w)
-        coach.rules.on_wake = wake
-        coach.rules.on_fire = on_fire
-        if radio is not None:
-            radio.attach(coach)
-
-    def with_calls(frames):
-        """Replies from the coach are applied on this thread, between frames."""
-        for frame in frames:
-            while current.get("coach") is not None and not calls.empty():
-                calls.get_nowait()(current["coach"], frame.session_time)
-            yield frame
-
-    def on_fire(fired):
-        for action in fired.get("actions", []):
-            if action.get("log"):
-                click.echo(f"[log] {fired['rule']}: {action['log']}")
+                   + (" The coach words debriefs and wake-ups." if narrator else ""))
+        for event, line in shown.items():
+            coach.on(event, lambda e, line=line: (text := line(e)) and click.echo(text))
     try:
         if replay:
             src = IbtSource(replay, channels=LIVE_CHANNELS)
-            run(ctx.workspace, lambda: src.session, with_calls(paced(src.frames(), speed, start_at)), out, settings, ref_id,
-                on_start)
+            run(ctx.workspace, lambda: src.session, paced(src.frames(), speed, start_at), out, settings, ref_id,
+                on_start, narrator)
         else:
             live_src = IrsdkSource()
             click.echo("Waiting for iRacing...")
             live_src.connect()
-            run(ctx.workspace, lambda: live_src.session, with_calls(live_src.frames()), out, settings, ref_id, on_start)
+            run(ctx.workspace, lambda: live_src.session, live_src.frames(), out, settings, ref_id, on_start, narrator)
     except KeyboardInterrupt:
         pass
     finally:

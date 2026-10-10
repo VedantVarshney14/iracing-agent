@@ -290,8 +290,9 @@ iagent live run --replay session.ibt --print --speed 20  # what it would say, fa
 
 ### Rules: what else to watch for
 
-On top of the built-in cues, the coach (or you) can set **rules**: a trigger, a condition and
-what to do, run by the live coach with no model involved. The `live-rules` skill writes them.
+Everything the live coach says goes through **rules**: an event, a condition and what to do,
+run with no model involved. Its own cues, feedback, summaries and debriefs are built-in rules;
+the coach (or you) can add more. The `live-rules` skill writes them.
 
 ```bash
 iagent rules add '{"id": "pouhon-wide", "track": "spa-2024-up",
@@ -300,14 +301,17 @@ iagent rules add '{"id": "pouhon-wide", "track": "spa-2024-up",
 iagent rules backtest pouhon-wide        # replay recent sessions: where it fires, what's said
 iagent rules activate pouhon-wide        # live (a running coach picks it up within ~10 s)
 iagent rules list
-iagent rules vars                        # every trigger and the variables it provides
+iagent rules vars                        # every event, its fields, the shared state, functions
 ```
 
-- **Triggers:** a point on track (`{"at": "T9"}`: a cue timed to finish before the reference
-  brake point, or `"T9 apex"`, metres, `lead_s`, `offset_m`), a corner exit with that corner's
-  numbers against the reference (`brake_diff_m`, `min_speed_diff_kph`, `off_track_m`, ...), lap
-  complete (`new_best`, `gap_s`, ...), pit entry/exit, pace or focus changes, a condition on live
-  channels (`"speed_kph > 280"`, edge-triggered), and schedules (`every_laps`, `every_s`, ...).
+- **Events:** `when` names any event the live coach knows (`{"event": "corner_exit", "corner":
+  "Pouhon"}`), with filters on its fields. Among them: a point on track (`{"at": "T9"}`: timed to
+  finish before the reference brake point, or `"T9 apex"`, metres, `lead_s`, `offset_m`), a corner
+  exit with that corner's numbers against the reference (`brake_diff_m`, `min_speed_diff_kph`,
+  `off_track_m`, ...), lap complete (`new_best`, `gap_s`, ...), pit entry/exit, pace or focus
+  changes, a cool-down, a condition on live channels (`{"condition": "speed_kph > 280"}`,
+  edge-triggered), and schedules (`every_laps`, `every_s`, ...). `iagent rules vars` lists them
+  all, generated from their definitions.
 - **Conditions and text** use a small, safe expression language: arithmetic, comparisons,
   `and`/`or`/`not`, `in`, and helpers like `round5()` and `say_time()`. Spoken text has
   `{expression}` holes. A missing value (a corner taken without braking has no `brake_m`)
@@ -370,7 +374,8 @@ iagent/
   laps/        segmentation, distance resampling, lap store, pace filter, recorder
   analysis/    corner map and metrics, CrewChief landmarks, splits, traces, position
   references/  Garage61 client, CSV import, iRacing ghost files
-  live/        the live coach: sources, cue plans, speech, rules (expr, engine, backtests)
+  live/        the live coach: one event pipeline (pipeline, events), components/, rules and
+               builtin_rules, phrasing, speech, narrator, sources, cue plans, backtests
   testing/     synthetic lap generator, .ibt writer
   ui/          `iagent ui`: the local API server and what the screens show (review.py)
   workspace.py lap stores, reference laps and corner maps, shared by the CLI and the UI

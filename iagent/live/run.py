@@ -7,7 +7,6 @@ from typing import Callable, Iterator
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import PLAN_VERSION, CuePlan, build_plan, load_plan, save_plan, use_next_plan
 from iagent.live.rulebook import load_rules, signature
-from iagent.live.rules import RuleEngine
 from iagent.live.speech import Arbiter, Voice
 from iagent.telemetry.frames import Frame
 from iagent.telemetry.session import SessionInfo
@@ -33,7 +32,7 @@ def plan_for(ws: Workspace, session: SessionInfo, ref_id: str | None = None, reb
 
 
 def start_coach(root: Path, session: SessionInfo, voice: Voice, settings: Settings | None = None,
-                ref_id: str | None = None) -> LiveCoach:
+                ref_id: str | None = None, narrator=None, narrator_context=None) -> LiveCoach:
     ws = Workspace(root)
     try:
         plan = plan_for(ws, session, ref_id)
@@ -51,13 +50,13 @@ def start_coach(root: Path, session: SessionInfo, voice: Voice, settings: Settin
     rules = load_rules(root, session.track_key, session.car_key, "active")
     if rules:
         logger.info("Active rules: %s", ", ".join(r.id for r in rules))
-    engine = RuleEngine(rules)
     if hasattr(voice, "prepare"):  # cue-like rule lines with fixed text can be rendered now too
         fixed = [a.template.text for r in rules for a in r.actions if a.kind == "say" and not a.template.names]
         if fixed:
             voice.prepare(fixed)
     return LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own,
-                     carried_focus=carried["focus"] if carried else None, rules=engine)
+                     carried_focus=carried["focus"] if carried else None, rules=rules, narrator=narrator,
+                     narrator_context=narrator_context)
 
 
 def reload_rules(root: Path, coach: LiveCoach) -> None:
@@ -77,7 +76,8 @@ def own_best(ws: Workspace, track: str, car: str):
 
 def run(root: Path, session_of: Callable[[], SessionInfo], frames: Iterator[Frame], voice: Voice,
         settings: Settings | None = None, ref_id: str | None = None,
-        on_start: Callable[[LiveCoach], None] | None = None) -> LiveCoach | None:
+        on_start: Callable[[LiveCoach], None] | None = None, narrator=None,
+        narrator_context: Callable[[], dict] | None = None) -> LiveCoach | None:
     """Coach until the frames run out. A different track or car (a new session) restarts the
     coach with that combination's plan."""
     coach: LiveCoach | None = None
@@ -90,7 +90,7 @@ def run(root: Path, session_of: Callable[[], SessionInfo], frames: Iterator[Fram
             if (session.track_key, session.car_key) != key:
                 key = (session.track_key, session.car_key)
                 rules_sig = signature(root)
-                coach = start_coach(root, session, voice, settings, ref_id)
+                coach = start_coach(root, session, voice, settings, ref_id, narrator, narrator_context)
                 if on_start:
                     on_start(coach)
             elif (sig := signature(root)) != rules_sig:

@@ -7,6 +7,7 @@ import pytest
 from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live.coach import CornerResult, LiveCoach, Settings
+from iagent.live.components import CueCaller, Focus, Pace
 from iagent.live.cues import build_plan
 from iagent.live.session import LiveSessions, recordings
 from iagent.live.speech import Arbiter, CapturedVoice
@@ -47,8 +48,8 @@ def coach_for(root, **settings) -> LiveCoach:
 
 
 def lap(coach: LiveCoach, losses: dict[int, float]) -> str | None:
-    coach._laps_done += 1
-    return coach._update_focus([CornerResult(c, d, None, None, d >= 0.08) for c, d in losses.items()])
+    coach.state["lap"] += 1
+    return coach.pipeline.get(Focus).update([CornerResult(c, d, None, None, d >= 0.08) for c, d in losses.items()])
 
 
 def test_the_focus_is_the_biggest_loss_and_moves_on_once_sorted(root):
@@ -64,14 +65,13 @@ def test_the_focus_is_the_biggest_loss_and_moves_on_once_sorted(root):
 
 def test_with_a_focus_only_it_and_big_losses_are_cued(root):
     coach = coach_for(root, learning_laps=0)
-    coach._laps_done = 2
-    coach.focus = 2
-    coach._big_trouble = {4}
-    wanted = [c.corner for c in coach.plan.cues if coach._wanted(c)]
+    coach.state.update(lap=2, learning=False, focus=2, big_trouble={4})
+    wanted = [c.corner for c in coach.plan.cues if coach.wanted(c)]
     assert wanted == [2, 4]
-    coach.set_focus(3)
+    coach.post("set_focus", corner=3)
+    coach.pipeline.run_inbox()
     assert coach.focus == 3 and coach.focus_log[-1]["manual"] is True
-    assert coach._cue_text(coach.plan.cue_for(3)).startswith("Focus. ")
+    assert coach.pipeline.get(CueCaller).text(coach.plan.cue_for(3)).startswith("Focus. ")
 
 
 def test_a_session_replays_and_logs_what_was_said(root, recording):
@@ -145,7 +145,7 @@ def drive_kinds(root, kinds, seed=11):
     finally:
         ws.close()
     laps = []
-    coach.on_lap = laps.append
+    coach.on("lap", lambda e: laps.append({**e.public(), "at": e.at}))
     for f in src.frames():
         coach.push(f)
     return coach, laps
@@ -168,5 +168,6 @@ def test_pace_is_judged_against_your_own_best_not_the_reference(root):
     from iagent.testing.synthetic import LapKind
 
     coach, laps = drive_kinds(root, [LapKind.CLEAN] * 3)
-    assert coach._pace_own and all(lap["pace"] == "pushing" for lap in laps)
-    assert 0.9 < coach.pace_ratio(coach._prev_d) < 1.1  # where the car is now
+    pace = coach.pipeline.get(Pace)
+    assert pace._own and all(lap["pace"] == "pushing" for lap in laps)
+    assert 0.9 < pace.ratio(coach.state["lap_dist"]) < 1.1  # where the car is now

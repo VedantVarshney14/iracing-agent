@@ -4,15 +4,14 @@ and stop it.
 The coach runs on its own thread. Everything it does is logged as events (lines said, cut off or
 dropped and why, laps, focus changes, the driver's questions and the answers), kept in memory for
 the page and appended to `sessions/live/<id>.jsonl` in the workspace for review afterwards.
-Anything the browser asks of the running coach (say an answer, change the focus) is queued and
-done on the coach's thread between frames, so the coach itself needs no locking. So are the
-narrator's replies: the cool-down debrief in the coach's own words, and what the coach says when
-a rule wakes it (`iagent.live.narrator`).
+Everything the coach does is an event in its pipeline; the session log is a listener that writes
+the ones defined as logged. Anything the browser asks of the running coach (say an answer, change
+the focus) is posted to the pipeline as an event, handled on the coach's thread at the next frame,
+so the coach itself needs no locking; so are the narrator's replies.
 """
 
 import json
 import logging
-import queue
 import threading
 import time
 from dataclasses import dataclass
@@ -22,13 +21,12 @@ from typing import Callable, Iterator
 
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.run import run
-from iagent.live.speech import ANSWER, CapturedVoice, Utterance, Voice
+from iagent.live.events import EVENTS
+from iagent.live.speech import CapturedVoice, Voice
 from iagent.telemetry.frames import Frame
 from iagent.workspace import Workspace
 
 logger = logging.getLogger("iagent.live")
-
-ANSWER_EXPIRES_S = 90.0  # an answer waits this long for a straight
 
 
 @dataclass
@@ -65,7 +63,6 @@ class LiveSessions:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
-        self._calls: queue.Queue[Callable[[LiveCoach, float], None]] = queue.Queue()
         self._events: list[dict] = []
         self._log_path: Path | None = None
         self.coach: LiveCoach | None = None
@@ -89,7 +86,6 @@ class LiveSessions:
             if self._thread is not None and self._thread.is_alive():
                 raise SessionError("A session is already running: stop it first.")
             self._stop.clear()
-            self._calls = queue.Queue()
             self._events = []
             self.coach, self.error, self.options = None, None, options
             self.session_id = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -116,26 +112,14 @@ class LiveSessions:
             self._thread.join(timeout=timeout_s)
 
     def say(self, text: str, kind: str = "answer") -> None:
-        """Queue a line (e.g. the coach's answer to a question) for the next straight."""
-        def call(coach: LiveCoach, now: float) -> None:
-            coach.arbiter.say(Utterance(text, ANSWER, kind, now, now + ANSWER_EXPIRES_S))
-        self._calls.put(call)
+        """Say a line (e.g. the coach's answer to a question) on the next straight."""
+        if self.coach is not None:
+            self.coach.post("say", text=text, kind=kind)
 
     def set_focus(self, corner: int | None) -> None:
         if self.coach is None:
             raise SessionError("No session running.")
-
-        def call(coach: LiveCoach, now: float) -> None:
-            try:
-                entry = coach.set_focus(corner)
-            except KeyError as e:
-                self._log({"type": "error", "message": str(e)})
-                return
-            if entry is not None:
-                entry["logged"] = True
-            self._log({"type": "focus", "at": now, "by": "driver",
-                       "focus": {k: v for k, v in entry.items() if k != "logged"} if entry else None})
-        self._calls.put(call)
+        self.coach.post("set_focus", corner=corner)
 
     def note_driver(self, text: str) -> dict:
         return self._log({"type": "driver", "at": self._now(), "text": text})
@@ -156,17 +140,16 @@ class LiveSessions:
         }
         if coach is not None:
             last = self._last_frame
-            focus = next(({k: v for k, v in f.items() if k != "logged"} for f in reversed(coach.focus_log)
-                          if f["cue"] == coach.focus), None)
+            focus = coach.focus_entry()
             out.update({
                 "track": {"key": coach.session.track_key, "name": coach.session.track_name,
                           "car": coach.session.car_key, "car_name": coach.session.car_name},
                 "ref": {"lap_id": coach.plan.ref_lap_id, "lap_time": coach.plan.ref_lap_time, "driver": self._ref_driver},
-                "laps_done": coach._laps_done,
+                "laps_done": coach.laps,
                 "mode": coach.mode,
-                "learning": coach._laps_done < coach.settings.learning_laps,
+                "learning": coach.state["learning"],
                 "focus": focus,
-                "cues": [{"corners": c.corners, "text": c.text, "cued": coach._wanted(c)} for c in coach.plan.cues],
+                "cues": [{"corners": c.corners, "text": c.text, "cued": coach.wanted(c)} for c in coach.plan.cues],
                 "lap_dist": last.get("LapDist") if last else None,
                 "session_time": last.session_time if last else None,
             })
@@ -219,7 +202,9 @@ class LiveSessions:
 
             settings = Settings(learning_laps=options.learning_laps, focus=options.focus,
                                 crewchief=crewchief.resolve(options.crewchief))
-            run(self.workspace, session_of, self._frames(frames), voice, settings, options.ref, self._attach)
+            narrator = self.narrator if options.narrate else None
+            run(self.workspace, session_of, self._frames(frames), voice, settings, options.ref, self._attach,
+                narrator, self.context)
             self._log({"type": "status", "state": "stopped" if self._stop.is_set() else "ended"})
         except Exception as e:  # report it on the page
             logger.exception("Live session failed")
@@ -234,9 +219,6 @@ class LiveSessions:
             if self._stop.is_set():
                 return
             self._last_frame = frame
-            if self.coach is not None:
-                while not self._calls.empty():
-                    self._calls.get_nowait()(self.coach, frame.session_time)
             yield frame
 
     def _attach(self, coach: LiveCoach) -> None:
@@ -247,24 +229,7 @@ class LiveSessions:
             ws.close()
         self.coach = coach
         self.state = "running"
-        coach.arbiter.on_event = self._line
-        coach.on_lap = lambda lap: self._lap(coach, lap)
-        coach.on_mode = lambda mode, now, d: self._log({"type": "pace", "mode": mode, "at": now, "lap_dist": round(d)})
-        coach.on_advice = lambda advice: self._log({"type": "advice", **advice})
-        coach.rules.on_fire = lambda fired: self._log({"type": "rule", **fired})
-        radio = None
-        if self.narrator is not None and self.options.narrate:
-            from iagent.live.narrator import Radio
-
-            radio = Radio(self.narrator, self._calls.put, self._log, self.context, self._now)
-            radio.attach(coach)
-
-        def wake(w: dict) -> None:
-            self._log({"type": "wake", **w})
-            if radio is not None:
-                radio.wake(coach, w)
-        coach.rules.on_wake = wake
-        coach.on_debrief = lambda d: self._log({"type": "debrief", **d})
+        coach.on("*", self._event)
         self._log({"type": "status", "state": "running", "track": coach.session.track_name,
                    "car": coach.session.car_name, "ref": coach.plan.ref_lap_id,
                    "track_key": coach.session.track_key, "car_key": coach.session.car_key,
@@ -273,17 +238,10 @@ class LiveSessions:
                    "focus": coach.focus_log[-1] if coach.focus_log else None,
                    "rules": [r.id for r in coach.rules.rules], "crewchief": coach.settings.crewchief})
 
-    def _line(self, what: str, u: Utterance, now: float) -> None:
-        self._log({"type": "line", "status": what, "kind": u.kind, "text": u.text, "corner": u.corner,
-                   "at": now, "note": u.note if what == "dropped" else None, "rule": u.rule})
-
-    def _lap(self, coach: LiveCoach, lap: dict) -> None:
-        self._log({"type": "lap", **lap})
-        latest = coach.focus_log[-1] if coach.focus_log else None
-        if latest is not None and latest.get("logged") is None:
-            latest["logged"] = True
-            self._log({"type": "focus", "at": lap["at"], "focus": {k: v for k, v in latest.items() if k != "logged"},
-                       "by": "driver" if latest.get("manual") else "coach"})
+    def _event(self, e) -> None:
+        """The pipeline's events that are defined as logged go in the session log."""
+        if EVENTS[e.type].log:
+            self._log({"type": e.type, "at": e.at, **e.public()})
 
     def _log(self, event: dict) -> dict:
         event = {"seq": len(self._events), "wall": datetime.now(timezone.utc).isoformat(), **event}

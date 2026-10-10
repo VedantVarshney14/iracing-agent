@@ -14,8 +14,10 @@ no model involved, so they must be exact. Backtest every rule before it goes liv
 
 1. **Know the problem first.** Use `lap-review` / the notes (`workspace/notes/<track>.md`) to find
    the habit worth watching, e.g. braking 15 m early for T1 on most laps. One rule per habit.
-2. **See what's available:** `iagent rules vars` (or `--trigger corner_exit`) lists every trigger
-   and its variables. Corner metrics at `corner_exit` use the same numbers as
+2. **See what's available:** `iagent rules vars` (or `--event corner_exit`) lists every event the
+   live coach knows, its fields, the shared state every rule can read (the focus, the pace mode,
+   the corners the driver struggles with), functions and actions. `when` is
+   `{"event": <name>, <field>: <value>, ...}`; the shorthand below works too. Corner metrics at `corner_exit` use the same numbers as
    `iagent corners compare`; `brake_diff_m` < 0 means braked earlier than the reference.
    `iagent rules list --track T` shows rules already set: change one with `add --replace`
    rather than adding a near-duplicate.

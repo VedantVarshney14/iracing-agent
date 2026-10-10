@@ -10,7 +10,7 @@ from iagent.live import rulebook
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan
 from iagent.live.expr import Expr, ExprError, Template
-from iagent.live.rules import Rule, RuleEngine, RuleError, describe
+from iagent.live.rules import Rule, RuleError, describe
 from iagent.live.session import LiveSessions
 from iagent.live.speech import Arbiter, CapturedVoice
 from iagent.testing.ibt_writer import write_ibt
@@ -38,11 +38,11 @@ def drive(root, rules, source=None, settings=None):
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)
-        engine = RuleEngine(rules)
         coach = LiveCoach(source.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id),
-                          Arbiter(CapturedVoice()), settings or Settings(learning_laps=1), rules=engine)
+                          Arbiter(CapturedVoice()), settings or Settings(learning_laps=1), rules=rules)
     finally:
         ws.close()
+    engine = coach.rules
     frames = list(source.frames())
     coach._frames_seen = []
     for f in frames:
@@ -103,7 +103,7 @@ def test_rules_are_checked_when_added_with_messages_that_say_what_to_fix():
     assert Rule.from_dict(r.to_dict()).fingerprint == r.fingerprint
     assert r.fingerprint != rule(when={"at": "T2 apex", "offset_m": -40}, **{"if": "speed_kph > 100"},
                                  limits={"cooldown_laps": 1}).fingerprint
-    assert set(describe()["triggers"]) >= {"at", "corner_exit", "lap", "pit", "condition", "every_laps"}
+    assert set(describe()["events"]) >= {"approach", "corner_exit", "lap", "pit", "frame", "clock", "pace", "focus"}
 
 
 def test_a_corner_exit_rule_sees_the_same_numbers_as_the_coach(root):
@@ -162,7 +162,7 @@ def test_lap_pit_and_schedule_triggers(root):
     assert len(fired(engine, "pit-in")) == 1
     assert fired(engine, "pit-out")[0]["lap_no"] == 0  # leaving the pits on the out lap
     assert [f["values"]["lap"] for f in fired(engine, "every2")] == [2]  # three counted laps: the out lap doesn't count
-    assert len(fired(engine, "hello")) == 1 and coach.arbiter.voice.spoken[0].text == "Let's go."
+    assert len(fired(engine, "hello")) == 1 and "Let's go." in [s.text for s in coach.arbiter.voice.spoken]
     assert fired(engine, "best") and all(f["actions"][0]["wake"].startswith("new best") for f in fired(engine, "best"))
     fast = fired(engine, "fast")
     assert 1 <= len(fast) <= 5 and all(f["values"]["speed_kph"] > 150 for f in fast)

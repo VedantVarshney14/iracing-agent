@@ -7,9 +7,11 @@ import pytest
 from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live import crewchief
-from iagent.live.coach import LiveCoach, Settings, _longer
+from iagent.live.coach import LiveCoach, Settings
+from iagent.live.components import History
+from iagent.live.phrasing import longer as _longer
 from iagent.live.cues import build_plan, load_plan, plan_path, save_plan
-from iagent.live.rules import Rule, RuleEngine
+from iagent.live.rules import Rule
 from iagent.live.run import own_best, plan_for
 from iagent.live.speech import FEEDBACK, Arbiter, CapturedVoice, Utterance
 from iagent.testing.synthetic import LapKind, SyntheticSource
@@ -33,12 +35,12 @@ def drive(root, kinds, settings, rules=None, seed=11):
         plan = build_plan(ws, TRACK, CAR)
         src = SyntheticSource(n_laps=len(kinds), kinds=kinds, seed=seed, start_m=2900.0)
         coach = LiveCoach(src.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(CapturedVoice()),
-                          settings, own_best=own_best(ws, TRACK, CAR), rules=RuleEngine(rules or []))
+                          settings, own_best=own_best(ws, TRACK, CAR), rules=rules or [])
     finally:
         ws.close()
     laps, modes = [], []
-    coach.on_lap = laps.append
-    coach.on_mode = lambda mode, now, d: modes.append((mode, now))
+    coach.on("lap", lambda e: laps.append({**e.public(), "at": e.at}))
+    coach.on("pace", lambda e: modes.append((e["mode"], e.at)))
     last = None
     for f in src.frames():
         coach.push(f)
@@ -120,7 +122,7 @@ def test_rules_that_duplicate_crewchief_are_flagged():
 def test_a_rule_can_say_more_when_the_driver_is_cruising(root):
     rule = Rule.from_dict({"id": "cool", "when": {"pace": "tranquille"}, "action": {
         "say": "Cool-down. Tyres.", "long": "Cool-down lap. Keep some heat in the tyres, gentle weaving on the straights."}})
-    assert Rule.from_dict(rule.to_dict()).actions[0].longer.text.startswith("Cool-down lap.")
+    assert Rule.from_dict(rule.to_dict()).actions[0].options["longer"].text.startswith("Cool-down lap.")
     kinds = [LapKind.CLEAN, LapKind.CLEAN, LapKind.SLOW, LapKind.CLEAN]
     coach, _, _ = drive(root, kinds, Settings(learning_laps=1, debrief=False, debrief_after_s=5.0), [rule])
     said = [s.text for s in coach.arbiter.voice.spoken if s.kind == "rule"]
@@ -147,8 +149,6 @@ def test_old_cue_plans_are_rebuilt_with_short_forms_keeping_rewritten_cues(root)
 
 
 def test_feedback_notices_repeats_and_progress(root):
-    from iagent.live.coach import CornerResult
-
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)
@@ -156,15 +156,15 @@ def test_feedback_notices_repeats_and_progress(root):
                           Arbiter(CapturedVoice()))
     finally:
         ws.close()
-    c = coach.cmap.get(2)
-    early = CornerResult(2, 0.2, "Turn 2: braked 20 metres early. Brake later.", "Brake later than last lap.", True,
-                         cause="early_brake", amount=20.0, longer="Turn 2: you're braking about 20 metres...")
-    assert coach._feedback_line(c, early)[0] == "Turn 2: braked 20 metres early. Brake later."
-    coach._laps_done += 1
-    assert coach._feedback_line(c, early)[0] == "Turn 2 again: braked 20 metres early. Brake later."
-    coach._laps_done += 1
-    fine = CornerResult(2, 0.01, None, None, False)
-    text, longer = coach._feedback_line(c, fine)
+    history = coach.pipeline.get(History)
+    early = {"corner": 2, "name": "Turn 2", "delta_s": 0.2, "cause": "early_brake",
+             "advice": "Turn 2: braked 20 metres early. Brake later.", "longer": "Turn 2: you're braking about 20 metres..."}
+    fine = {"corner": 2, "name": "Turn 2", "delta_s": 0.01, "cause": None, "advice": None, "longer": None}
+    assert history._line(early)[0] == "Turn 2: braked 20 metres early. Brake later."
+    coach.state["lap"] += 1
+    assert history._line(early)[0] == "Turn 2 again: braked 20 metres early. Brake later."
+    coach.state["lap"] += 1
+    text, longer = history._line(fine)
     assert text == "Turn 2: better." and "keep that" in longer
-    coach._laps_done += 1
-    assert coach._feedback_line(c, fine) is None  # said once, not every lap after
+    coach.state["lap"] += 1
+    assert history._line(fine) is None  # said once, not every lap after

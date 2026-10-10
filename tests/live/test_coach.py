@@ -7,6 +7,8 @@ from iagent.cli import cli
 from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live.coach import LiveCoach, Settings
+from iagent.live.components import Debrief
+from iagent.live import phrasing
 from iagent.live.cues import Cue, build_plan, load_plan, merge_close, save_plan
 from iagent.live.speech import Arbiter, CapturedVoice
 from iagent.testing.synthetic import DEFAULT_TRACK, LapKind, SyntheticSource
@@ -64,7 +66,7 @@ class Where(CapturedVoice):
 
     def play(self, utterance, now):
         super().play(utterance, now)
-        self.at.append((utterance.text, self.frame.get("LapDist"), self.frame.get("Speed"), self.coach._laps_done))
+        self.at.append((utterance.text, self.frame.get("LapDist"), self.frame.get("Speed"), self.coach.laps))
 
 
 def drive(ws, source, settings=None):
@@ -98,7 +100,7 @@ def test_after_the_learning_laps_only_struggling_corners_are_cued(ws):
     first = [c for laps, c in cues if laps == 0]
     later = [c for laps, c in cues if laps >= 1]
     assert sorted(set(first)) == [1, 2, 3, 4]
-    struggled = {r.corner for lap in coach.results for r in lap if r.struggling or r.hint}
+    struggled = {r.corner for lap in coach.pipeline.get(Debrief).results for r in lap if r.struggling or r.hint}
     assert set(later) <= struggled  # only corners that went badly (or have a hint) get cued again
     assert len(later) < 4 * 4
 
@@ -132,13 +134,16 @@ def test_a_new_track_is_mapped_from_reference_laps(tmp_path):
         w.close()
 
 
-def test_advice_names_the_cause_and_hints_for_next_lap(ws):
-    plan = build_plan(ws, TRACK, CAR)
-    coach = LiveCoach(SyntheticSource(n_laps=1).session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id),
-                      Arbiter(CapturedVoice()))
+def advice(name, mine, ref, delta):
+    cause, amount = phrasing.cause_of(mine, ref, delta, Settings())
+    texts = phrasing.advice(name, cause, amount, ref, mine)
+    return texts["advice"], texts["hint"]
+
+
+def test_advice_names_the_cause_and_hints_for_next_lap():
     ref = {"brake_m": 480, "min_speed_kph": 100, "full_throttle_m": 620, "min_throttle": 0.0}
-    early = coach._advice("T1", {**ref, "brake_m": 455}, ref, 0.2)
+    early = advice("T1", {**ref, "brake_m": 455}, ref, 0.2)
     assert early == ("T1: braked 25 metres early. Brake later.", "Brake later than last lap.")
-    assert coach._advice("T1", {**ref, "min_speed_kph": 92}, ref, 0.2)[0].startswith("T1: 8 kilometres an hour slower")
-    assert coach._advice("T1", {**ref, "off_track_m": 12}, ref, 0.0)[1] == "Tidy entry, you ran wide last lap."
-    assert coach._advice("T1", {**ref, "brake_m": 455}, ref, 0.02) == (None, None)  # it cost nothing
+    assert advice("T1", {**ref, "min_speed_kph": 92}, ref, 0.2)[0].startswith("T1: 8 kilometres an hour slower")
+    assert advice("T1", {**ref, "off_track_m": 12}, ref, 0.0)[1] == "Tidy entry, you ran wide last lap."
+    assert advice("T1", {**ref, "brake_m": 455}, ref, 0.02) == (None, None)  # it cost nothing

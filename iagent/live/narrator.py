@@ -19,6 +19,9 @@ import threading
 import time
 from typing import Callable
 
+from iagent.live.events import define_event
+from iagent.live.pipeline import Component
+
 logger = logging.getLogger("iagent.live")
 
 SILENT = "SILENT"
@@ -143,48 +146,42 @@ def wake_prompt(wake: dict, state: dict) -> str:
     return "\n".join(lines)
 
 
-ANSWER_EXPIRES_S = 90.0  # a reply waits this long for a straight
 
-Post = Callable[[Callable], None]  # run fn(coach, now) on the coach's thread, between frames
+# --- in the pipeline ------------------------------------------------------------------------------
+
+define_event("narrate", "Ask the coach (the model) to put something in its own words.", {
+    "kind": "what it's for (a key of PROMPTS)", "reply": "the event the words come back as",
+    "stretch": "passed back with the reply", "rule": "passed back with the reply",
+    "min_gap_s": "skip it if one of this kind was asked for less than this long ago",
+}, internal=("facts", "wake", "state"))
+define_event("narration_asked", "The coach is working on its words.", {
+    "kind": "what for", "reply": "the event they'll come back as", "stretch": "as asked"})
+define_event("wake", "A rule woke the coach.", {
+    "rule": "the rule", "message": "its message", "values": "what it saw", "description": "the rule's description"},
+             log=True)
+define_event("coach_words", "The coach's reply to a wake-up.", {"text": "the words, or none", "rule": "the rule"},
+             log=True)
+
+# How each kind of request is put to the model: kind -> (the narrate event's fields -> prompt).
+PROMPTS: dict[str, Callable[[dict], str]] = {
+    "debrief": lambda f: debrief_prompt(f["facts"]),
+    "wake": lambda f: wake_prompt(f["wake"], f["state"]),
+}
 
 
-class Radio:
-    """Connects a running coach to the narrator: debriefs asked for and rule wake-ups answered,
-    with every reply handed back to the coach's thread through POST."""
+class Radio(Component):
+    """Puts `narrate` requests to the narrator (if there is one) off the coach thread; the reply
+    comes back, through the pipeline's inbox, as the event the request named."""
 
-    def __init__(self, narrator: Narrator, post: Post, log: Callable[[dict], None],
-                 context: Callable[[], dict] = dict, now: Callable[[], float | None] = lambda: None):
-        self.narrator, self._post, self._log, self._context, self._now = narrator, post, log, context, now
-
-    def attach(self, coach) -> None:
-        coach.on_narrate = lambda facts, stretch: self.debrief(coach, facts, stretch)
-
-    def debrief(self, coach, facts: dict, stretch: int) -> None:
-        asked_at = self._now()
+    def on_narrate(self, e):
+        narrator = self.ctx.narrator
+        if narrator is None:
+            return
+        echo = {k: e.get(k) for k in ("stretch", "rule") if e.get(k) is not None}
+        asked_at = e.at
 
         def reply(text: str | None) -> None:
-            def call(c, now: float) -> None:
-                used = c.narrated(text, stretch)
-                self._log({"type": "narration", "kind": "debrief", "at": now, "asked_at": asked_at, "text": text,
-                           "status": "used" if used else ("none" if not text else "too late")})
-            self._post(call)
-        if not self.narrator.request("debrief", debrief_prompt(facts), self._context(), reply):
-            coach.narrated(None, stretch)  # one already running: the coach's own phrasing then
-
-    def wake(self, coach, wake: dict) -> None:
-        """A rule woke the coach: it may answer on the radio."""
-        from iagent.live.speech import ANSWER, Utterance
-
-        focus = next((f["label"] for f in reversed(coach.focus_log) if f["cue"] == coach.focus), None)
-        state = {"mode": coach.mode, "lap": coach._laps_done, "focus_label": focus, "crewchief": coach.settings.crewchief}
-
-        def reply(text: str | None) -> None:
-            def call(c, now: float) -> None:
-                self._log({"type": "narration", "kind": "wake", "rule": wake["rule"], "at": now, "text": text,
-                           "status": "said" if text else "none"})
-                if text:
-                    c.arbiter.say(Utterance(text, ANSWER, "coach", now, now + ANSWER_EXPIRES_S, rule=wake["rule"]))
-            self._post(call)
-        if not self.narrator.request("wake", wake_prompt(wake, state), self._context(), reply, WAKE_MIN_GAP_S):
-            self._log({"type": "narration", "kind": "wake", "rule": wake["rule"], "at": wake.get("at"),
-                       "status": "skipped", "text": None})
+            self.pipe.post(e["reply"], text=text, asked_at=asked_at, **echo)
+        context = self.ctx.narrator_context() if self.ctx.narrator_context else {}
+        if narrator.request(e["kind"], PROMPTS[e["kind"]](e.fields), context, reply, e.get("min_gap_s") or 0.0):
+            self.emit("narration_asked", kind=e["kind"], reply=e["reply"], stretch=e.get("stretch"))
