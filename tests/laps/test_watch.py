@@ -90,3 +90,16 @@ def test_a_broken_file_is_reported_not_retried(tmp_path, folder):
 def test_missing_folder(tmp_path):
     watcher = TelemetryWatcher(tmp_path / "ws", tmp_path / "nope")
     assert watcher.scan() == [] and watcher.status()["found"] is False
+
+
+def test_the_folder_can_be_changed_and_is_remembered(tmp_path, folder):
+    from iagent.laps.watch import saved_telemetry_dir
+
+    ws = tmp_path / "ws"
+    assert saved_telemetry_dir(ws) is None
+    watcher = TelemetryWatcher(ws, tmp_path / "elsewhere")
+    recording(folder)
+    watcher.set_folder(folder)
+    assert saved_telemetry_dir(ws) == folder and watcher.status()["folder"] == str(folder)
+    watcher.scan(now=2000)
+    assert watcher.scan(now=2010) == [NAME]

@@ -1,6 +1,8 @@
 // Client for the coach chat (iagent/ui/coach.py): one POST per message, answered with a stream of
 // JSON lines.
 
+import { POST_HEADERS } from "./api";
+
 export interface UiAction {
   corners?: number[];
   range?: [number, number];
@@ -37,7 +39,7 @@ export async function streamChat(
 ): Promise<void> {
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: POST_HEADERS,
     body: JSON.stringify(body),
   });
   if (!res.ok || !res.body) {
@@ -60,7 +62,7 @@ export async function streamChat(
 export function stopChat(runId: string): Promise<Response> {
   return fetch("/api/chat/stop", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: POST_HEADERS,
     body: JSON.stringify({ run_id: runId }),
   });
 }

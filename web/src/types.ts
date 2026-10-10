@@ -140,6 +140,25 @@ export interface SystemInfo {
   lapfiles: string;
   lapfiles_found: boolean; // iRacing installed here: ghosts can be installed directly
   telemetry: TelemetryStatus;
+  garage61: { token: boolean };
+  coach: { found: boolean; command: string };
+}
+
+export interface Garage61Account {
+  connected: boolean;
+  reason?: string;
+  user?: string;
+  teams?: string[];
+}
+
+export interface IngestResult {
+  file: string;
+  laps: number;
+  valid?: number;
+  track?: string | null;
+  track_key?: string | null;
+  car_key?: string | null;
+  skipped?: string;
 }
 
 export interface GhostResult {

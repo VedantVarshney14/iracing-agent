@@ -4,12 +4,14 @@ import type { UiAction } from "./chat";
 import { Chat } from "./components/Chat";
 import { CornerTable } from "./components/CornerTable";
 import { CornerView } from "./components/CornerView";
+import { Library } from "./components/Library";
 import { Telemetry } from "./components/Telemetry";
 import { TopBar } from "./components/TopBar";
 import { TrackMap } from "./components/TrackMap";
 import type { Garage61Lap, Garage61Laps, LapsResponse, Review, SystemInfo, TrackRow } from "./types";
 
 type Group = { track: string; car: string };
+export type Page = "library" | "review" | "corner";
 
 const params = new URLSearchParams(window.location.search);
 // The URL's lap, ghost, corner and map view apply to the first load only.
@@ -34,7 +36,7 @@ export function App() {
   const [cursor, setCursor] = useState<number | null>(null);
   const [zoom, setZoom] = useState<[number, number] | null>(null);
   const [mapMode, setMapMode] = useState<"lap" | "corner">(params.get("view") === "corner" ? "corner" : "lap");
-  const [page, setPage] = useState<"review" | "corner">(params.get("page") === "corner" ? "corner" : "review");
+  const [page, setPage] = useState<Page>(pageFrom(params.get("page")));
   const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
   // A coach action that switched laps: applied once the new review has loaded.
   const pendingAction = useRef<UiAction | null>(null);
@@ -53,6 +55,7 @@ export function App() {
       .then((rows) => {
         if (stale) return;
         setTracks(rows);
+        if (rows.length === 0) setPage("library"); // first run: start where laps come in
         const fromUrl = rows.find((r) => r.track === params.get("track") && r.car === params.get("car"));
         const first = fromUrl ?? rows[0];
         if (first) setGroup({ track: first.track, car: first.car });
@@ -88,8 +91,17 @@ export function App() {
     };
   }, [group]);
 
-  // Machine status every 10 s; when the telemetry watcher brings in new laps, refresh the lists
-  // (without moving the driver off what they're looking at).
+  /** Reload the track list and this track's laps, without moving the driver off what they're
+   * looking at. */
+  async function reloadLists() {
+    const rows = await api.tracks();
+    setTracks(rows);
+    if (!groupRef.current && rows[0]) setGroup({ track: rows[0].track, car: rows[0].car });
+    const g = groupRef.current;
+    if (g) setLaps(await api.laps(g.track, g.car));
+  }
+
+  // Machine status every 10 s; when the telemetry watcher brings in new laps, refresh the lists.
   useEffect(() => {
     let seen: number | null = null;
     const poll = () =>
@@ -98,14 +110,7 @@ export function App() {
         .then((info) => {
           setSystem(info);
           const version = info.telemetry.version;
-          if (seen == null || version !== seen) {
-            api.tracks().then((rows) => {
-              setTracks(rows);
-              if (!groupRef.current && rows[0]) setGroup({ track: rows[0].track, car: rows[0].car });
-            }).catch(() => {});
-            const g = groupRef.current;
-            if (g) api.laps(g.track, g.car).then(setLaps).catch(() => {});
-          }
+          if (seen != null && version !== seen) reloadLists().catch(() => {});
           seen = version;
         })
         .catch(() => {});
@@ -159,9 +164,25 @@ export function App() {
     const q = new URLSearchParams({ track: group.track, car: group.car, lap: review.lap.lap_id, ref: review.ref.lap_id });
     if (primary != null) q.set("corner", String(primary));
     if (mapMode === "corner") q.set("view", "corner");
-    if (page === "corner") q.set("page", "corner");
+    if (page !== "review") q.set("page", page);
     window.history.replaceState(null, "", `?${q}`);
   }, [group, review, primary, mapMode, page]);
+
+  /** From the library: review this lap against this ghost. */
+  const openFromLibrary = (g: Group, lap: string, ref: string) => {
+    ghostChosen.current = true;
+    if (g.track === group?.track && g.car === group?.car) {
+      setLapId(lap);
+      setRefId(ref);
+    } else {
+      // Picked up by the laps effect once the new track's laps arrive.
+      urlState.lap = lap;
+      urlState.ref = ref;
+      setReview(null);
+      setGroup(g);
+    }
+    setPage("review");
+  };
 
   const pick = (id: number, add = false) => {
     if (add) {
@@ -259,6 +280,10 @@ export function App() {
         garage61={garage61}
         importing={importing}
         system={system}
+        page={page}
+        canReview={review != null}
+        canCorner={review != null && primaryCorner != null}
+        onPage={setPage}
         onGroup={(track, car) => {
           setReview(null);
           ghostChosen.current = false;
@@ -271,28 +296,17 @@ export function App() {
         onRef={onRef}
       />
       {error && <div className="error" role="alert">{error}</div>}
-      {!error && tracks.length === 0 ? (
-        <main className="empty-state">
-          <h1>No laps yet</h1>
-          {system?.telemetry.watching ? (
-            <p>
-              Recording files from iRacing will appear here after a session. Telemetry folder:{" "}
-              <code>{system.telemetry.folder}</code>
-            </p>
-          ) : system?.telemetry.found ? (
-            <p>
-              Telemetry watching is disabled. Ingest a recording with{" "}
-              <code>iagent ingest &lt;file.ibt&gt;</code> or restart <code>iagent ui</code> without{" "}
-              <code>--no-watch</code>.
-            </p>
-          ) : (
-            <p>
-              Put an <code>.ibt</code> recording in <code>{system?.telemetry.folder ?? "your iRacing telemetry folder"}</code>,
-              or ingest one with <code>iagent ingest &lt;file.ibt&gt;</code>.
-            </p>
-          )}
-          {system?.telemetry.error && <p className="error" role="alert">{system.telemetry.error}</p>}
-        </main>
+      {page === "library" ? (
+        <Library
+          tracks={tracks}
+          system={system}
+          current={{ group, lapId: review?.lap.lap_id ?? lapId, refId: review?.ref.lap_id ?? refId }}
+          onOpen={openFromLibrary}
+          onImported={async () => {
+            await reloadLists();
+            setSystem(await api.system());
+          }}
+        />
       ) : review && group ? (
         <div className="workspace">
         {page === "corner" && primaryCorner && cornerWindow ? (
@@ -379,4 +393,8 @@ export function App() {
       )}
     </div>
   );
+}
+
+function pageFrom(value: string | null): Page {
+  return value === "corner" || value === "library" ? value : "review";
 }

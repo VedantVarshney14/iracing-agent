@@ -1,3 +1,4 @@
+import type { Page } from "../App";
 import { lapTime, sessionDate, signed } from "../format";
 import type { Garage61Laps, LapsResponse, Review, SystemInfo, TrackRow } from "../types";
 import { GhostButton, TelemetryIndicator } from "./Status";
@@ -12,12 +13,23 @@ interface Props {
   garage61: Garage61Laps | null;
   importing: string | null; // whose Garage61 lap is being imported
   system: SystemInfo | null;
+  page: Page;
+  canReview: boolean;
+  canCorner: boolean;
+  onPage: (page: Page) => void;
   onGroup: (track: string, car: string) => void;
   onLap: (id: string) => void;
   onRef: (id: string) => void; // a lap id, or "g61:<garage61 id>" for a lap still to import
 }
 
-export function TopBar({ tracks, group, laps, lapId, refId, review, garage61, importing, system, onGroup, onLap, onRef }: Props) {
+const PAGES: { page: Page; label: string }[] = [
+  { page: "library", label: "Library" },
+  { page: "review", label: "Lap review" },
+  { page: "corner", label: "Corner view" },
+];
+
+export function TopBar(props: Props) {
+  const { tracks, group, laps, lapId, refId, review, garage61, importing, system, page, onGroup, onLap, onRef } = props;
   const own = laps?.laps.filter((l) => l.lap_time != null) ?? [];
   // Garage61's list (imported or not), plus any imported reference laps it no longer lists.
   const g61 = garage61?.laps ?? [];
@@ -35,7 +47,18 @@ export function TopBar({ tracks, group, laps, lapId, refId, review, garage61, im
           </svg>
           <span>iRacing Coach</span>
         </div>
-        {tracks.length > 0 && (
+        <nav aria-label="Views" className="views">
+          {PAGES.map((p) => {
+            const enabled = p.page === "library" || (p.page === "review" ? props.canReview : props.canCorner);
+            return (
+              <button key={p.page} type="button" aria-current={page === p.page ? "page" : undefined} disabled={!enabled}
+                onClick={() => props.onPage(p.page)}>
+                {p.label}
+              </button>
+            );
+          })}
+        </nav>
+        {tracks.length > 0 && page !== "library" && (
           <label className="field">
             <span className="sr-only">Track and car</span>
             <select
@@ -54,11 +77,11 @@ export function TopBar({ tracks, group, laps, lapId, refId, review, garage61, im
           </label>
         )}
         <span className="topbar-end">
-          <TelemetryIndicator system={system} />
+          <TelemetryIndicator system={system} onClick={() => props.onPage("library")} />
         </span>
       </header>
 
-      {tracks.length > 0 && <div className="lapbar">
+      {tracks.length > 0 && page !== "library" && <div className="lapbar">
         <label className="field">
           <span className="legend-key"><span className="swatch you" />Lap</span>
           <select value={lapId ?? ""} onChange={(e) => onLap(e.target.value)}>

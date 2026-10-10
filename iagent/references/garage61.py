@@ -64,6 +64,17 @@ def find_token(dotenv: Path | None = None) -> str | None:
     return None
 
 
+def save_token(token: str, path: Path | None = None) -> Path:
+    """Save a personal access token to TOKEN_FILE (readable by the user only)."""
+    path = path or TOKEN_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(token.strip() + "\n")
+    path.chmod(0o600)  # if it already existed with wider permissions
+    return path
+
+
 class Garage61Client:
     def __init__(self, token: str, base_url: str = BASE_URL, transport: httpx.BaseTransport | None = None):
         self._http = httpx.Client(
