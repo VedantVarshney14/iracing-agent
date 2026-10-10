@@ -64,8 +64,23 @@ no model involved, so they must be exact. Backtest every rule before it goes liv
   corner was taken flat.
 - **Track-wide rules** (no `track`) work everywhere: lap rules (`{"lap": "complete"}`),
   schedules (`{"every_laps": 5}`), a reminder on a cool-down (`{"pace": "tranquille"}`).
-- `wake` hands the event to the coach (you); keep it for things that need thinking, not
-  for anything the rule can say itself.
+- `wake` hands the event to the coach (you) during the session: what you reply is spoken to
+  the driver (one short sentence while they're pushing), or reply `SILENT`. Use it where a
+  judgement in your own words beats a fixed line; at most one wake-up every 30 s gets through.
+
+## Cues and lines in your words
+
+Corner cues are fixed text, said instantly at the right point, but you write that text.
+`iagent cues show --track T --car C` lists them; rewrite one the way you'd say it on the radio,
+with a short reminder for once the driver knows the corner:
+
+```bash
+iagent cues set --track spa-2024-up --car formulair04 18 "Bus Stop. Big stop at the board, second gear, then left." \
+  --short "Bus Stop. Big stop."
+```
+
+Same for rules: a `say` with a natural `long` version. Between sessions is when to do this,
+after a lap review, so the driver hears your voice even where no model runs.
 
 ## Examples
 

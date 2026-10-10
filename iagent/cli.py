@@ -1107,9 +1107,12 @@ def live():
 @click.option("--threads", default=2, show_default=True, help="CPU threads for speech.")
 @click.option("--crewchief", type=click.Choice(["auto", "on", "off"]), default="auto", show_default=True,
               help="Share the radio with CrewChief: leave lap times to it, keep quiet after the line. auto: if it's running.")
+@click.option("--narrate/--no-narrate", default=None,
+              help="Let the coach (claude -p) word cool-down debriefs and answer rules that wake it. "
+                   "Default: on if `claude` is found and the replay runs in real time.")
 @click.pass_obj
 def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None, voice: str, print_only: bool,
-             ref_id: str | None, learning_laps: int, threads: int, crewchief: str):
+             ref_id: str | None, learning_laps: int, threads: int, crewchief: str, narrate: bool | None):
     """Coach live: cue each corner on the approach, say what went wrong after it, sum up each lap.
 
     On the sim PC this reads iRacing (start it before or after; Ctrl+C to stop). Elsewhere, use
@@ -1135,13 +1138,47 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
             raise click.ClickException(str(e)) from e
         out = _SpokenToo(out)
 
+    import queue
+    import shutil
+
+    from iagent.live.narrator import Narrator, Radio, ask_with
+    from iagent.ui.coach import CoachRuns
+
+    runs = CoachRuns(ctx.workspace)
+    if narrate is None:
+        narrate = shutil.which(runs.claude) is not None and (not replay or speed <= 1.0)
+    calls: queue.Queue = queue.Queue()
+    current: dict = {}
+
+    def note(event: dict) -> None:
+        if event.get("type") == "narration" and event.get("text"):
+            click.echo(f"[coach] {event['kind']}: {event['status']}")
+
+    radio = Radio(Narrator(ask_with(runs)), calls.put, note) if narrate else None
+
     def on_start(coach):
         rules = coach.rules.rules
+        current["coach"] = coach
         click.echo(f"Coaching {coach.session.track_name} in {coach.session.car_name}: {len(coach.plan.cues)} cues, "
                    f"following {coach.plan.ref_lap_id}." + (f" Rules: {', '.join(r.id for r in rules)}." if rules else "")
-                   + (" Sharing the radio with CrewChief." if coach.settings.crewchief else ""))
-        coach.rules.on_wake = lambda w: click.echo(f"[wake] {w['rule']}: {w['message']}")
+                   + (" Sharing the radio with CrewChief." if coach.settings.crewchief else "")
+                   + (" The coach words debriefs and wake-ups." if radio else ""))
+
+        def wake(w):
+            click.echo(f"[wake] {w['rule']}: {w['message']}")
+            if radio is not None:
+                radio.wake(coach, w)
+        coach.rules.on_wake = wake
         coach.rules.on_fire = on_fire
+        if radio is not None:
+            radio.attach(coach)
+
+    def with_calls(frames):
+        """Replies from the coach are applied on this thread, between frames."""
+        for frame in frames:
+            while current.get("coach") is not None and not calls.empty():
+                calls.get_nowait()(current["coach"], frame.session_time)
+            yield frame
 
     def on_fire(fired):
         for action in fired.get("actions", []):
@@ -1150,12 +1187,13 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
     try:
         if replay:
             src = IbtSource(replay, channels=LIVE_CHANNELS)
-            run(ctx.workspace, lambda: src.session, paced(src.frames(), speed, start_at), out, settings, ref_id, on_start)
+            run(ctx.workspace, lambda: src.session, with_calls(paced(src.frames(), speed, start_at)), out, settings, ref_id,
+                on_start)
         else:
             live_src = IrsdkSource()
             click.echo("Waiting for iRacing...")
             live_src.connect()
-            run(ctx.workspace, lambda: live_src.session, live_src.frames(), out, settings, ref_id, on_start)
+            run(ctx.workspace, lambda: live_src.session, with_calls(live_src.frames()), out, settings, ref_id, on_start)
     except KeyboardInterrupt:
         pass
     finally:

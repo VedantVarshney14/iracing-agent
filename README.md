@@ -6,7 +6,8 @@ pick one thing to work on, and (later) cue it by voice at the right place on tra
 
 > **Status:** works on recorded sessions (telemetry, laps, corner analysis, Garage61 reference
 > laps and ghosts, coaching skills) and live: spoken corner cues and feedback on track, rules the
-> coach sets and backtests, and a browser UI. Waking the agent on live events and voice input are next.
+> coach sets and backtests, debriefs and wake-ups in the coach's own words, and a browser UI.
+> Push-to-talk voice input is next.
 
 The design lives in [.claude/architecture.md](.claude/architecture.md). In short:
 
@@ -19,7 +20,7 @@ The design lives in [.claude/architecture.md](.claude/architecture.md). In short
 - **No per-token API billing.** Claude through a subscription, or open-weight models run locally.
 - **Agent-defined events:** the agent creates rules through the CLI and backtests them against
   recorded sessions; the live coach on the sim PC runs them deterministically. No LLM in the
-  real-time loop. (Waking the agent on a rule is next.)
+  real-time loop; a rule can wake the agent, whose reply is spoken.
 - **Testable without the sim:** `.ibt` replay, a synthetic lap generator with exact ground truth,
   and regression tests against real recordings.
 
@@ -232,6 +233,13 @@ an engineer on the radio, not a recording: brief when you're busy, fuller when y
   point a few metres a lap..."*), said instead when you're not pushing. On a cool-down lap (15 s
   or more off the pace, not just a moment) the coach debriefs: the corner costing the most over
   your last laps at pace, what to change and how, and how consistent the laps were.
+- **In the coach's own words.** Where the model has time to answer, it does the talking: the
+  cool-down debrief is asked of your Claude Code (`claude -p`) as you slow down and said in its
+  words if it answers in time (it took ~7 s in testing; it's wanted ~15 s in), and a rule with a
+  `wake` action has the coach answer on the radio. The coach is given the numbers, not asked to
+  work them out. Corner cues stay fixed text, because they must be instant and exactly timed,
+  but the coach can rewrite them between sessions (`iagent cues set ... --short ...`). No reply in
+  time, or no `claude`: the coach's own phrasing is said. `--no-narrate` turns it off.
 - **One focus at a time.** After the learning laps the corner losing the most (over the last two
   laps at pace) becomes the focus: *"Focus now: Turns 15 and 16. Just a lift, no brakes."* It's
   cued every lap; other corners speak up only for a big loss or an off. Once you match the
@@ -306,7 +314,7 @@ iagent rules vars                        # every trigger and the variables it pr
   makes the condition false rather than failing.
 - **Actions:** `say` (cue, feedback or summary priority, through the same speech rules as the
   cues; add `"long"` for a fuller version said when you're not pushing), `log`, and `wake`
-  (logged for now; waking the coach is next).
+  (the coach answers on the radio in its own words, or stays silent).
 - **Limits:** cooldowns, per-lap and per-session caps, `once`, `in_a_row`. Rules ignore out
   laps, cool-downs and moments unless `"pushing_only": false`.
 - **Safe to change:** a new or edited rule is a draft until it has been backtested and activated.

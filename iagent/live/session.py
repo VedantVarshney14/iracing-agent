@@ -5,7 +5,9 @@ The coach runs on its own thread. Everything it does is logged as events (lines 
 dropped and why, laps, focus changes, the driver's questions and the answers), kept in memory for
 the page and appended to `sessions/live/<id>.jsonl` in the workspace for review afterwards.
 Anything the browser asks of the running coach (say an answer, change the focus) is queued and
-done on the coach's thread between frames, so the coach itself needs no locking.
+done on the coach's thread between frames, so the coach itself needs no locking. So are the
+narrator's replies: the cool-down debrief in the coach's own words, and what the coach says when
+a rule wakes it (`iagent.live.narrator`).
 """
 
 import json
@@ -40,6 +42,7 @@ class Options:
     learning_laps: int = 2
     focus: bool = True
     crewchief: str = "auto"  # "auto" (detect it), "on" or "off"
+    narrate: bool = True  # the coach (claude -p) words debriefs and answers rule wake-ups
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Options":
@@ -53,8 +56,9 @@ class SessionError(Exception):
 
 class LiveSessions:
     def __init__(self, workspace: Path, voice_factory: Callable[[str], Voice] | None = None,
-                 iracing: Callable[[], object] | None = None):
+                 iracing: Callable[[], object] | None = None, narrator=None):
         self.workspace = workspace
+        self.narrator = narrator  # iagent.live.narrator.Narrator, or None: the coach's own phrasing only
         self._voice_factory = voice_factory or self._pocket
         self._iracing = iracing  # makes the live source (tests inject one)
         self._voices: dict[str, Voice] = {}
@@ -248,7 +252,19 @@ class LiveSessions:
         coach.on_mode = lambda mode, now, d: self._log({"type": "pace", "mode": mode, "at": now, "lap_dist": round(d)})
         coach.on_advice = lambda advice: self._log({"type": "advice", **advice})
         coach.rules.on_fire = lambda fired: self._log({"type": "rule", **fired})
-        coach.rules.on_wake = lambda wake: self._log({"type": "wake", **wake})
+        radio = None
+        if self.narrator is not None and self.options.narrate:
+            from iagent.live.narrator import Radio
+
+            radio = Radio(self.narrator, self._calls.put, self._log, self.context, self._now)
+            radio.attach(coach)
+
+        def wake(w: dict) -> None:
+            self._log({"type": "wake", **w})
+            if radio is not None:
+                radio.wake(coach, w)
+        coach.rules.on_wake = wake
+        coach.on_debrief = lambda d: self._log({"type": "debrief", **d})
         self._log({"type": "status", "state": "running", "track": coach.session.track_name,
                    "car": coach.session.car_name, "ref": coach.plan.ref_lap_id,
                    "track_key": coach.session.track_key, "car_key": coach.session.car_key,

@@ -2,8 +2,9 @@
 
 Status: phases 1–3 are implemented (telemetry sources, laps, agent-facing CLI and skills, corner
 analysis, Garage61 reference laps). Phase 4 is partly built: the live coach on irsdk or a replay
-(corner cues, feedback, focus, pace gate, TTS) and the rule engine with backtests; the wake-up
-adapter, schedules-as-wake-ups, `say` and the standalone service are still design. The web UI
+(corner cues, feedback, focus, pace gate, TTS), the rule engine with backtests, and the coach's
+own words on the radio (debriefs, rule wake-ups via `claude -p`); `say`, push-to-talk and the
+standalone service are still design. The web UI
 (phase 5) covers lap review, the library and coached sessions.
 
 ## 1. Goals
@@ -272,7 +273,8 @@ frames and events it uses itself. A rule is data, not code. Implemented in `iage
   a template with `{expression:format}` holes.
 - **Actions**: `say` (queued with the speech arbiter at cue, feedback or summary priority, with
   an optional `long` version for when the driver isn't pushing),
-  `wake` (handed to `on_wake`: logged in the session today; the agent wake-up adapter is next),
+  `wake` (the coach is asked, `claude -p`, with the rule, its values and the driver's state; its
+  reply is spoken, or SILENT),
   `log`. One rule can have several.
 - **Limits**: per rule `cooldown_s`, `cooldown_laps`, `max_per_lap`, `max_per_session`, `once`,
   and `in_a_row` (the condition held N occurrences running). `pushing_only` (default) ignores
@@ -286,7 +288,7 @@ frames and events it uses itself. A rule is data, not code. Implemented in `iage
   why); `activate` requires a backtest of the rule as it is now (a fingerprint of its
   behaviour). Editing makes it a draft again. A running coach reloads rules when the files
   change (checked every ~10 s), so the agent can adjust them mid-session.
-- Still to come: moving the built-in cues and feedback onto rules, and the agent wake-up.
+- Still to come: moving the built-in cues and feedback onto rules.
 
 ## 9. Voice and UI
 
@@ -303,6 +305,12 @@ frames and events it uses itself. A rule is data, not code. Implemented in `iage
   plan: better known, but ~3.7 s before first audio, too slow for anything said in reaction.
   Audio is written with blocking, high-latency writes from the voice thread (a Python callback
   starved by the coach loop crackled).
+- **The coach's own words:** where a model runs anyway or has time to (the cool-down debrief:
+  asked 5 s into a slow stretch, wanted at 15 s, waited for up to 12 s more; a rule's `wake`), the
+  reply from `claude -p` is spoken (`iagent/live/narrator.py`): given the live coach's facts, asked
+  for radio-style plain speech, split at sentences, handed back through the coach thread's call
+  queue. One request per kind in flight, wake-ups at most every 30 s. A missing or late reply
+  falls back to the template. Cues are never generated live.
 - **Delivery, like an engineer:** cues shorten to a reminder once heard in full; feedback carries
   a longer version (what, why, how) that the arbiter says instead when the driver isn't pushing
   and there's room before the next cue; a cool-down lap (not pushing for 15 s) gets a debrief

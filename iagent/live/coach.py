@@ -24,6 +24,9 @@ Per frame, no model involved:
   instead when the driver isn't pushing. A cool-down lap (not pushing for `debrief_after_s`) gets
   a short debrief, like an engineer on the radio: the corner costing the most over the last laps
   at pace, what to change and how, and how consistent the laps were.
+- **In the coach's own words, when it's there.** With a narrator attached (`on_narrate`, the
+  live session's `claude -p`), the debrief is asked for as the driver slows and said in the
+  coach's words if the reply comes in time; otherwise the coach's own phrasing is said.
 - **Notices progress.** A corner that got feedback and is fixed the next lap gets a "better";
   the same mistake again is said as a repeat ("Turn 2 again: ..."), not as if it were news.
 
@@ -86,6 +89,8 @@ class Settings:
     debrief: bool = True  # talk through the last laps on a cool-down lap
     debrief_after_s: float = 15.0  # not pushing this long (not just a moment) before the debrief
     debrief_topics: int = 2
+    narrate_after_s: float = 5.0  # ask the narrator this far into a slow stretch (it takes a few seconds)
+    narrate_wait_s: float = 12.0  # once settled, wait this much longer for its words before our own
     crewchief: bool = False  # CrewChief is running: leave lap times to it, keep quiet after the line
     crewchief_quiet_s: float = 5.0
 
@@ -170,6 +175,13 @@ class LiveCoach:
         self._line_at = -1e9  # session time of the last start/finish crossing
         self._told: dict[int, tuple[str, int]] = {}  # corner -> (cause, lap) of the last feedback said
         self._debriefs = 0
+        # Asks for the debrief in the coach's own words: (facts, stretch id); the reply comes back
+        # through `narrated`. Called on the coach thread; must not block.
+        self.on_narrate: Callable[[dict, int], None] | None = None
+        self._stretch = 0  # counts slow stretches, so a late reply isn't said in the wrong one
+        self._asked = False
+        self._narration: str | None = None
+        self.on_debrief: Callable[[dict], None] | None = None  # what was said, and whose words
         self.rules = rules
         if rules is not None:
             rules.attach(self)
@@ -200,8 +212,18 @@ class LiveCoach:
         if self.mode == "tranquille":
             self._assess(now, d)  # only an off-track hint for next lap comes out of this
             # No cues and no judging; once it's clearly a cool-down (not a moment), time to talk.
-            settled = self._slow_since is not None and now - self._slow_since >= self.settings.debrief_after_s
-            if settled and not self._debriefed:
+            s = self.settings
+            slow_for = now - self._slow_since if self._slow_since is not None else 0.0
+            settled = slow_for >= s.debrief_after_s
+            if s.debrief and self.on_narrate is not None and not self._asked and slow_for >= s.narrate_after_s:
+                self._asked = True
+                facts = self.debrief_facts()
+                if facts["topics"] or facts["lap_times"]:
+                    self.on_narrate(facts, self._stretch)
+                else:
+                    self._asked = None  # nothing to talk about
+            waiting = self._asked is True and self._narration is None and slow_for < s.debrief_after_s + s.narrate_wait_s
+            if settled and not self._debriefed and not waiting:
                 self._debriefed = True
                 self._debrief(now)
             self.arbiter.tick(now, hold=alongside or not settled or self._after_line(now), long_ok=True)
@@ -259,6 +281,8 @@ class LiveCoach:
     def _set_mode(self, mode: str, now: float, d: float) -> None:
         self.mode = mode
         self._slow_since, self._debriefed = (now, False) if mode == "tranquille" else (None, False)
+        self._stretch += 1
+        self._asked, self._narration = False, None
         if mode == "tranquille":
             self._lap.slow.append([round(max(0.0, d - self.settings.pace_window_m / 2)), round(d)])
             self.arbiter.clear(("approach", "feedback", "focus"), now, "you weren't pushing")
@@ -685,19 +709,32 @@ class LiveCoach:
     def _debrief(self, now: float) -> None:
         """What an engineer says on a cool-down lap: where the time is (over the last laps at
         pace, so it's a habit, not one mistake), what to change and how, and the consistency."""
-        lines = self.debrief_lines()
+        from iagent.live.narrator import chunks
+
+        words = self._narration
+        lines = chunks(words) if words else self.debrief_lines()
         self._debriefs += 1
         for i, text in enumerate(lines):
-            # One line per topic, so a car alongside or the pits can interrupt between them.
+            # One piece at a time, so a car alongside or the pits can come between them.
             self.arbiter.say(Utterance(text, FEEDBACK, "debrief", now + i * 0.01, now + 90.0))
+        if lines and self.on_debrief is not None:
+            self.on_debrief({"at": now, "by": "coach" if words else "template", "text": " ".join(lines)})
 
-    def debrief_lines(self) -> list[str]:
+    def narrated(self, text: str | None, stretch: int) -> bool:
+        """The coach's words for the debrief of slow stretch STRETCH arrived (on the coach thread).
+        False if it's too late: the driver is pushing again, or our own words were said."""
+        if stretch != self._stretch or self.mode != "tranquille" or self._debriefed or not text:
+            if self._asked is True and stretch == self._stretch and not text:
+                self._asked = None  # nothing came: don't wait for it
+            return False
+        self._narration = text
+        return True
+
+    def _topics(self) -> tuple[list[dict], dict[int, list["CornerResult"]]]:
+        """The corners worth talking about: the focus, then the biggest losses over the last laps
+        at pace (a habit, not one mistake)."""
         s = self.settings
-        if not s.debrief:
-            return []
         recent = [lap for lap in self.results if lap][-3:]
-        if not recent:
-            return []
         by_corner: dict[int, list[CornerResult]] = {}
         for lap in recent:
             for r in lap:
@@ -706,21 +743,48 @@ class LiveCoach:
         mean = {c: sum(r.delta_s for r in rs) / len(rs) for c, rs in by_corner.items()}
         focus = self.plan.cue_for(self.focus).corners if self.focus is not None else []
         order = sorted(mean, key=lambda c: (c not in focus, -mean[c]))
-        topics = [c for c in order if mean[c] >= s.loss_s][: s.debrief_topics]
-        lines = []
-        opener = DEBRIEF_OPENERS[self._debriefs % len(DEBRIEF_OPENERS)]
-        for n, corner in enumerate(topics):
+        topics = []
+        for corner in [c for c in order if mean[c] >= s.loss_s][: s.debrief_topics]:
             rs = by_corner[corner]
             c = self.cmap.get(corner)
-            name = c.name or f"Turn {c.id}"
+            latest = next((r for r in reversed(rs) if r.cause), None)
+            topics.append({"corner": corner, "name": c.name or f"Turn {c.id}", "in_focus": corner in focus,
+                           "loss_per_lap_s": round(mean[corner], 2), "laps": len(rs),
+                           "cause": latest.cause if latest else None,
+                           "amount": round(latest.amount, 1) if latest and latest.amount is not None else None,
+                           "advice": latest.longer if latest else None})
+        return topics, by_corner
+
+    def debrief_facts(self) -> dict:
+        """What the debrief is about, for the narrator (and the log)."""
+        topics, _ = self._topics()
+        times = self.lap_times[-3:]
+        return {"track": self.session.track_name, "laps_done": self._laps_done,
+                "focus": next((f["label"] for f in reversed(self.focus_log) if f["cue"] == self.focus), None)
+                if self.focus is not None else None,
+                "topics": topics, "lap_times": [round(t, 2) for t in times],
+                "lap_spread_s": round(max(times) - min(times), 2) if len(times) >= 2 else None,
+                "cause_meanings": CAUSES, "crewchief": self.settings.crewchief,
+                "fallback": self.debrief_lines()}
+
+    def debrief_lines(self) -> list[str]:
+        s = self.settings
+        if not s.debrief or not [lap for lap in self.results if lap]:
+            return []
+        topics, by_corner = self._topics()
+        lines = []
+        opener = DEBRIEF_OPENERS[self._debriefs % len(DEBRIEF_OPENERS)]
+        for n, t in enumerate(topics):
+            rs = by_corner[t["corner"]]
+            name = t["name"]
             latest = next((r for r in reversed(rs) if r.cause), None)
             laps = f"the last {len(rs)} laps" if len(rs) > 1 else "that lap"
             lead = (opener if n == 0 else "And ") + (
-                f"{name} is still the focus. " if corner in focus else f"{name} is where the time is. ")
-            cost = f"About {_say_gap(mean[corner])} a lap over {laps}."
+                f"{name} is still the focus. " if t["in_focus"] else f"{name} is where the time is. ")
+            cost = f"About {_say_gap(t['loss_per_lap_s'])} a lap over {laps}."
             how = ""
             if latest is not None:
-                how = " " + _longer(name, latest.cause, latest.amount, self._ref_metrics.get(corner) or {},
+                how = " " + _longer(name, latest.cause, latest.amount, self._ref_metrics.get(t["corner"]) or {},
                                     latest.metrics or {}, named=False)
             lines.append(f"{lead}{cost}{how}")
         pace = self._consistency()
@@ -756,6 +820,12 @@ class LiveCoach:
 def _diff(a, b):
     return None if a is None or b is None else a - b
 
+
+CAUSES = {
+    "off": "ran off track (amount: metres off)", "early_brake": "braked earlier than the reference (amount: metres)",
+    "late_brake": "braked later and lost the exit (amount: metres)", "no_brake_needed": "braked where the reference doesn't",
+    "slow_apex": "slower at the apex (amount: km/h)", "late_throttle": "full throttle later than the reference (amount: metres)",
+}
 
 # How a debrief opens, in turn, so it doesn't sound like a recording.
 DEBRIEF_OPENERS = ("While you cool them down: ", "Okay, easy lap. ", "Right, while it's quiet: ")

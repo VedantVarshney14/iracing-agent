@@ -320,7 +320,7 @@ function AdviceRow({ corner, said, when, before, after, verdict }: {
   );
 }
 
-const BADGES: Record<string, string> = { approach: "Cue", feedback: "Feedback", summary: "Lap", focus: "Focus", answer: "Answer", rule: "Rule" };
+const BADGES: Record<string, string> = { approach: "Cue", feedback: "Feedback", summary: "Lap", focus: "Focus", answer: "Answer", rule: "Rule", debrief: "Debrief", coach: "Coach" };
 
 function CommentaryCard({ report, open }: { report: SessionReport; open: (lapId: string | null, corner?: number) => (() => void) | undefined }) {
   const [filter, setFilter] = useState<"all" | "held" | "you">("all");

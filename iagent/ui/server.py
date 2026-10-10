@@ -29,6 +29,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from iagent.laps.watch import TelemetryWatcher, default_telemetry_dir, ingest_file
 from iagent.live import report as session_report
 from iagent.live.cues import load_next_plan, load_plan, save_next_plan, save_plan
+from iagent.live.narrator import clean
 from iagent.live.session import LiveSessions, SessionError, recordings
 from iagent.references import garage61 as g61
 from iagent.references import ghosts
@@ -64,7 +65,10 @@ def create_app(
     live: LiveSessions | None = None,
 ) -> Starlette:
     coach = coach or CoachRuns(workspace)
-    live = live or LiveSessions(workspace)
+    if live is None:
+        from iagent.live.narrator import Narrator, ask_with
+
+        live = LiveSessions(workspace, narrator=Narrator(ask_with(coach)))
     debriefing: set[str] = set()  # sessions whose debrief the coach is writing
     ghost_dir = (workspace / "reference" / "ghosts").resolve()
     g61_account: dict = {}  # Garage61's answer about the token, asked once
@@ -324,7 +328,7 @@ def create_app(
                     parts.append(event["text"])
                 elif event["type"] == "error":
                     error = event["message"]
-            reply = "".join(parts).strip()
+            reply = clean("".join(parts)) or ""
             if reply:
                 live.note_answer(reply)
                 live.say(reply)
