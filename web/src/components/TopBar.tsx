@@ -26,7 +26,7 @@ const PAGES: { page: Page; label: string }[] = [
   { page: "library", label: "Library" },
   { page: "review", label: "Lap review" },
   { page: "corner", label: "Corner view" },
-  { page: "live", label: "Live" },
+  { page: "coaching", label: "Coaching" },
 ];
 
 export function TopBar(props: Props) {
@@ -50,7 +50,7 @@ export function TopBar(props: Props) {
         </div>
         <nav aria-label="Views" className="views">
           {PAGES.map((p) => {
-            const enabled = p.page === "library" || p.page === "live" || (p.page === "review" ? props.canReview : props.canCorner);
+            const enabled = p.page === "library" || p.page === "coaching" || (p.page === "review" ? props.canReview : props.canCorner);
             return (
               <button key={p.page} type="button" aria-current={page === p.page ? "page" : undefined} disabled={!enabled}
                 onClick={() => props.onPage(p.page)}>
@@ -59,7 +59,7 @@ export function TopBar(props: Props) {
             );
           })}
         </nav>
-        {tracks.length > 0 && page !== "library" && page !== "live" && (
+        {tracks.length > 0 && page !== "library" && page !== "coaching" && (
           <label className="field">
             <span className="sr-only">Track and car</span>
             <select
@@ -82,7 +82,7 @@ export function TopBar(props: Props) {
         </span>
       </header>
 
-      {tracks.length > 0 && page !== "library" && page !== "live" && <div className="lapbar">
+      {tracks.length > 0 && page !== "library" && page !== "coaching" && <div className="lapbar">
         <label className="field">
           <span className="legend-key"><span className="swatch you" />Lap</span>
           <select value={lapId ?? ""} onChange={(e) => onLap(e.target.value)}>

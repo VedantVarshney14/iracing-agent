@@ -143,3 +143,44 @@ def keep_rewritten(old: CuePlan, new: CuePlan) -> None:
         before = next((c for c in old.cues if c.corners == cue.corners), None)
         if before is not None and before.source != "template":
             cue.text, cue.source = before.text, before.source
+
+
+# --- the next session's plan ------------------------------------------------------------------
+
+PLAN_SESSIONS = 2  # a carried focus lasts this many sessions at most
+
+
+def next_plan_path(root: Path, track_key: str, car_key: str) -> Path:
+    return root / "tracks" / track_key / "cues" / f"{car_key}.next.json"
+
+
+def save_next_plan(root: Path, track_key: str, car_key: str, focus: int, note: str = "",
+                   from_session: str | None = None, sessions: int = PLAN_SESSIONS) -> dict:
+    """Start the next sessions here with FOCUS (a corner). The coach re-checks it after two
+    pushing laps, so it can't get stuck on something already sorted."""
+    plan = {"focus": focus, "note": note, "from_session": from_session, "sessions_left": sessions,
+            "saved_at": datetime.now(timezone.utc).isoformat()}
+    path = next_plan_path(root, track_key, car_key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(plan, indent=1) + "\n")
+    return plan
+
+
+def load_next_plan(root: Path, track_key: str, car_key: str) -> dict | None:
+    path = next_plan_path(root, track_key, car_key)
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+def use_next_plan(root: Path, track_key: str, car_key: str) -> dict | None:
+    """The plan for a session starting now (counted against its sessions; gone when used up)."""
+    plan = load_next_plan(root, track_key, car_key)
+    if plan is None:
+        return None
+    path = next_plan_path(root, track_key, car_key)
+    plan["sessions_left"] = int(plan.get("sessions_left", 1)) - 1
+    if plan["sessions_left"] <= 0:
+        path.unlink()
+    else:
+        path.write_text(json.dumps(plan, indent=1) + "\n")
+    return plan
+

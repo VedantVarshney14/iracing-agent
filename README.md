@@ -233,11 +233,20 @@ start the coach or write to the workspace.
 - **Lap summary** at the line, short enough for a short straight: *"2 27.0, 5 tenths down."*, or
   where it went on a lap with a moment: *"1 44.2. Lost it at Turn 7."*
 
-**From the browser:** the **Live** tab in `iagent ui` starts the coach (iRacing, or a replay of a
-recording), shows everything it said, and everything it held back and why ("in a corner", "a car
-was alongside"), lap by lap, with the focus. You can change the focus, and type a question: the
-coach (`claude -p`) answers in two sentences, spoken on the next straight. Each session's log is
-kept in `workspace/sessions/live/`.
+**From the browser:** the **Coaching** tab in `iagent ui` starts the coach (iRacing, or a replay
+of a recording) and, afterwards, reviews each coached session:
+- which laps you were pushing, and where a moment or a tranquille stretch was;
+- where the time went (a map of the average loss per corner while pushing);
+- **did the advice work?** each piece of advice with that corner before and after, judged on the
+  laps you were pushing ("working", "mixed", "not yet"), and how the focus went;
+- everything the coach said, lap by lap, including what it held back and why, with links into the
+  corner view;
+- a debrief written by the coach (`claude -p`), questions about the session, and **the next
+  session's plan**: pick its focus and edit that corner's cue. A planned focus starts the next
+  two sessions at that track, and is re-checked after two pushing laps, so it can't get stuck on
+  something already sorted.
+
+Each session's log (and debrief) is kept in `workspace/sessions/live/`.
 
 Cues follow the fastest Garage61 teammate lap for the track and car, else your own best, and work
 on a track you've never driven if a teammate's lap is imported. Speech is

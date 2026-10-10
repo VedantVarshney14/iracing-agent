@@ -27,6 +27,8 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from iagent.laps.watch import TelemetryWatcher, default_telemetry_dir, ingest_file
+from iagent.live import report as session_report
+from iagent.live.cues import load_next_plan, load_plan, save_next_plan, save_plan
 from iagent.live.session import LiveSessions, SessionError, recordings
 from iagent.references import garage61 as g61
 from iagent.references import ghosts
@@ -63,6 +65,7 @@ def create_app(
 ) -> Starlette:
     coach = coach or CoachRuns(workspace)
     live = live or LiveSessions(workspace)
+    debriefing: set[str] = set()  # sessions whose debrief the coach is writing
     ghost_dir = (workspace / "reference" / "ghosts").resolve()
     g61_account: dict = {}  # Garage61's answer about the token, asked once
     # Garage61's laps per track/car for a minute: the library and the review screen both ask, and
@@ -331,6 +334,81 @@ def create_app(
         threading.Thread(target=answer, name="live-ask", daemon=True).start()
         return JSONResponse({"ok": True})
 
+    # --- coached sessions, afterwards ------------------------------------------------------
+
+    async def coaching_sessions(request: Request) -> JSONResponse:
+        return JSONResponse(await run_in_threadpool(session_report.list_sessions, workspace))
+
+    async def coaching_session(request: Request) -> JSONResponse:
+        sid = request.query_params.get("id", "")
+
+        def build(ws: Workspace) -> dict:
+            out = session_report.session_report(ws, sid)
+            out["debrief_running"] = sid in debriefing
+            track = out["track"]
+            out["next_plan"] = load_next_plan(ws.root, track["key"], track["car"]) if track["key"] else None
+            plan = load_plan(ws.root, track["key"], track["car"]) if track["key"] else None
+            out["cues"] = [{"corners": c.corners, "text": c.text, "source": c.source} for c in plan.cues] if plan else []
+            return out
+
+        return await call(build)
+
+    async def coaching_debrief(request: Request) -> JSONResponse:
+        """The coach writes a short debrief (in the background; the session report shows it)."""
+        sid = str((await request.json()).get("id") or "")
+        ws = Workspace(workspace)
+        try:
+            lines = session_report.context_lines(session_report.session_report(ws, sid))
+        except WorkspaceError as e:
+            return JSONResponse({"error": str(e)}, status_code=404)
+        finally:
+            ws.close()
+        if sid in debriefing:
+            return JSONResponse({"running": True})
+        debriefing.add(sid)
+        prompt = ("Write a short debrief of this coaching session for the driver: two short paragraphs, plain "
+                  "text, under 90 words. What worked, what still costs the most, and the one thing to focus on "
+                  "next session. Use the numbers given; don't run commands unless something is missing.")
+
+        def write() -> None:
+            try:
+                parts, error = [], None
+                for line in coach.run(prompt, {"page": "session", "live": lines}, None):
+                    event = json.loads(line)
+                    if event["type"] == "text_start":
+                        parts = []
+                    elif event["type"] == "text":
+                        parts.append(event["text"])
+                    elif event["type"] == "error":
+                        error = event["message"]
+                text = "".join(parts).strip()
+                session_report.save_debrief(workspace, sid, text or f"(No debrief: {error or 'the coach said nothing'})")
+            finally:
+                debriefing.discard(sid)
+
+        threading.Thread(target=write, name="debrief", daemon=True).start()
+        return JSONResponse({"running": True})
+
+    async def coaching_plan(request: Request) -> JSONResponse:
+        """Save the next session's plan: a focus corner (and optionally its cue's new text)."""
+        body = await request.json()
+        track, car, focus = body.get("track"), body.get("car"), body.get("focus")
+        if not track or not car or focus is None:
+            return JSONResponse({"error": "track, car and focus are required"}, status_code=400)
+        cue_text = str(body.get("cue_text") or "").strip()
+
+        def save(ws: Workspace) -> dict:
+            plan = load_plan(ws.root, track, car)
+            if plan is None or plan.cue_for(int(focus)) is None:
+                raise WorkspaceError(f"No cue covers T{focus} on {track} / {car}.")
+            if cue_text:
+                cue = plan.cue_for(int(focus))
+                cue.text, cue.source = cue_text, "driver"
+                save_plan(ws.root, plan)
+            return save_next_plan(ws.root, track, car, int(focus), str(body.get("note") or ""), body.get("from_session"))
+
+        return await call(save)
+
     async def not_built(request: Request) -> HTMLResponse:
         return HTMLResponse(_NOT_BUILT)
 
@@ -355,6 +433,10 @@ def create_app(
         Route("/api/live/stop", live_stop, methods=["POST"]),
         Route("/api/live/focus", live_focus, methods=["POST"]),
         Route("/api/live/ask", live_ask, methods=["POST"]),
+        Route("/api/coaching/sessions", coaching_sessions),
+        Route("/api/coaching/session", coaching_session),
+        Route("/api/coaching/debrief", coaching_debrief, methods=["POST"]),
+        Route("/api/coaching/plan", coaching_plan, methods=["POST"]),
         Route("/api/chat", chat, methods=["POST"]),
         Route("/api/chat/stop", chat_stop, methods=["POST"]),
     ]

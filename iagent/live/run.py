@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 from iagent.live.coach import LiveCoach, Settings
-from iagent.live.cues import CuePlan, build_plan, load_plan, save_plan
+from iagent.live.cues import CuePlan, build_plan, load_plan, save_plan, use_next_plan
 from iagent.live.speech import Arbiter, Voice
 from iagent.telemetry.frames import Frame
 from iagent.telemetry.session import SessionInfo
@@ -37,7 +37,11 @@ def start_coach(root: Path, session: SessionInfo, voice: Voice, settings: Settin
     if hasattr(voice, "prepare"):
         rendered = voice.prepare(c.text for c in plan.cues)
         logger.info("Rendered %d cue(s)", rendered)
-    return LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own)
+    carried = use_next_plan(root, session.track_key, session.car_key)
+    if carried:
+        logger.info("Starting with the planned focus T%s (%s more session(s))", carried["focus"], carried["sessions_left"])
+    return LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own,
+                     carried_focus=carried["focus"] if carried else None)
 
 
 def own_best(ws: Workspace, track: str, car: str):

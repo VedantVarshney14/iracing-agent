@@ -22,6 +22,7 @@ from iagent.live.coach import LiveCoach, Settings
 from iagent.live.run import run
 from iagent.live.speech import ANSWER, CapturedVoice, Utterance, Voice
 from iagent.telemetry.frames import Frame
+from iagent.workspace import Workspace
 
 logger = logging.getLogger("iagent.live")
 
@@ -69,6 +70,7 @@ class LiveSessions:
         self.session_id: str | None = None
         self._last_frame: Frame | None = None
         self._source = None
+        self._ref_driver: str | None = None
 
     # --- control -------------------------------------------------------------------------------
 
@@ -154,7 +156,7 @@ class LiveSessions:
             out.update({
                 "track": {"key": coach.session.track_key, "name": coach.session.track_name,
                           "car": coach.session.car_key, "car_name": coach.session.car_name},
-                "ref": {"lap_id": coach.plan.ref_lap_id, "lap_time": coach.plan.ref_lap_time},
+                "ref": {"lap_id": coach.plan.ref_lap_id, "lap_time": coach.plan.ref_lap_time, "driver": self._ref_driver},
                 "laps_done": coach._laps_done,
                 "mode": coach.mode,
                 "learning": coach._laps_done < coach.settings.learning_laps,
@@ -210,7 +212,7 @@ class LiveSessions:
                 frames = src.frames()
             settings = Settings(learning_laps=options.learning_laps, focus=options.focus)
             run(self.workspace, session_of, self._frames(frames), voice, settings, options.ref, self._attach)
-            self._log({"type": "status", "state": "ended"})
+            self._log({"type": "status", "state": "stopped" if self._stop.is_set() else "ended"})
         except Exception as e:  # report it on the page
             logger.exception("Live session failed")
             self.error = str(e)
@@ -222,7 +224,6 @@ class LiveSessions:
     def _frames(self, frames: Iterator[Frame]) -> Iterator[Frame]:
         for frame in frames:
             if self._stop.is_set():
-                self._log({"type": "status", "state": "stopped"})
                 return
             self._last_frame = frame
             if self.coach is not None:
@@ -231,13 +232,23 @@ class LiveSessions:
             yield frame
 
     def _attach(self, coach: LiveCoach) -> None:
+        ws = Workspace(self.workspace)
+        try:
+            self._ref_driver = ws.ref_meta(coach.plan.ref_lap_id).get("driver")
+        finally:
+            ws.close()
         self.coach = coach
         self.state = "running"
         coach.arbiter.on_event = self._line
         coach.on_lap = lambda lap: self._lap(coach, lap)
         coach.on_mode = lambda mode, now, d: self._log({"type": "pace", "mode": mode, "at": now, "lap_dist": round(d)})
+        coach.on_advice = lambda advice: self._log({"type": "advice", **advice})
         self._log({"type": "status", "state": "running", "track": coach.session.track_name,
-                   "car": coach.session.car_name, "ref": coach.plan.ref_lap_id})
+                   "car": coach.session.car_name, "ref": coach.plan.ref_lap_id,
+                   "track_key": coach.session.track_key, "car_key": coach.session.car_key,
+                   "ref_lap_time": coach.plan.ref_lap_time, "length_m": coach.length,
+                   "source": self.options.source, "file": self.options.file,
+                   "focus": coach.focus_log[-1] if coach.focus_log else None})
 
     def _line(self, what: str, u: Utterance, now: float) -> None:
         self._log({"type": "line", "status": what, "kind": u.kind, "text": u.text, "corner": u.corner,

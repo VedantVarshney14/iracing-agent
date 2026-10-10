@@ -51,6 +51,9 @@ def screen_context(ctx: dict) -> str:
     lines = []
     if ctx.get("page") == "corner":
         lines.append("view: corner view (racing lines, line offset and traces for one corner)")
+    if ctx.get("page") == "session":
+        lines.append("view: review of a coached session (after it, not while driving). This page has no map or "
+                     "traces to point at: don't run `iagent ui show`. Answer in a few short paragraphs.")
     if ctx.get("page") == "live":
         lines.append("view: live session. The driver is on track and hears your reply spoken: answer in at most "
                      "two short sentences, plain words, no markdown, no lists.")

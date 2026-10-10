@@ -64,7 +64,6 @@ class Settings:
     push_ratio: float = 1.05  # back to pushing at this pace or better (vs own best)
     tranquille_ratio: float = 1.10  # tranquille at this pace or slower
     new_track_ratio: float = 1.25  # with no lap of their own yet, vs the reference
-    moment_m: float = 600.0  # a tranquille stretch shorter than this, mid-lap, was a moment
 
 
 @dataclass
@@ -90,7 +89,8 @@ class _LapState:
 
 class LiveCoach:
     def __init__(self, session: SessionInfo, plan: CuePlan, cmap: CornerMap, ref_grid: pd.DataFrame,
-                 arbiter: Arbiter, settings: Settings | None = None, own_best: pd.DataFrame | None = None):
+                 arbiter: Arbiter, settings: Settings | None = None, own_best: pd.DataFrame | None = None,
+                 carried_focus: int | None = None):
         self.session = session
         self.plan = plan
         self.cmap = cmap
@@ -114,6 +114,7 @@ class LiveCoach:
         self.focus_log: list[dict] = []  # {"cue", "label", "set_lap", "done_lap"}
         self.on_lap: Callable[[dict], None] | None = None  # called with each counted lap
         self.on_mode: Callable[[str, float, float], None] | None = None  # (mode, session time, LapDist)
+        self.on_advice: Callable[[dict], None] | None = None  # advice for a corner (said, or a hint)
         # Pace: the driver's own best lap (distance, elapsed time), or the reference until they have one.
         self._pace_d, self._pace_t, self._pace_lap = self._ref_d, self._ref_t, None
         self._pace_own = own_best is not None
@@ -126,6 +127,13 @@ class LiveCoach:
         self._prev_d: float | None = None
         self._frame_no = 0
         self.mode = "pushing"  # or "tranquille"
+        self._carried = False
+        if carried_focus is not None and self.plan.cue_for(carried_focus) is not None:
+            # From the last session's plan: where we start, re-checked after two pushing laps.
+            cue = self.plan.cue_for(carried_focus)
+            self.focus, self._focus_heard, self._carried = cue.corner, False, True
+            self.focus_log.append({"cue": cue.corner, "corners": cue.corners, "label": self._label(cue),
+                                   "set_lap": 0, "done_lap": None, "manual": False, "carried": True})
         self.results: list[list[CornerResult]] = []  # per completed lap
 
     # --- per frame -----------------------------------------------------------------------------
@@ -310,6 +318,9 @@ class LiveCoach:
                 continue
             if result.hint:
                 self._hints[c.id] = result.hint
+            if (result.advice or result.hint) and self.on_advice is not None:
+                self.on_advice({"corner": c.id, "lap": self._laps_done + 1, "delta_s": result.delta_s,
+                                "advice": result.advice, "hint": result.hint, "at": now})
             cue = self.plan.cue_for(c.id)
             said = any(r.advice for r in self._lap.results[:-1] if cue and r.corner in cue.corners)
             if result.advice and not said and self._lap.feedback < s.feedback_per_lap:
@@ -421,14 +432,13 @@ class LiveCoach:
             })
 
     def _classify(self, state: "_LapState") -> tuple[str, int | None]:
-        """pushing (all the way), moment (pushing but for one short loss: returns the corner
-        before it), or tranquille (mostly not pushing)."""
-        s = self.settings
+        """pushing (all the way), moment (mostly pushing, one slow stretch: returns the corner where
+        it started), or tranquille (mostly not pushing)."""
         share = state.pushing_frames / state.frames if state.frames else 0.0
         if not state.slow:
             return "pushing", None
-        if share >= 0.6 and all(b - a <= s.moment_m + s.pace_window_m for a, b in state.slow):
-            where = state.slow[0][0]
+        if share >= 0.6:  # mostly pushing: one moment (a spin and its recovery can run over a km)
+            where = max(state.slow, key=lambda ab: ab[1] - ab[0])[0]
             corner = min(self.cmap.corners, key=lambda c: abs(c.apex_m - where))
             return "moment", corner.id
         return "tranquille", None
@@ -445,14 +455,22 @@ class LiveCoach:
         """After a lap at pace: is the focus done, and what's next? Returns what to announce."""
         s = self.settings
         losses: dict[int, float] = {}
+        judged: dict[int, int] = {}
         for r in results:
             cue = self.plan.cue_for(r.corner)
             if cue is not None and r.delta_s <= s.incident_s:
                 losses[cue.corner] = losses.get(cue.corner, 0.0) + r.delta_s
+                judged[cue.corner] = judged.get(cue.corner, 0) + 1
+        # A cue counts only when all its corners were judged (pushing through all of them).
+        losses = {k: v for k, v in losses.items() if judged[k] == len(self.plan.cue_for(k).corners)}
         self._cue_losses.append(losses)
         if not s.focus or self._laps_done < s.learning_laps:
             return None
         news = []
+        if self._carried and not self.focus_manual and self.focus is not None:
+            replaced = self._recheck_carried()
+            if replaced:
+                news.append(replaced)
         if self.focus is not None:
             recent = [lap[self.focus] for lap in self._cue_losses if self.focus in lap][-2:]
             entry = next(f for f in reversed(self.focus_log) if f["cue"] == self.focus)
@@ -472,6 +490,29 @@ class LiveCoach:
                 hint = next((self._hints[c] for c in cue.corners if c in self._hints), None)
                 news.append(f"Focus now: {label}." + (f" {hint}" if hint else ""))
         return " ".join(news) or None
+
+    def _recheck_carried(self) -> str | None:
+        """After two pushing laps, a focus carried over from last time stays only if it's still
+        worth it: not yet sorted, and nothing else losing clearly more."""
+        s = self.settings
+        values = [lap[self.focus] for lap in self._cue_losses if self.focus in lap]
+        if len(values) < 2:
+            return None
+        self._carried = False
+        entry = next(f for f in reversed(self.focus_log) if f["cue"] == self.focus)
+        mine = sum(values[-2:]) / 2
+        if mine < s.focus_min_s:
+            entry["done_lap"] = self._laps_done
+            self.focus = None
+            return f"{entry['label']} is fine now."
+        best = self._pick_focus()
+        if best is not None and best != self.focus:
+            other = [lap[best] for lap in self._cue_losses[-2:] if best in lap]
+            if other and sum(other) / len(other) > mine + 0.1:
+                entry["done_lap"] = self._laps_done
+                entry["replaced"] = True
+                self.focus = None
+        return None
 
     def _pick_focus(self) -> int | None:
         s = self.settings
