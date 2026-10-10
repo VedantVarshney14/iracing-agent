@@ -270,7 +270,8 @@ frames and events it uses itself. A rule is data, not code. Implemented in `iage
   a few functions). No attribute access, subscripts or arbitrary calls in the 60 Hz loop. A
   missing value makes a comparison false and keeps a line with that hole unsaid. Spoken text is
   a template with `{expression:format}` holes.
-- **Actions**: `say` (queued with the speech arbiter at cue, feedback or summary priority),
+- **Actions**: `say` (queued with the speech arbiter at cue, feedback or summary priority, with
+  an optional `long` version for when the driver isn't pushing),
   `wake` (handed to `on_wake`: logged in the session today; the agent wake-up adapter is next),
   `log`. One rule can have several.
 - **Limits**: per rule `cooldown_s`, `cooldown_laps`, `max_per_lap`, `max_per_session`, `once`,
@@ -302,7 +303,16 @@ frames and events it uses itself. A rule is data, not code. Implemented in `iage
   plan: better known, but ~3.7 s before first audio, too slow for anything said in reaction.
   Audio is written with blocking, high-latency writes from the voice thread (a Python callback
   starved by the coach loop crackled).
-- **CrewChief coexistence:** our own audio path first (adaptive feedback needs it). Next: export
+- **Delivery, like an engineer:** cues shorten to a reminder once heard in full; feedback carries
+  a longer version (what, why, how) that the arbiter says instead when the driver isn't pushing
+  and there's room before the next cue; a cool-down lap (not pushing for 15 s) gets a debrief
+  from the last laps at pace (the costliest corner, how to fix it, consistency); a repeated
+  mistake is said as a repeat, a fixed one gets a "better". Debrief openers rotate.
+- **CrewChief coexistence:** division of labour: CrewChief is the race engineer (spotter, lap
+  times, PBs, gaps, fuel, tyres, flags, pits), the coach does technique only
+  (`iagent/live/crewchief.py`). With CrewChief detected (or `--crewchief on`): the lap summary
+  says no lap time or gap, only cues for 5 s after the line, and rules that duplicate it are
+  flagged on `rules add`. Our own audio path first (adaptive feedback needs it). Next: export
   the cue plan as CrewChief **pace notes** (`Documents/CrewChiefV4/pace_notes/<game>/[<car>/]<track>/`,
   WAVs plus `metadata.json` entries keyed by `distanceRoundTrack`), so static cues go through
   CrewChief's own queue. To verify on the sim PC: synthesised WAVs accepted, iRacing folder names,

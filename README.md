@@ -215,15 +215,23 @@ start the coach or write to the workspace.
 
 ## Coaching while you drive
 
-`iagent live run` coaches you on track, without a model in the loop:
+`iagent live run` coaches you on track, without a model in the loop. It's meant to sound like
+an engineer on the radio, not a recording: brief when you're busy, fuller when you have time.
 
 - **Corner cues.** Approaching each corner: *"La Source, hairpin right. Hard brake, second
   gear."*, timed to finish at the reference lap's brake point at your current speed. Corners close
   together share a cue. The first two laps cue every corner; after that only the corners that
-  went badly, so it goes quiet as you learn.
+  went badly, so it goes quiet as you learn. Once you've heard a cue in full, it shortens to a
+  reminder: *"La Source. Hard brake."*
 - **Feedback.** After a corner that cost time, on the next straight: *"Turn 5: braked 20 metres
   early. Brake later."*, and a hint in that corner's cue next lap (*"Brake later than last
-  lap."*). Laps off the pace (out laps, cool-downs, a spin) are ignored.
+  lap."*). The same mistake again is a repeat (*"Turn 5 again: ..."*), and fixing it gets a
+  *"Turn 5: better."* Laps off the pace (out laps, cool-downs, a spin) are ignored.
+- **More when there's time.** Feedback has a longer version (the why and the how: *"you're
+  braking about 20 metres before the reference. There's more room than it feels: move the brake
+  point a few metres a lap..."*), said instead when you're not pushing. On a cool-down lap (15 s
+  or more off the pace, not just a moment) the coach debriefs: the corner costing the most over
+  your last laps at pace, what to change and how, and how consistent the laps were.
 - **One focus at a time.** After the learning laps the corner losing the most (over the last two
   laps at pace) becomes the focus: *"Focus now: Turns 15 and 16. Just a lift, no brakes."* It's
   cued every lap; other corners speak up only for a big loss or an off. Once you match the
@@ -252,13 +260,21 @@ Each session's log (and debrief) is kept in `workspace/sessions/live/`.
 
 Cues follow the fastest Garage61 teammate lap for the track and car, else your own best, and work
 on a track you've never driven if a teammate's lap is imported. Speech is
-[Pocket TTS](https://github.com/kyutai-labs/pocket-tts) on the CPU (2 threads); it stays quiet
-with a car alongside, when CrewChief's spotter is talking.
+[Pocket TTS](https://github.com/kyutai-labs/pocket-tts) on the CPU (2 threads).
+
+**With CrewChief.** CrewChief does the race engineer's job (spotter, lap times and personal
+bests, gaps, fuel, tyres, flags, pit calls); the coach does technique and leaves all of that to
+it. It never talks over the spotter (nothing new starts with a car alongside), and when
+CrewChief is running (`--crewchief auto`, the default, detects it; `on`/`off` to force it) the lap
+summary drops the lap time and gap and says only where the lap went (*"Most time lost at Pouhon."*),
+and for a few seconds after the line only corner cues are said, while CrewChief reads the time.
+`iagent rules add` warns about rules that would say what CrewChief already does.
 
 ```bash
 uv sync --extra voice                                    # Pocket TTS + audio output (PyTorch, CPU)
 iagent cues build --track spa-2024-up --car formulair04  # see / rebuild the cues (built on first use)
-iagent cues set --track spa-2024-up --car formulair04 1 "La Source. Hairpin right. Big stop, second gear."
+iagent cues set --track spa-2024-up --car formulair04 1 "La Source. Hairpin right. Big stop, second gear." \
+  --short "La Source. Big stop."                         # the reminder once it's been heard
 iagent live run                                          # on the sim PC: waits for iRacing
 iagent live run --replay session.ibt --start 700         # anywhere: hear a recording in real time
 iagent live run --replay session.ibt --print --speed 20  # what it would say, fast, no audio
@@ -289,7 +305,8 @@ iagent rules vars                        # every trigger and the variables it pr
   `{expression}` holes. A missing value (a corner taken without braking has no `brake_m`)
   makes the condition false rather than failing.
 - **Actions:** `say` (cue, feedback or summary priority, through the same speech rules as the
-  cues), `log`, and `wake` (logged for now; waking the coach is next).
+  cues; add `"long"` for a fuller version said when you're not pushing), `log`, and `wake`
+  (logged for now; waking the coach is next).
 - **Limits:** cooldowns, per-lap and per-session caps, `once`, `in_a_row`. Rules ignore out
   laps, cool-downs and moments unless `"pushing_only": false`.
 - **Safe to change:** a new or edited rule is a draft until it has been backtested and activated.

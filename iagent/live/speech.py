@@ -4,6 +4,10 @@ The arbiter owns the audio: one utterance at a time, the most important first, a
 between them, nothing said after it has expired (a corner cue is useless once the corner has
 gone by), and nothing new while a car is alongside (CrewChief's spotter is talking then). Time is
 the session's clock, so a replay at any speed makes the same decisions as the live session.
+
+Like an engineer on the radio, how much is said depends on the moment: a line can carry a longer
+version (the why and the how, not just the what), said instead when the driver isn't pushing and
+there's room before the next corner; on a push lap only the short one is.
 """
 
 import sys
@@ -34,6 +38,7 @@ class Utterance:
     duration_s: float | None = None  # known for pre-rendered audio; estimated otherwise
     note: str | None = None  # why it's still waiting (reported if it's dropped)
     rule: str | None = None  # the rule that said it, if one did
+    longer: str | None = None  # a fuller version, for when the driver has the time to listen
 
     @property
     def length_s(self) -> float:
@@ -82,7 +87,7 @@ class PrintVoice(CapturedVoice):
 
     def play(self, utterance: Utterance, now: float) -> None:
         super().play(utterance, now)
-        minutes, seconds = divmod(now, 60)
+        minutes, seconds = divmod(round(now, 2), 60)
         print(f"[{int(minutes):02d}:{seconds:05.2f}] {utterance.kind:<8} {utterance.text}", file=sys.stdout, flush=True)
 
 
@@ -112,13 +117,16 @@ class Arbiter:
     def speaking(self, now: float) -> bool:
         return now < self._busy_until
 
-    def tick(self, now: float, hold: bool = False, free_for_s: float = float("inf")) -> Utterance | None:
+    def tick(self, now: float, hold: bool = False, free_for_s: float = float("inf"),
+             long_ok: bool = False) -> Utterance | None:
         """Start the next utterance if the channel is free.
 
         Args:
             hold: say nothing new now (a car alongside); queued items wait until they expire.
             free_for_s: how long until a time-critical cue is due: anything less important that
                 wouldn't finish by then waits.
+            long_ok: the driver can take a longer line (not pushing): a line's `longer` version
+                is said instead when it fits before the next cue.
         """
         for u in [u for u in self._queue if u.expires_s < now]:
             self._queue.remove(u)
@@ -142,6 +150,10 @@ class Arbiter:
                 u.note = "in a corner" if free_for_s <= 0 else "no straight long enough before the next corner"
                 continue
             self._queue.remove(u)
+            if long_ok and u.longer and u.priority > APPROACH:
+                longer = self.voice.duration(u.longer) or estimate_duration(u.longer)
+                if longer <= free_for_s:
+                    u.text, u.duration_s, u.longer = u.longer, longer, None
             self.voice.play(u, now)
             self._current = u
             self._busy_until = now + u.length_s + self.quiet_gap_s

@@ -47,6 +47,12 @@ no model involved, so they must be exact. Backtest every rule before it goes liv
 
 - **Spoken text is short.** About 14 characters a second; a corner-exit line must fit the next
   straight, a cue (`"at"` trigger) must finish before the corner. Name the corner, then one fix.
+- **Say more when there's time.** Add `"long"` to a `say` action: the fuller version (why, and
+  how to change it), said instead when the driver isn't pushing and there's room. Write it the
+  way an engineer talks on the radio, not a list of numbers.
+- **Don't duplicate CrewChief.** It already does the spotter, lap times and personal bests,
+  gaps, fuel, tyres, flags and pit calls; `rules add` warns when a rule says those. Rules are
+  for technique and for what the driver asked to be told.
 - **Feedback after, cues before.** `corner_exit` + `feedback` priority for what happened;
   `{"at": "T1"}` (the reference brake point) + `cue` priority for a reminder on the approach.
   Use `"lead_s"` / `"offset_m"` to move it; `"T1 apex"`, `"T1 exit"`, `"T1 entry"` or metres work too.
@@ -56,8 +62,8 @@ no model involved, so they must be exact. Backtest every rule before it goes liv
 - **Missing values are quiet.** A condition on a missing value is false, and a line whose text
   needs a missing value isn't said, so `brake_diff_m < -10` simply doesn't fire on a lap the
   corner was taken flat.
-- **Track-wide rules** (no `track`) work everywhere: lap-time calls (`{"lap": "complete"}`, e.g.
-  `"if": "new_best"`), pit reminders (`{"pit": "exit"}`), schedules (`{"every_laps": 5}`).
+- **Track-wide rules** (no `track`) work everywhere: lap rules (`{"lap": "complete"}`),
+  schedules (`{"every_laps": 5}`), a reminder on a cool-down (`{"pace": "tranquille"}`).
 - `wake` hands the event to the coach (you); keep it for things that need thinking, not
   for anything the rule can say itself.
 
@@ -71,8 +77,10 @@ no model involved, so they must be exact. Backtest every rule before it goes liv
 {"id": "bus-stop-lift", "track": "spa-2024-up", "when": {"at": "Bus Stop", "lead_s": 1.0},
  "if": "not learning", "action": {"say": "Bus Stop. Just a lift."}}
 
-{"id": "new-best", "when": {"lap": "complete"}, "if": "new_best",
- "action": {"say": "New best, {say_time(lap_time)}.", "priority": "summary"}}
+{"id": "t1-repeat", "track": "spa-2024-up", "when": {"lap": "complete"},
+ "if": "worst_corner == 1 and worst_delta_s > 0.3", "in_a_row": 2,
+ "action": {"say": "La Source again.", "priority": "summary",
+            "long": "La Source again: that's where the lap goes, two laps running. Braking point first, then the rest."}}
 
 {"id": "slow-exit-t3", "track": "okayama-full", "when": {"corner_exit": 3},
  "if": "exit_speed_diff_kph < -6 and throttle_diff_m > 20",

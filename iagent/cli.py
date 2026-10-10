@@ -752,14 +752,16 @@ def cues():
 
 
 def _cue_rows(plan) -> list[dict]:
-    return [{"corners": c.corners, "target_m": round(c.target_m), "text": c.text, "source": c.source} for c in plan.cues]
+    return [{"corners": c.corners, "target_m": round(c.target_m), "text": c.text, "short": c.short, "source": c.source}
+            for c in plan.cues]
 
 
 def _print_plan(plan) -> None:
     click.echo(f"{plan.track_key} / {plan.car_key}, following {plan.ref_lap_id}")
     for c in plan.cues:
         corners = "+".join(f"T{i}" for i in c.corners)
-        click.echo(f"  {corners:<8} {c.target_m:7.0f} m  {c.text}" + ("" if c.source == "template" else f"  [{c.source}]"))
+        click.echo(f"  {corners:<8} {c.target_m:7.0f} m  {c.text}" + ("" if c.source == "template" else f"  [{c.source}]")
+                   + (f"\n  {'':<8} {'':>9}  then: {c.short}" if c.short else ""))
 
 
 @cues.command("build")
@@ -809,10 +811,13 @@ def cues_show(ctx: Ctx, track: str, car: str, as_json: bool):
 @click.argument("corner", type=int)
 @click.argument("text")
 @click.option("--source", default="coach", show_default=True, help="Who wrote it: coach or driver.")
+@click.option("--short", "short", help="The short form, said once the driver has heard TEXT a few times "
+              "(default: none, TEXT every time).")
 @click.pass_obj
-def cues_set(ctx: Ctx, track: str, car: str, corner: int, text: str, source: str):
+def cues_set(ctx: Ctx, track: str, car: str, corner: int, text: str, source: str, short: str | None):
     """Rewrite the cue for CORNER (the cue covering it). Keep it short: it is spoken on the approach
-    and must finish before the brake point; about 14 characters take a second to say."""
+    and must finish before the brake point; about 14 characters take a second to say. Once the
+    driver knows the corner, a shorter reminder (--short) sounds less robotic than the full cue."""
     from iagent.live.cues import load_plan, save_plan
 
     plan = load_plan(ctx.workspace, track, car)
@@ -821,9 +826,9 @@ def cues_set(ctx: Ctx, track: str, car: str, corner: int, text: str, source: str
     cue = plan.cue_for(corner)
     if cue is None:
         raise click.ClickException(f"No cue covers T{corner}.")
-    cue.text, cue.source = text.strip(), source
+    cue.text, cue.source, cue.short = text.strip(), source, short.strip() if short else None
     save_plan(ctx.workspace, plan)
-    click.echo(f"T{'+T'.join(map(str, cue.corners))}: {cue.text}")
+    click.echo(f"T{'+T'.join(map(str, cue.corners))}: {cue.text}" + (f"  (then: {cue.short})" if cue.short else ""))
 
 
 @cli.group()
@@ -892,10 +897,15 @@ def rules_add(ctx: Ctx, rule_json: str, track: str | None, car: str | None, repl
         raw["track"] = track
     if car:
         raw["car"] = car
+    from iagent.live.crewchief import overlaps
+
     rule, path = add_rule(ctx.workspace, raw, replace=replace, by=by)
+    overlap = overlaps(rule)
     if as_json:
-        _emit({"path": str(path), "rule": rule.to_dict()})
+        _emit({"path": str(path), "rule": rule.to_dict(), "crewchief_overlap": overlap})
         return
+    if overlap:
+        click.echo(f"Note: {overlap} Drivers running CrewChief would hear it twice.", err=True)
     click.echo(f"{rule.id}: {_when(rule)}" + (f" if {rule.condition.text}" if rule.condition else "")
                + f" -> {', '.join(a.kind for a in rule.actions)}  [draft]")
     click.echo(f"Saved {path}. Next: iagent rules backtest {rule.id}")
@@ -1095,9 +1105,11 @@ def live():
 @click.option("--ref", "ref_id", help="Lap to follow (default: the saved cue plan's).")
 @click.option("--learning-laps", default=2, show_default=True, help="Laps with every corner cued.")
 @click.option("--threads", default=2, show_default=True, help="CPU threads for speech.")
+@click.option("--crewchief", type=click.Choice(["auto", "on", "off"]), default="auto", show_default=True,
+              help="Share the radio with CrewChief: leave lap times to it, keep quiet after the line. auto: if it's running.")
 @click.pass_obj
 def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None, voice: str, print_only: bool,
-             ref_id: str | None, learning_laps: int, threads: int):
+             ref_id: str | None, learning_laps: int, threads: int, crewchief: str):
     """Coach live: cue each corner on the approach, say what went wrong after it, sum up each lap.
 
     On the sim PC this reads iRacing (start it before or after; Ctrl+C to stop). Elsewhere, use
@@ -1108,7 +1120,9 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
     from iagent.live.sources import LIVE_CHANNELS, IrsdkSource, paced
     from iagent.live.speech import PrintVoice
 
-    settings = Settings(learning_laps=learning_laps)
+    from iagent.live import crewchief as cc
+
+    settings = Settings(learning_laps=learning_laps, crewchief=cc.resolve(crewchief))
     if print_only:
         out = PrintVoice()
     else:
@@ -1124,7 +1138,8 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
     def on_start(coach):
         rules = coach.rules.rules
         click.echo(f"Coaching {coach.session.track_name} in {coach.session.car_name}: {len(coach.plan.cues)} cues, "
-                   f"following {coach.plan.ref_lap_id}." + (f" Rules: {', '.join(r.id for r in rules)}." if rules else ""))
+                   f"following {coach.plan.ref_lap_id}." + (f" Rules: {', '.join(r.id for r in rules)}." if rules else "")
+                   + (" Sharing the radio with CrewChief." if coach.settings.crewchief else ""))
         coach.rules.on_wake = lambda w: click.echo(f"[wake] {w['rule']}: {w['message']}")
         coach.rules.on_fire = on_fire
 

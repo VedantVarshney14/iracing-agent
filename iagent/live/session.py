@@ -39,6 +39,7 @@ class Options:
     voice: str = "alba"  # a Pocket TTS voice, or "silent" (log only)
     learning_laps: int = 2
     focus: bool = True
+    crewchief: str = "auto"  # "auto" (detect it), "on" or "off"
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Options":
@@ -210,7 +211,10 @@ class LiveSessions:
                         return
                 session_of = lambda: src.session  # noqa: E731
                 frames = src.frames()
-            settings = Settings(learning_laps=options.learning_laps, focus=options.focus)
+            from iagent.live import crewchief
+
+            settings = Settings(learning_laps=options.learning_laps, focus=options.focus,
+                                crewchief=crewchief.resolve(options.crewchief))
             run(self.workspace, session_of, self._frames(frames), voice, settings, options.ref, self._attach)
             self._log({"type": "status", "state": "stopped" if self._stop.is_set() else "ended"})
         except Exception as e:  # report it on the page
@@ -251,7 +255,7 @@ class LiveSessions:
                    "ref_lap_time": coach.plan.ref_lap_time, "length_m": coach.length,
                    "source": self.options.source, "file": self.options.file,
                    "focus": coach.focus_log[-1] if coach.focus_log else None,
-                   "rules": [r.id for r in coach.rules.rules]})
+                   "rules": [r.id for r in coach.rules.rules], "crewchief": coach.settings.crewchief})
 
     def _line(self, what: str, u: Utterance, now: float) -> None:
         self._log({"type": "line", "status": what, "kind": u.kind, "text": u.text, "corner": u.corner,

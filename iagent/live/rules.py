@@ -31,8 +31,10 @@ Triggers (`when`, exactly one of):
 - `every_s` / `at_s` (seconds since the coach started), `every_laps` / `at_lap` (counted laps),
   `session_start: true`.
 
-Actions (`action`: one, or a list): `{"say": template, "priority": "cue"|"feedback"|"summary",
-"expires_s"}`, `{"wake": template}` (hand the event to the agent), `{"log": template}`.
+Actions (`action`: one, or a list): `{"say": template, "long": template, "priority":
+"cue"|"feedback"|"summary", "expires_s"}` (`long`, optional: the fuller version, said instead
+when the driver isn't pushing and there's room), `{"wake": template}` (hand the event to the
+agent), `{"log": template}`.
 
 Limits: `cooldown_s`, `cooldown_laps` (laps to stay quiet after firing), `max_per_lap`,
 `max_per_session`, `once`. `in_a_row: N` fires only when the condition held on N occurrences in a
@@ -147,9 +149,12 @@ class Action:
     template: Template
     priority: str = "feedback"
     expires_s: float | None = None
+    longer: Template | None = None
 
     def to_dict(self) -> dict:
         out: dict[str, Any] = {self.kind: self.template.text}
+        if self.longer is not None:
+            out["long"] = self.longer.text
         if self.kind == "say":
             out["priority"] = self.priority
             if self.expires_s is not None:
@@ -274,7 +279,7 @@ def _action(rule_id: str, raw: Any, trigger: str, names: set[str]) -> Action:
     if len(kinds) != 1:
         raise RuleError(f"{rule_id}: each action is one of say, wake or log.")
     kind = kinds[0]
-    extra = set(raw) - {kind, "priority", "expires_s"}
+    extra = set(raw) - {kind, "priority", "expires_s"} - ({"long"} if kind == "say" else set())
     if extra:
         raise RuleError(f"{rule_id}: unknown action field(s) {', '.join(sorted(extra))}.")
     try:
@@ -282,6 +287,13 @@ def _action(rule_id: str, raw: Any, trigger: str, names: set[str]) -> Action:
     except ExprError as e:
         raise RuleError(f"{rule_id}: {e}") from None
     _check_names(rule_id, template.names, names)
+    longer = None
+    if raw.get("long"):
+        try:
+            longer = Template(str(raw["long"]))
+        except ExprError as e:
+            raise RuleError(f"{rule_id}: {e}") from None
+        _check_names(rule_id, longer.names, names)
     if kind == "say" and not template.text.strip():
         raise RuleError(f"{rule_id}: nothing to say.")
     priority = raw.get("priority", "cue" if trigger == "at" else "summary" if trigger == "lap" else "feedback")
@@ -290,7 +302,7 @@ def _action(rule_id: str, raw: Any, trigger: str, names: set[str]) -> Action:
     expires = raw.get("expires_s")
     if expires is not None and (not isinstance(expires, (int, float)) or expires <= 0):
         raise RuleError(f"{rule_id}: expires_s is a number of seconds > 0.")
-    return Action(kind, template, priority, float(expires) if expires is not None else None)
+    return Action(kind, template, priority, float(expires) if expires is not None else None, longer)
 
 
 def _check_when(rule_id: str, trigger: str, when: dict) -> None:
@@ -711,7 +723,8 @@ class RuleEngine:
         else:
             expires = now + (40.0 if rule.trigger not in ("at", "corner_exit", "condition") else 10.0)
         corner = env.get("corner") if isinstance(env.get("corner"), int) else None
-        self._coach.arbiter.say(Utterance(text, priority, "rule", now, expires, corner, rule=rule.id))
+        longer = a.longer.render(env) if a.longer is not None else None
+        self._coach.arbiter.say(Utterance(text, priority, "rule", now, expires, corner, rule=rule.id, longer=longer))
         self._lines[self._lap_no] = lines + 1
         self._last_line_s = now
         return None
@@ -734,7 +747,7 @@ class RuleEngine:
         """The values the rule looked at (for the log, backtests and the agent)."""
         names = set(rule.condition.names) if rule.condition else set()
         for a in rule.actions:
-            names |= a.template.names
+            names |= a.template.names | (a.longer.names if a.longer else set())
         if rule.trigger == "condition":
             names |= self._cond(rule).names
         out = {}

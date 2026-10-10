@@ -5,13 +5,13 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 from iagent.live.coach import LiveCoach, Settings
-from iagent.live.cues import CuePlan, build_plan, load_plan, save_plan, use_next_plan
+from iagent.live.cues import PLAN_VERSION, CuePlan, build_plan, load_plan, save_plan, use_next_plan
 from iagent.live.rulebook import load_rules, signature
 from iagent.live.rules import RuleEngine
 from iagent.live.speech import Arbiter, Voice
 from iagent.telemetry.frames import Frame
 from iagent.telemetry.session import SessionInfo
-from iagent.workspace import Workspace
+from iagent.workspace import Workspace, WorkspaceError
 
 logger = logging.getLogger("iagent.live")
 
@@ -19,6 +19,12 @@ logger = logging.getLogger("iagent.live")
 def plan_for(ws: Workspace, session: SessionInfo, ref_id: str | None = None, rebuild: bool = False) -> CuePlan:
     """The saved plan for this track and car, built (and saved) if there isn't one."""
     plan = None if rebuild or ref_id else load_plan(ws.root, session.track_key, session.car_key)
+    if plan is not None and plan.version < PLAN_VERSION:  # older format: rebuild, keeping rewritten cues
+        try:
+            plan = build_plan(ws, session.track_key, session.car_key, plan.ref_lap_id)
+        except WorkspaceError:  # its reference lap is gone
+            plan = build_plan(ws, session.track_key, session.car_key)
+        save_plan(ws.root, plan)
     if plan is None:
         plan = build_plan(ws, session.track_key, session.car_key, ref_id)
         path = save_plan(ws.root, plan)

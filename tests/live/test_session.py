@@ -119,6 +119,10 @@ def test_live_api_starts_a_replay_and_answers_a_question(root, recording, tmp_pa
         time.sleep(0.05)
     kinds = [e["type"] for e in events]
     assert "driver" in kinds and [e["text"] for e in events if e["type"] == "answer"] == ["Pouhon costs 0.48 s."]
+    for _ in range(200):  # the answer can come back before the coach has started
+        if live.status()["state"] == "running":
+            break
+        time.sleep(0.05)
     assert web.post("/api/live/focus", json={"corner": 3}).json() == {"ok": True}
     assert web.post("/api/live/stop").json()["state"] == "idle"
 

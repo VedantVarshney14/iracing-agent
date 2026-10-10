@@ -5,6 +5,10 @@ can rewrite any cue's text before a session; rebuilding keeps rewritten text. Ea
 `target_m`: the point where it must have *finished*, normally the reference lap's brake point (or
 the turn-in for corners taken without braking). The live coach starts it early enough to finish
 there at the car's current speed.
+
+Each cue has a full text, said while the driver learns the corner, and a short one for once
+they've heard it ("La Source. Hard brake."): a coach doesn't repeat the whole description every
+lap. Rewriting a cue's text without giving a short form drops the template's short form.
 """
 
 import json
@@ -21,6 +25,7 @@ MERGE_GAP_M = 150  # a corner this close after the previous one's exit is cued t
 MERGE_MAX = 2  # corners per cue: longer cues come too late
 HARD_BRAKE, MEDIUM_BRAKE = 0.8, 0.5  # reference brake pressure (0-1)
 LIFT_THROTTLE = 0.6  # a no-brake corner whose throttle dips below this is a lift
+PLAN_VERSION = 2  # 2: cues have short forms
 GEARS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth", 7: "seventh", 8: "eighth"}
 
 
@@ -31,6 +36,7 @@ class Cue:
     target_m: float
     text: str
     source: str = "template"  # "template", or who rewrote it: "coach", "driver"
+    short: str | None = None  # said once the full text has been heard (None: always the full text)
 
 
 @dataclass
@@ -43,6 +49,7 @@ class CuePlan:
     ref_metrics: list[dict]  # the reference lap's corner metrics, for feedback after each corner
     ref_lap_time: float | None = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    version: int = PLAN_VERSION
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -50,6 +57,7 @@ class CuePlan:
     @classmethod
     def from_json(cls, text: str) -> "CuePlan":
         raw = json.loads(text)
+        raw.setdefault("version", 1)  # before short forms
         raw["cues"] = [Cue(**c) for c in raw["cues"]]
         return cls(**raw)
 
@@ -111,12 +119,12 @@ def approach_cue(c: Corner, m: dict) -> Cue:
     if brake_m is None:
         lift = (m.get("min_throttle") or 1.0) < LIFT_THROTTLE
         text = f"{name}. Lift, {side}." if lift else f"{name}. Flat, {side}."
-        return Cue(c.id, [c.id], c.entry_m - BEFORE_TURN_IN_M, text)
+        return Cue(c.id, [c.id], c.entry_m - BEFORE_TURN_IN_M, text, short=f"{name}. {'Lift' if lift else 'Flat'}.")
     strength = "Hard" if peak >= HARD_BRAKE else "Medium" if peak >= MEDIUM_BRAKE else "Light"
     hairpin = (m.get("min_speed_kph") or 999) < 90 and (m.get("entry_speed_kph") or 0) > 150
     shape = f"hairpin {side}" if hairpin else side
     text = f"{name}, {shape}. {strength} brake" + (f", {gear} gear." if gear else ".")
-    return Cue(c.id, [c.id], float(brake_m), text)
+    return Cue(c.id, [c.id], float(brake_m), text, short=f"{name}. {strength} brake.")
 
 
 def merge_close(cmap: CornerMap, cues: list[Cue]) -> list[Cue]:
@@ -132,6 +140,8 @@ def merge_close(cmap: CornerMap, cues: list[Cue]) -> list[Cue]:
             then = c.name or ("left" if c.direction == "L" else "right")
             prev.corners.append(cue.corner)
             prev.text = f"{prev.text} Then {then}."
+            if prev.short:
+                prev.short = f"{prev.short} Then {then}."
             continue
         out.append(cue)
     return out
@@ -142,7 +152,7 @@ def keep_rewritten(old: CuePlan, new: CuePlan) -> None:
     for cue in new.cues:
         before = next((c for c in old.cues if c.corners == cue.corners), None)
         if before is not None and before.source != "template":
-            cue.text, cue.source = before.text, before.source
+            cue.text, cue.source, cue.short = before.text, before.source, before.short
 
 
 # --- the next session's plan ------------------------------------------------------------------
