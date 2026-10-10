@@ -744,5 +744,166 @@ def refs_list(ctx: Ctx, track: str | None, car: str | None, as_json: bool):
                    f"{r['track']} / {r['car']}  {r.get('date', '')}")
 
 
+@cli.group()
+def cues():
+    """Spoken corner cues for learning a track (what the live coach says approaching each corner)."""
+
+
+def _cue_rows(plan) -> list[dict]:
+    return [{"corners": c.corners, "target_m": round(c.target_m), "text": c.text, "source": c.source} for c in plan.cues]
+
+
+def _print_plan(plan) -> None:
+    click.echo(f"{plan.track_key} / {plan.car_key}, following {plan.ref_lap_id}")
+    for c in plan.cues:
+        corners = "+".join(f"T{i}" for i in c.corners)
+        click.echo(f"  {corners:<8} {c.target_m:7.0f} m  {c.text}" + ("" if c.source == "template" else f"  [{c.source}]"))
+
+
+@cues.command("build")
+@click.option("--track", required=True, help="Track key (see `iagent tracks`).")
+@click.option("--car", required=True, help="Car key.")
+@click.option("--ref", "ref_id", help="Lap to follow (default: fastest Garage61 lap, else your best).")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def cues_build(ctx: Ctx, track: str, car: str, ref_id: str | None, as_json: bool):
+    """Build (or rebuild) the cue plan from the corner map and a reference lap.
+
+    Each cue must finish at its target: the reference lap's brake point, or just before turn-in
+    for corners taken without braking. Text rewritten with `iagent cues set` is kept.
+    """
+    from iagent.live.cues import build_plan, save_plan
+
+    plan = build_plan(ctx, track, car, ref_id)
+    path = save_plan(ctx.workspace, plan)
+    if as_json:
+        _emit({"path": str(path), "ref_lap_id": plan.ref_lap_id, "cues": _cue_rows(plan)})
+    else:
+        _print_plan(plan)
+        click.echo(f"Saved {path}")
+
+
+@cues.command("show")
+@click.option("--track", required=True, help="Track key (see `iagent tracks`).")
+@click.option("--car", required=True, help="Car key.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def cues_show(ctx: Ctx, track: str, car: str, as_json: bool):
+    """The saved cue plan."""
+    from iagent.live.cues import load_plan
+
+    plan = load_plan(ctx.workspace, track, car)
+    if plan is None:
+        raise click.ClickException(f"No cue plan for {track} / {car}: run `iagent cues build --track {track} --car {car}`.")
+    if as_json:
+        _emit({"ref_lap_id": plan.ref_lap_id, "cues": _cue_rows(plan)})
+    else:
+        _print_plan(plan)
+
+
+@cues.command("set")
+@click.option("--track", required=True, help="Track key (see `iagent tracks`).")
+@click.option("--car", required=True, help="Car key.")
+@click.argument("corner", type=int)
+@click.argument("text")
+@click.option("--source", default="coach", show_default=True, help="Who wrote it: coach or driver.")
+@click.pass_obj
+def cues_set(ctx: Ctx, track: str, car: str, corner: int, text: str, source: str):
+    """Rewrite the cue for CORNER (the cue covering it). Keep it short: it is spoken on the approach
+    and must finish before the brake point; about 14 characters take a second to say."""
+    from iagent.live.cues import load_plan, save_plan
+
+    plan = load_plan(ctx.workspace, track, car)
+    if plan is None:
+        raise click.ClickException(f"No cue plan for {track} / {car}: run `iagent cues build` first.")
+    cue = plan.cue_for(corner)
+    if cue is None:
+        raise click.ClickException(f"No cue covers T{corner}.")
+    cue.text, cue.source = text.strip(), source
+    save_plan(ctx.workspace, plan)
+    click.echo(f"T{'+T'.join(map(str, cue.corners))}: {cue.text}")
+
+
+@cli.group()
+def live():
+    """The in-session coach: corner cues and feedback spoken while you drive."""
+
+
+@live.command("run")
+@click.option("--replay", "replay", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Replay an .ibt recording in real time instead of reading iRacing live.")
+@click.option("--speed", default=1.0, show_default=True, help="Replay speed (× real time).")
+@click.option("--start", "start_at", type=float, help="Replay from this session time (s).")
+@click.option("--voice", default="alba", show_default=True, help="Pocket TTS voice, or a .wav to clone.")
+@click.option("--print", "print_only", is_flag=True, help="Print what would be said instead of speaking.")
+@click.option("--ref", "ref_id", help="Lap to follow (default: the saved cue plan's).")
+@click.option("--learning-laps", default=2, show_default=True, help="Laps with every corner cued.")
+@click.option("--threads", default=2, show_default=True, help="CPU threads for speech.")
+@click.pass_obj
+def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None, voice: str, print_only: bool,
+             ref_id: str | None, learning_laps: int, threads: int):
+    """Coach live: cue each corner on the approach, say what went wrong after it, sum up each lap.
+
+    On the sim PC this reads iRacing (start it before or after; Ctrl+C to stop). Elsewhere, use
+    --replay to hear a recording. Cues come from `iagent cues build` (built on first use).
+    """
+    from iagent.live.coach import Settings
+    from iagent.live.run import run
+    from iagent.live.sources import LIVE_CHANNELS, IrsdkSource, paced
+    from iagent.live.speech import PrintVoice
+
+    settings = Settings(learning_laps=learning_laps)
+    if print_only:
+        out = PrintVoice()
+    else:
+        from iagent.live.voice import PocketVoice
+
+        try:
+            click.echo(f"Loading voice {voice}...")
+            out = PocketVoice(ctx.workspace / "cache" / "voice", voice=voice, threads=threads)
+        except RuntimeError as e:
+            raise click.ClickException(str(e)) from e
+        out = _SpokenToo(out)
+
+    on_start = lambda coach: click.echo(  # noqa: E731
+        f"Coaching {coach.session.track_name} in {coach.session.car_name}: {len(coach.plan.cues)} cues, "
+        f"following {coach.plan.ref_lap_id}.")
+    try:
+        if replay:
+            src = IbtSource(replay, channels=LIVE_CHANNELS)
+            run(ctx.workspace, lambda: src.session, paced(src.frames(), speed, start_at), out, settings, ref_id, on_start)
+        else:
+            live_src = IrsdkSource()
+            click.echo("Waiting for iRacing...")
+            live_src.connect()
+            run(ctx.workspace, lambda: live_src.session, live_src.frames(), out, settings, ref_id, on_start)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if hasattr(out, "close"):
+            out.close()
+
+
+class _SpokenToo:
+    """Speak and print: the terminal shows what the voice is saying."""
+
+    def __init__(self, voice):
+        self._voice = voice
+        self._print = __import__("iagent.live.speech", fromlist=["PrintVoice"]).PrintVoice()
+
+    def duration(self, text):
+        return self._voice.duration(text)
+
+    def play(self, utterance, now):
+        self._print.play(utterance, now)
+        self._voice.play(utterance, now)
+
+    def prepare(self, texts):
+        return self._voice.prepare(texts)
+
+    def close(self):
+        self._voice.close()
+
+
 if __name__ == "__main__":
     cli()

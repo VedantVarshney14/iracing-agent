@@ -263,12 +263,25 @@ Created by the agent via the CLI; evaluated by the service. A rule is data, not 
 
 - **Input:** push-to-talk → STT on the PC CPU (faster-whisper `small` int8, Parakeet or
   Moonshine) → utterance event → agent.
-- **Output:** a speech arbiter owns the audio device: priority, expiry (a late corner cue is
-  dropped), no interrupting higher priority, minimum quiet gap. Kokoro TTS on CPU; rule cues are
-  pre-rendered when rules are activated.
-- **CrewChief coexistence:** no integration; sparse speech, a different voice, avoid spotter/fuel
-  topics.
-- **CPU cost on the sim PC is unmeasured**; checked in the live phase before committing.
+- **Output:** a speech arbiter owns the audio: priority (corner cues > feedback > lap summary),
+  expiry (a late corner cue is dropped), a corner cue cuts off anything less important, a quiet
+  gap between lines, feedback only on straights, and nothing new while `CarLeftRight` shows a car
+  alongside (when CrewChief's spotter talks). Implemented in `iagent/live/` (phase 4, first slice).
+- **TTS: Pocket TTS** (Kyutai, ~100M parameters, MIT code, CPU, 2 threads): measured on an M1 at
+  ~55 ms to first audio when streaming and ~4.5× real time, so one engine serves cues, feedback
+  and (later) answers. Cue texts are still pre-rendered and cached at session start, so a cue
+  costs no CPU at the brake zone and its exact length times its start. Kokoro was the earlier
+  plan: better known, but ~3.7 s before first audio, too slow for anything said in reaction.
+  Audio is written with blocking, high-latency writes from the voice thread (a Python callback
+  starved by the coach loop crackled).
+- **CrewChief coexistence:** our own audio path first (adaptive feedback needs it). Next: export
+  the cue plan as CrewChief **pace notes** (`Documents/CrewChiefV4/pace_notes/<game>/[<car>/]<track>/`,
+  WAVs plus `metadata.json` entries keyed by `distanceRoundTrack`), so static cues go through
+  CrewChief's own queue. To verify on the sim PC: synthesised WAVs accepted, iRacing folder names,
+  trigger timing. CrewChief has no API for arbitrary speech (its TTS only voices driver names).
+- **SimHub (later):** a small C# plugin (.NET 4.8) exposing the current cue as properties for
+  dashboards/overlays, and actions bindable to wheel buttons (repeat cue, mute, push-to-talk).
+- **CPU on the sim PC (Ryzen 5 7600X):** to be measured with iRacing, SimHub and CrewChief running.
 - **UI:** a local web app served by the service, viewable from any machine on the LAN: laps,
   corner comparisons, traces, rules, and what the agent did and said.
 
