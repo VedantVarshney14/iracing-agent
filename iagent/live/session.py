@@ -156,6 +156,7 @@ class LiveSessions:
                           "car": coach.session.car_key, "car_name": coach.session.car_name},
                 "ref": {"lap_id": coach.plan.ref_lap_id, "lap_time": coach.plan.ref_lap_time},
                 "laps_done": coach._laps_done,
+                "mode": coach.mode,
                 "learning": coach._laps_done < coach.settings.learning_laps,
                 "focus": focus,
                 "cues": [{"corners": c.corners, "text": c.text, "cued": coach._wanted(c)} for c in coach.plan.cues],
@@ -175,7 +176,8 @@ class LiveSessions:
         for lap in laps:
             worst = sorted(lap["corners"], key=lambda c: -c["delta_s"])[:3]
             lines.append(f"lap {lap['lap']}: {lap['lap_time']:.3f} s, gap {lap['gap_s']:+.3f} s"
-                         + ("" if lap["at_pace"] else " (off pace)") + "; most lost: "
+                         + {"pushing": "", "moment": f" (a moment near T{lap['moment_at']})",
+                            "tranquille": " (not pushing)"}[lap["pace"]] + "; most lost: "
                          + ", ".join(f"T{c['corner']} {c['delta_s']:+.2f}" for c in worst))
         if st.get("focus"):
             lines.append(f"current focus: {st['focus']['label']}")
@@ -233,6 +235,7 @@ class LiveSessions:
         self.state = "running"
         coach.arbiter.on_event = self._line
         coach.on_lap = lambda lap: self._lap(coach, lap)
+        coach.on_mode = lambda mode, now, d: self._log({"type": "pace", "mode": mode, "at": now, "lap_dist": round(d)})
         self._log({"type": "status", "state": "running", "track": coach.session.track_name,
                    "car": coach.session.car_name, "ref": coach.plan.ref_lap_id})
 

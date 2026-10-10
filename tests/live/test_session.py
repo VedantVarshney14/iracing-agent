@@ -126,3 +126,43 @@ def test_live_api_starts_a_replay_and_answers_a_question(root, recording, tmp_pa
 def test_recordings_lists_ibt_files_newest_first(tmp_path, recording):
     rows = recordings([recording.parent, tmp_path / "missing"])
     assert [r["name"] for r in rows] == [recording.name]
+
+
+def drive_kinds(root, kinds, seed=11):
+    """Replay synthetic laps of the given kinds through a coach judged against the stored best."""
+    from iagent.live.run import own_best
+
+    ws = Workspace(root)
+    try:
+        plan = build_plan(ws, TRACK, CAR)
+        src = SyntheticSource(n_laps=len(kinds), kinds=kinds, seed=seed, start_m=2900.0)
+        coach = LiveCoach(src.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(CapturedVoice()),
+                          Settings(learning_laps=0), own_best=own_best(ws, TRACK, CAR))
+    finally:
+        ws.close()
+    laps = []
+    coach.on_lap = laps.append
+    for f in src.frames():
+        coach.push(f)
+    return coach, laps
+
+
+def test_slow_laps_are_tranquille_and_get_no_cues_or_numbers(root):
+    from iagent.testing.synthetic import LapKind
+
+    coach, laps = drive_kinds(root, [LapKind.CLEAN, LapKind.CLEAN, LapKind.SLOW, LapKind.CLEAN])
+    assert [lap["pace"] for lap in laps] == ["pushing", "tranquille", "pushing"]
+    slow = laps[1]
+    assert slow["pushing_share"] < 0.6 and slow["corners"] == []  # nothing assessed while cruising
+    spoken = coach.arbiter.voice.spoken
+    cruising = [s for s in spoken if s.kind == "approach" and laps[0]["at"] + 15 < s.at_s < slow["at"]]
+    assert cruising == []  # no corner cues on the slow lap (after it was spotted)
+    assert not any(s.kind == "summary" and laps[0]["at"] < s.at_s < slow["at"] + 5 and "down" in s.text for s in spoken)
+
+
+def test_pace_is_judged_against_your_own_best_not_the_reference(root):
+    from iagent.testing.synthetic import LapKind
+
+    coach, laps = drive_kinds(root, [LapKind.CLEAN] * 3)
+    assert coach._pace_own and all(lap["pace"] == "pushing" for lap in laps)
+    assert 0.9 < coach.pace_ratio(coach._prev_d) < 1.1  # where the car is now

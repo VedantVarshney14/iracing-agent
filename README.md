@@ -226,7 +226,12 @@ start the coach or write to the workspace.
   laps at pace) becomes the focus: *"Focus now: Turns 15 and 16. Just a lift, no brakes."* It's
   cued every lap; other corners speak up only for a big loss or an off. Once you match the
   reference there twice, the next focus is picked.
-- **Lap summary** at the line, short enough for a short straight: *"2 27.0, 5 tenths down."*
+- **Only while you're pushing.** Pace over the last 400 m is compared with your own best lap. On
+  an out lap, a cool-down or just after a moment (10%+ slower) the coach goes quiet and doesn't
+  judge the corners, then picks up again once you're within 5%, so one moment doesn't write off
+  the rest of the lap.
+- **Lap summary** at the line, short enough for a short straight: *"2 27.0, 5 tenths down."*, or
+  where it went on a lap with a moment: *"1 44.2. Lost it at Turn 7."*
 
 **From the browser:** the **Live** tab in `iagent ui` starts the coach (iRacing, or a replay of a
 recording), shows everything it said, and everything it held back and why ("in a corner", "a car

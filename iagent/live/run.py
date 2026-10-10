@@ -31,12 +31,21 @@ def start_coach(root: Path, session: SessionInfo, voice: Voice, settings: Settin
         plan = plan_for(ws, session, ref_id)
         cmap = ws.corner_map(session.track_key)
         ref_grid = ws.load(plan.ref_lap_id)
+        own = own_best(ws, session.track_key, session.car_key)
     finally:
         ws.close()
     if hasattr(voice, "prepare"):
         rendered = voice.prepare(c.text for c in plan.cues)
         logger.info("Rendered %d cue(s)", rendered)
-    return LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings)
+    return LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own)
+
+
+def own_best(ws: Workspace, track: str, car: str):
+    """The driver's fastest valid lap here (the pace that counts as pushing), or None."""
+    if not (ws.root / "index.sqlite").exists():
+        return None
+    laps = [r for r in ws.store().list(track=track, car=car, valid_only=True) if r.lap_time]
+    return ws.load(min(laps, key=lambda r: r.lap_time).lap_id) if laps else None
 
 
 def run(root: Path, session_of: Callable[[], SessionInfo], frames: Iterator[Frame], voice: Voice,

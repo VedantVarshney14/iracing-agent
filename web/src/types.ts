@@ -187,6 +187,7 @@ export interface LiveStatus {
   track?: { key: string; name: string; car: string; car_name: string };
   ref?: { lap_id: string; lap_time: number | null };
   laps_done?: number;
+  mode?: "pushing" | "tranquille";
   learning?: boolean;
   focus?: LiveFocus | null;
   cues?: { corners: number[]; text: string; cued: boolean }[];
@@ -197,7 +198,9 @@ export interface LiveStatus {
 export type LiveEvent = { seq: number; wall: string; at?: number | null } & (
   | { type: "status"; state: string; track?: string; car?: string; ref?: string }
   | { type: "line"; status: "said" | "cut" | "dropped"; kind: string; text: string; corner: number | null; note: string | null }
-  | { type: "lap"; lap: number; lap_time: number | null; gap_s: number | null; at_pace: boolean; corners: { corner: number; delta_s: number }[]; focus: number | null }
+  | { type: "lap"; lap: number; lap_time: number | null; gap_s: number | null; pace: "pushing" | "moment" | "tranquille";
+      pushing_share: number; slow: [number, number][]; moment_at: number | null; corners: { corner: number; delta_s: number }[]; focus: number | null }
+  | { type: "pace"; mode: "pushing" | "tranquille"; lap_dist: number }
   | { type: "focus"; focus: LiveFocus | null; by: string }
   | { type: "driver"; text: string }
   | { type: "answer"; text: string }

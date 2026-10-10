@@ -172,6 +172,7 @@ function Running({ status, onError }: { status: LiveStatus; onError: (e: string 
       {opts?.source === "replay" && <span className="muted">Replay · {opts.speed}×</span>}
       {status.ref && <span className="muted">Following <span className="ghost-text">{status.ref.lap_id} · {lapTime(status.ref.lap_time)}</span></span>}
       {status.laps_done != null && <span className="muted">{status.laps_done} laps{status.learning ? " · learning" : ""}</span>}
+      {status.mode === "tranquille" && <span className="muted">· not pushing: quiet</span>}
       {status.focus && <span className="focus-pill">Focus: {status.focus.label}</span>}
       <button type="button" className="btn stop" disabled={stopping} onClick={async () => {
         setStopping(true);
@@ -211,13 +212,20 @@ function Feed({ events }: { events: LiveEvent[] }) {
               <li key={e.seq} className="feed-lap">
                 <b>Lap {e.lap}</b>
                 <span className="muted">
-                  {lapTime(e.lap_time)}{e.gap_s != null ? ` · ${signed(e.gap_s)} s` : ""}{e.at_pace ? "" : " · off pace"}
+                  {lapTime(e.lap_time)}{e.pace === "pushing" && e.gap_s != null ? ` · ${signed(e.gap_s)} s` : ""}
+                  {e.pace === "moment" ? ` · moment at T${e.moment_at}` : e.pace === "tranquille" ? " · tranquille" : ""}
                 </span>
                 <span className="rule" />
               </li>
             );
           case "focus":
             return <li key={e.seq} className="feed-lap"><b className="focus-text">Focus: {e.focus?.label ?? "coach picks"}</b><span className="muted">set by {e.by}</span><span className="rule" /></li>;
+          case "pace":
+            return (
+              <li key={e.seq} className="feed-status">
+                {e.mode === "tranquille" ? `Not pushing from ${Math.round(e.lap_dist)} m: quiet until you're back on pace` : `Pushing again at ${Math.round(e.lap_dist)} m`}
+              </li>
+            );
           case "driver":
             return <li key={e.seq} className="feed-driver"><span>{e.text}</span></li>;
           case "answer":

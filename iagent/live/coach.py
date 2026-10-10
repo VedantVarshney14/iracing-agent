@@ -16,9 +16,15 @@ Per frame, no model involved:
   picked. Changes are announced in the lap summary. (`set_focus` overrides it.)
 - **Lap summary** at the line: lap time, gap to the reference, the corner that cost the most.
 
+- **Pushing or not.** Pace over the last 400 m is compared with the driver's own best lap (on a
+  track they haven't lapped yet, generously with the reference). Clearly slower (10%+) means
+  tranquille: an out lap, a cool-down, or the few hundred metres after a moment. Then nothing is
+  cued or assessed until they're back within 5%, so a moment doesn't write off the rest of the lap.
+
 Nothing is said on pit road or off the racing surface, and nothing new while a car is alongside.
 """
 
+from collections import deque
 from dataclasses import dataclass, field, replace
 from typing import Callable
 
@@ -51,10 +57,14 @@ class Settings:
     feedback_expires_s: float = 8.0
     incident_s: float = 1.5  # a corner that cost more than this was an incident, not technique
     summary: bool = True
-    off_pace: float = 0.07  # laps this far off the reference get no gap or worst corner
     focus: bool = True  # after the learning laps, coach one cue at a time
     focus_min_s: float = 0.15  # a cue must lose at least this (mean of the last two laps) to be the focus
     others_s: float = 0.25  # with a focus, other corners speak up only past this loss (or an off)
+    pace_window_m: float = 400.0  # pace is judged over this much track
+    push_ratio: float = 1.05  # back to pushing at this pace or better (vs own best)
+    tranquille_ratio: float = 1.10  # tranquille at this pace or slower
+    new_track_ratio: float = 1.25  # with no lap of their own yet, vs the reference
+    moment_m: float = 600.0  # a tranquille stretch shorter than this, mid-lap, was a moment
 
 
 @dataclass
@@ -73,11 +83,14 @@ class _LapState:
     results: list[CornerResult] = field(default_factory=list)
     feedback: int = 0
     clean: bool = True  # started at the line, no pit road
+    frames: int = 0
+    pushing_frames: int = 0
+    slow: list[list[float]] = field(default_factory=list)  # [from_m, to_m] stretches not pushing
 
 
 class LiveCoach:
     def __init__(self, session: SessionInfo, plan: CuePlan, cmap: CornerMap, ref_grid: pd.DataFrame,
-                 arbiter: Arbiter, settings: Settings | None = None):
+                 arbiter: Arbiter, settings: Settings | None = None, own_best: pd.DataFrame | None = None):
         self.session = session
         self.plan = plan
         self.cmap = cmap
@@ -100,6 +113,19 @@ class LiveCoach:
         self._focus_heard = True  # the focus cue says "Focus." the first time after a change
         self.focus_log: list[dict] = []  # {"cue", "label", "set_lap", "done_lap"}
         self.on_lap: Callable[[dict], None] | None = None  # called with each counted lap
+        self.on_mode: Callable[[str, float, float], None] | None = None  # (mode, session time, LapDist)
+        # Pace: the driver's own best lap (distance, elapsed time), or the reference until they have one.
+        self._pace_d, self._pace_t, self._pace_lap = self._ref_d, self._ref_t, None
+        self._pace_own = own_best is not None
+        if own_best is not None:
+            self._pace_d = own_best["LapDist"].to_numpy(dtype=float)
+            self._pace_t = own_best["lap_time_s"].to_numpy(dtype=float)
+            self._pace_lap = float(self._pace_t[-1])
+        self._trail: deque[tuple[float, float]] = deque()  # (distance run, session time)
+        self._run_m = 0.0
+        self._prev_d: float | None = None
+        self._frame_no = 0
+        self.mode = "pushing"  # or "tranquille"
         self.results: list[list[CornerResult]] = []  # per completed lap
 
     # --- per frame -----------------------------------------------------------------------------
@@ -119,12 +145,66 @@ class LiveCoach:
             self.arbiter.tick(now, hold=True)
             return
         self._lap.rows.append(tuple(float(frame.get(c, np.nan)) for c in LIVE_CHANNELS))
+        self._track_pace(now, d)
+        if self.mode == "tranquille":
+            self._assess(now, d)  # only an off-track hint for next lap comes out of this
+            self.arbiter.tick(now, hold=True)  # no cues, no feedback until pushing again
+            return
 
         due = self._approach(now, d, max(v, 5.0))
         self._assess(now, d)
         hold = (frame.get("CarLeftRight") or 0) >= CAR_ALONGSIDE
         # Between a cue and the end of its corners only cues are said: feedback waits for a straight.
         self.arbiter.tick(now, hold=hold, free_for_s=0.0 if self._in_corner(d) else due)
+
+    # --- pushing or not ------------------------------------------------------------------------
+
+    def _track_pace(self, now: float, d: float) -> None:
+        if self._prev_d is not None:
+            step = d - self._prev_d
+            if step < -self.length / 2:
+                step += self.length  # crossed the line
+            if abs(step) > 200.0:  # a reset or tow: start judging afresh
+                self._trail.clear()
+                step = 0.0
+            self._run_m += max(step, 0.0)
+        self._prev_d = d
+        self._trail.append((self._run_m, now))
+        window = self.settings.pace_window_m
+        while len(self._trail) > 2 and self._trail[1][0] <= self._run_m - window:
+            self._trail.popleft()
+        self._lap.frames += 1
+        self._frame_no += 1
+        if self._frame_no % 6 == 0 and self._run_m - self._trail[0][0] >= window * 0.95:
+            ratio = self.pace_ratio(d)
+            s = self.settings
+            slow = s.tranquille_ratio if self._pace_own else s.new_track_ratio
+            back = s.push_ratio if self._pace_own else s.new_track_ratio - 0.05
+            if self.mode == "pushing" and ratio >= slow:
+                self._set_mode("tranquille", now, d)
+            elif self.mode == "tranquille" and ratio <= back:
+                self._set_mode("pushing", now, d)
+        if self.mode == "pushing":
+            self._lap.pushing_frames += 1
+
+    def pace_ratio(self, d: float) -> float:
+        """Time over the last window against the pace lap over the same stretch (1.0: as fast)."""
+        (m0, t0), (m1, t1) = self._trail[0], self._trail[-1]
+        span = m1 - m0
+        lap = self._pace_lap or float(self._pace_t[-1])
+        a, b = np.interp((d - span) % self.length, self._pace_d, self._pace_t), np.interp(d, self._pace_d, self._pace_t)
+        best = float((b - a) % lap) or 1e-6
+        return (t1 - t0) / best
+
+    def _set_mode(self, mode: str, now: float, d: float) -> None:
+        self.mode = mode
+        if mode == "tranquille":
+            self._lap.slow.append([round(max(0.0, d - self.settings.pace_window_m / 2)), round(d)])
+            self.arbiter.clear(("approach", "feedback", "focus"), now, "you weren't pushing")
+        elif self._lap.slow:
+            self._lap.slow[-1][1] = round(d)
+        if self.on_mode is not None:
+            self.on_mode(mode, now, d)
 
     def _in_corner(self, d: float) -> bool:
         for cue in self.plan.cues:
@@ -201,15 +281,20 @@ class LiveCoach:
     # --- after each corner ---------------------------------------------------------------------
 
     def _assess(self, now: float, d: float) -> None:
-        # Only laps driven at pace teach anything: not out laps, cool-downs or laps after a moment.
-        at_pace = self._lap.clean and self._at_pace(now, d)
+        # Only pushing teaches anything: not out laps, cool-downs or the stretch after a moment.
+        at_pace = self._lap.clean and self.mode == "pushing"
         for c in self.cmap.corners:
             at = min(c.exit_m + self.settings.feedback_after_m, c.segment_end_m - 1.0)
             if c.id in self._lap.assessed or not at <= d <= c.segment_end_m + 1.0:
                 continue
             self._lap.assessed.add(c.id)
             result = self._corner_result(c.id, d)
-            if result is None or not at_pace:
+            if result is None:
+                continue
+            if not at_pace:
+                # Not pushing: the numbers don't count, but going off is still worth a word next lap.
+                if result.hint and "off track" in (result.advice or ""):
+                    self._hints[c.id] = result.hint
                 continue
             self._lap.results.append(result)
             if result.struggling:
@@ -230,13 +315,6 @@ class LiveCoach:
             if result.advice and not said and self._lap.feedback < s.feedback_per_lap:
                 self._lap.feedback += 1
                 self.arbiter.say(Utterance(result.advice, FEEDBACK, "feedback", now, now + s.feedback_expires_s, c.id))
-
-    def _at_pace(self, now: float, d: float) -> bool:
-        if not self._lap.rows:
-            return False
-        elapsed = now - self._lap.rows[0][LIVE_CHANNELS.index("SessionTime")]
-        ref = float(np.interp(d, self._ref_d, self._ref_t))
-        return elapsed <= ref * (1 + self.settings.off_pace) + 1.0
 
     def _corner_result(self, corner_id: int, d: float) -> CornerResult | None:
         c = self.cmap.get(corner_id)
@@ -316,22 +394,50 @@ class LiveCoach:
         self._laps_done += 1
         self.results.append(state.results)
         ref_time = self.plan.ref_lap_time
-        at_pace = lap.lap_time is not None and (not ref_time or lap.lap_time <= ref_time * (1 + self.settings.off_pace))
-        news = self._update_focus(state.results) if at_pace else None
+        if self.mode == "tranquille" and state.slow:
+            state.slow[-1][1] = round(self.length)  # still slow at the line
+        pace, moment_at = self._classify(state)
+        # Focus moves on what the pushing parts of the lap showed (most of the corners at least).
+        enough = len(state.results) >= max(1, len(self.cmap.corners) // 2)
+        news = self._update_focus(state.results) if enough else None
+        if pace == "pushing" and lap.lap_time and (self._pace_lap is None or lap.lap_time < self._pace_lap):
+            self._new_best(lap)
         # Both wait for the first straight with room for them, up to most of a lap.
         wait = 0.6 * (self.plan.ref_lap_time or lap.lap_time or 60.0)
-        if self.settings.summary and lap.lap_time is not None:
-            self.arbiter.say(Utterance(self._summary(lap, state.results), SUMMARY, "summary", now, now + wait))
+        if self.settings.summary and lap.lap_time is not None and pace != "tranquille":
+            self.arbiter.say(Utterance(self._summary(lap, state.results, moment_at), SUMMARY, "summary", now, now + wait))
         if news:
             self.arbiter.say(Utterance(news, FEEDBACK, "focus", now, now + wait, self.focus))
         if self.on_lap is not None:
             self.on_lap({
                 "lap": self._laps_done, "lap_time": lap.lap_time, "at": now,
                 "gap_s": round(lap.lap_time - ref_time, 3) if lap.lap_time and ref_time else None,
-                "at_pace": at_pace,
+                "pace": pace,  # "pushing", "moment" or "tranquille"
+                "pushing_share": round(state.pushing_frames / state.frames, 2) if state.frames else 0.0,
+                "slow": state.slow,  # [from_m, to_m] stretches not pushing
+                "moment_at": moment_at,
                 "corners": [{"corner": r.corner, "delta_s": r.delta_s} for r in state.results],
                 "focus": self.focus,
             })
+
+    def _classify(self, state: "_LapState") -> tuple[str, int | None]:
+        """pushing (all the way), moment (pushing but for one short loss: returns the corner
+        before it), or tranquille (mostly not pushing)."""
+        s = self.settings
+        share = state.pushing_frames / state.frames if state.frames else 0.0
+        if not state.slow:
+            return "pushing", None
+        if share >= 0.6 and all(b - a <= s.moment_m + s.pace_window_m for a, b in state.slow):
+            where = state.slow[0][0]
+            corner = min(self.cmap.corners, key=lambda c: abs(c.apex_m - where))
+            return "moment", corner.id
+        return "tranquille", None
+
+    def _new_best(self, lap: Lap) -> None:
+        """A faster pushing lap becomes the pace to judge pushing by."""
+        dist = np.maximum.accumulate(lap.frames["LapDist"].to_numpy(dtype=float))
+        self._pace_d, self._pace_t = dist, lap.frames["lap_time_s"].to_numpy(dtype=float)
+        self._pace_lap, self._pace_own = lap.lap_time, True
 
     # --- focus ---------------------------------------------------------------------------------
 
@@ -348,7 +454,7 @@ class LiveCoach:
             return None
         news = []
         if self.focus is not None:
-            recent = [lap.get(self.focus) for lap in self._cue_losses[-2:]]
+            recent = [lap[self.focus] for lap in self._cue_losses if self.focus in lap][-2:]
             entry = next(f for f in reversed(self.focus_log) if f["cue"] == self.focus)
             if len(recent) == 2 and all(x is not None and x < s.loss_s for x in recent) and self._laps_done > entry["set_lap"]:
                 entry["done_lap"] = self._laps_done
@@ -373,8 +479,8 @@ class LiveCoach:
         done = {f["cue"] for f in self.focus_log if f["done_lap"] is not None}
         mean = {}
         for cue in self.plan.cues:
-            values = [lap.get(cue.corner) for lap in recent]
-            if values and all(v is not None for v in values):
+            values = [lap[cue.corner] for lap in recent if cue.corner in lap]  # pushing laps only
+            if values:
                 mean[cue.corner] = sum(values) / len(values)
         candidates = {k: v for k, v in mean.items() if v >= s.focus_min_s and k not in done}
         return max(candidates, key=candidates.get) if candidates else None
@@ -403,11 +509,14 @@ class LiveCoach:
             return names[0] or f"Turn {cue.corner}"
         return f"Turns {cue.corners[0]} and {cue.corners[-1]}"
 
-    def _summary(self, lap: Lap, results: list[CornerResult]) -> str:
+    def _summary(self, lap: Lap, results: list[CornerResult], moment_at: int | None = None) -> str:
         """Short enough (~3 s) to fit the straights of a busy track: "1 33.9, 3 seconds down. Worst: Turn 6." """
         ref_time = self.plan.ref_lap_time
         text = _say_time(lap.lap_time)
-        if not ref_time or lap.lap_time > ref_time * (1 + self.settings.off_pace):
+        if moment_at is not None:  # the gap means nothing: say where it went
+            c = self.cmap.get(moment_at)
+            return f"{text}. Lost it at {c.name or f'Turn {c.id}'}."
+        if not ref_time:
             return text + "."
         gap = lap.lap_time - ref_time
         text += f", {_say_gap(gap)} {'down' if gap > 0 else 'up'}."
