@@ -29,7 +29,7 @@ The design lives in [.claude/architecture.md](.claude/architecture.md). In short
 | 2 | Agent-facing CLI, `coach` plugin (`telemetry`, `lap-review` skills), headless harness test | **Done** |
 | 3 | Corner map, per-corner metrics, comparison and consistency, corner names and track knowledge | **Done** |
 | 3b | Garage61 reference laps (own and teammates'), iRacing ghost download and install | **Done** |
-| 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | Next |
+| 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | In progress (corner cues, feedback, TTS) |
 | 5 | Web UI: lap review against a ghost, racing lines, coach chat, session library | In progress |
 | 6 | Push-to-talk voice, debrief and focus skills, memory across sessions, local-model evals | |
 
@@ -210,6 +210,57 @@ still works from the command line.
 The server only answers on localhost (pass `--host 0.0.0.0` to open it from another machine) and
 refuses POSTs without the web app's `X-Iagent` header, so other sites open in your browser can't
 start the coach or write to the workspace.
+
+## Coaching while you drive
+
+`iagent live run` coaches you on track, without a model in the loop:
+
+- **Corner cues.** Approaching each corner: *"La Source, hairpin right. Hard brake, second
+  gear."*, timed to finish at the reference lap's brake point at your current speed. Corners close
+  together share a cue. The first two laps cue every corner; after that only the corners that
+  went badly, so it goes quiet as you learn.
+- **Feedback.** After a corner that cost time, on the next straight: *"Turn 5: braked 20 metres
+  early. Brake later."*, and a hint in that corner's cue next lap (*"Brake later than last
+  lap."*). Laps off the pace (out laps, cool-downs, a spin) are ignored.
+- **One focus at a time.** After the learning laps the corner losing the most (over the last two
+  laps at pace) becomes the focus: *"Focus now: Turns 15 and 16. Just a lift, no brakes."* It's
+  cued every lap; other corners speak up only for a big loss or an off. Once you match the
+  reference there twice, the next focus is picked.
+- **Only while you're pushing.** Pace over the last 400 m is compared with your own best lap. On
+  an out lap, a cool-down or just after a moment (10%+ slower) the coach goes quiet and doesn't
+  judge the corners, then picks up again once you're within 5%, so one moment doesn't write off
+  the rest of the lap.
+- **Lap summary** at the line, short enough for a short straight: *"2 27.0, 5 tenths down."*, or
+  where it went on a lap with a moment: *"1 44.2. Lost it at Turn 7."*
+
+**From the browser:** the **Coaching** tab in `iagent ui` starts the coach (iRacing, or a replay
+of a recording) and, afterwards, reviews each coached session:
+- which laps you were pushing, and where a moment or a tranquille stretch was;
+- where the time went (a map of the average loss per corner while pushing);
+- **did the advice work?** each piece of advice with that corner before and after, judged on the
+  laps you were pushing ("working", "mixed", "not yet"), and how the focus went;
+- everything the coach said, lap by lap, including what it held back and why, with links into the
+  corner view;
+- a debrief written by the coach (`claude -p`), questions about the session, and **the next
+  session's plan**: pick its focus and edit that corner's cue. A planned focus starts the next
+  two sessions at that track, and is re-checked after two pushing laps, so it can't get stuck on
+  something already sorted.
+
+Each session's log (and debrief) is kept in `workspace/sessions/live/`.
+
+Cues follow the fastest Garage61 teammate lap for the track and car, else your own best, and work
+on a track you've never driven if a teammate's lap is imported. Speech is
+[Pocket TTS](https://github.com/kyutai-labs/pocket-tts) on the CPU (2 threads); it stays quiet
+with a car alongside, when CrewChief's spotter is talking.
+
+```bash
+uv sync --extra voice                                    # Pocket TTS + audio output (PyTorch, CPU)
+iagent cues build --track spa-2024-up --car formulair04  # see / rebuild the cues (built on first use)
+iagent cues set --track spa-2024-up --car formulair04 1 "La Source. Hairpin right. Big stop, second gear."
+iagent live run                                          # on the sim PC: waits for iRacing
+iagent live run --replay session.ibt --start 700         # anywhere: hear a recording in real time
+iagent live run --replay session.ibt --print --speed 20  # what it would say, fast, no audio
+```
 
 ## Using the coach
 

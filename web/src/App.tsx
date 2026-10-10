@@ -5,13 +5,14 @@ import { Chat } from "./components/Chat";
 import { CornerTable } from "./components/CornerTable";
 import { CornerView } from "./components/CornerView";
 import { Library } from "./components/Library";
+import { Coaching } from "./components/Coaching";
 import { Telemetry } from "./components/Telemetry";
 import { TopBar } from "./components/TopBar";
 import { TrackMap } from "./components/TrackMap";
 import type { Garage61Lap, Garage61Laps, LapsResponse, Review, SystemInfo, TrackRow } from "./types";
 
 type Group = { track: string; car: string };
-export type Page = "library" | "review" | "corner";
+export type Page = "library" | "review" | "corner" | "coaching";
 
 const params = new URLSearchParams(window.location.search);
 // The URL's lap, ghost, corner and map view apply to the first load only.
@@ -160,7 +161,7 @@ export function App() {
   }, [lapId, refId]);
 
   useEffect(() => {
-    if (!group || !review) return;
+    if (!group || !review || page === "coaching") return; // the coaching page keeps its own URL
     const q = new URLSearchParams({ track: group.track, car: group.car, lap: review.lap.lap_id, ref: review.ref.lap_id });
     if (primary != null) q.set("corner", String(primary));
     if (mapMode === "corner") q.set("view", "corner");
@@ -168,21 +169,31 @@ export function App() {
     window.history.replaceState(null, "", `?${q}`);
   }, [group, review, primary, mapMode, page]);
 
-  /** From the library: review this lap against this ghost. */
-  const openFromLibrary = (g: Group, lap: string, ref: string) => {
+  /** From the library or a coached session: review this lap against this ghost (at CORNER, in
+   * the corner view, if given). */
+  const openLap = (g: Group, lap: string, ref: string, corner?: number) => {
     ghostChosen.current = true;
+    const action: UiAction | null = corner != null ? { corners: [corner], view: "corner" } : null;
     if (g.track === group?.track && g.car === group?.car) {
-      setLapId(lap);
-      setRefId(ref);
+      if (review && review.lap.lap_id === lap && review.ref.lap_id === ref) {
+        if (action) applyAction(action);
+      } else {
+        pendingAction.current = action;
+        setLapId(lap);
+        setRefId(ref);
+      }
     } else {
       // Picked up by the laps effect once the new track's laps arrive.
       urlState.lap = lap;
       urlState.ref = ref;
+      urlState.corner = corner ?? null;
+      pendingAction.current = action;
       setReview(null);
       setGroup(g);
     }
-    setPage("review");
+    setPage(corner != null ? "corner" : "review");
   };
+  const openFromLibrary = (g: Group, lap: string, ref: string) => openLap(g, lap, ref);
 
   const pick = (id: number, add = false) => {
     if (add) {
@@ -296,7 +307,9 @@ export function App() {
         onRef={onRef}
       />
       {error && <div className="error" role="alert">{error}</div>}
-      {page === "library" ? (
+      {page === "coaching" ? (
+        <Coaching system={system} onOpenLap={(track, car, lap, ref, corner) => openLap({ track, car }, lap, ref, corner)} />
+      ) : page === "library" ? (
         <Library
           tracks={tracks}
           system={system}
@@ -396,5 +409,6 @@ export function App() {
 }
 
 function pageFrom(value: string | null): Page {
-  return value === "corner" || value === "library" ? value : "review";
+  if (value === "live") return "coaching";
+  return value === "corner" || value === "library" || value === "coaching" ? value : "review";
 }

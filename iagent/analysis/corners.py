@@ -312,10 +312,18 @@ def corner_metrics(grid: pd.DataFrame, lap_time: float | None, cmap: CornerMap) 
             "min_speed_m": _r(min_speed_m, 0),
             "full_throttle_m": _r(full_throttle_m, 0),
             "exit_speed_kph": _r(exit_row["Speed"] * MS_TO_KPH),
-            "min_gear": int(corner["Gear"].min()) if "Gear" in corner else None,
+            "min_gear": _min_gear(corner),
             "off_track_m": off_m,
         })
     return out
+
+
+def _min_gear(corner: pd.DataFrame) -> int | None:
+    """Lowest forward gear: iRacing reports neutral (0) for a moment during each shift."""
+    if "Gear" not in corner:
+        return None
+    gears = corner["Gear"][corner["Gear"] > 0]
+    return int(gears.min()) if len(gears) else None
 
 
 def _diff(a, b, nd=1):

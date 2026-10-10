@@ -65,6 +65,8 @@ class Workspace:
     def load(self, lap_id: str) -> pd.DataFrame:
         """The distance-gridded lap, from whichever store holds it."""
         try:
+            if not (self.root / "index.sqlite").exists():
+                raise KeyError(lap_id)  # no laps of the driver's own: a reference lap
             return self.store().load(lap_id)
         except KeyError:
             refs = self.refs()
@@ -98,8 +100,13 @@ class Workspace:
         return cmap
 
     def derive_map(self, track: str, car: str | None) -> CornerMap:
-        reps = representative(self.store().list(track=track, car=car))
-        if not reps:
+        """From the driver's representative laps; on a track they haven't driven yet, from
+        reference laps (e.g. a Garage61 teammate's), so a first visit can still be coached."""
+        own = self.store().list(track=track, car=car) if (self.root / "index.sqlite").exists() else []
+        reps, store = representative(own), self.store() if own else None
+        if not reps and (refs := self.refs()) is not None:
+            reps, store = representative(refs.list(track=track, car=car)), refs
+        if not reps or store is None:
             raise WorkspaceError(f"No representative laps for track {track!r}; see `iagent tracks`.")
         if car is None:  # use the car with the most representative laps
             counts: dict[str, int] = {}
@@ -107,7 +114,7 @@ class Workspace:
                 counts[r.car_key] = counts.get(r.car_key, 0) + 1
             car = max(counts, key=counts.__getitem__)
             reps = [r for r in reps if r.car_key == car]
-        grids = [self.store().load(r.lap_id) for r in reps]
+        grids = [store.load(r.lap_id) for r in reps]
         try:
             return derive_corner_map(grids, track, car, [r.lap_id for r in reps])
         except ValueError as e:

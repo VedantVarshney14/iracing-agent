@@ -16,6 +16,10 @@ dependencies = [
     "uvicorn>=0.54.0",
 ]
 
+[project.optional-dependencies]
+# Spoken coaching (`iagent live run`): Pocket TTS on the CPU, plus audio output.
+voice = ["pocket-tts>=1.0", "sounddevice>=0.5"]
+
 [dependency-groups]
 dev = [
     "black[d]>=25.1.0",
@@ -35,4 +39,3 @@ iagent = ["ui/static/**/*"]  # the built web UI (`npm --prefix web run build`)
 
 [tool.uv]
 package = true
-

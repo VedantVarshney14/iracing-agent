@@ -1,5 +1,7 @@
 import type {
-  Garage61Account, Garage61Laps, GhostResult, IngestResult, LapsResponse, Review, SystemInfo, TelemetryStatus, TrackRow,
+  Garage61Account, Garage61Laps, GhostResult, IngestResult, LapsResponse, LiveEvent, LiveStatus, Recording, Review,
+  SessionReport, SessionRow,
+  SystemInfo, TelemetryStatus, TrackRow,
 } from "./types";
 
 // Every POST carries X-Iagent: the server refuses writes without it, so other sites can't make them.
@@ -32,6 +34,18 @@ export const api = {
   garage61Token: (token: string) => post<Garage61Account>("/api/garage61/token", { token }),
   telemetryFolder: (folder: string) => post<TelemetryStatus>("/api/telemetry/folder", { folder }),
   rescan: () => post<{ ingested: string[]; telemetry: TelemetryStatus }>("/api/telemetry/rescan", {}),
+  live: () => get<LiveStatus>("/api/live"),
+  liveEvents: (since: number) => get<{ events: LiveEvent[]; status: LiveStatus }>("/api/live/events", { since: String(since) }),
+  liveRecordings: () => get<Recording[]>("/api/live/recordings"),
+  liveStart: (options: Record<string, unknown>) => post<LiveStatus>("/api/live/start", options),
+  liveStop: () => post<LiveStatus>("/api/live/stop", {}),
+  liveFocus: (corner: number | null) => post<{ ok: boolean }>("/api/live/focus", { corner }),
+  liveAsk: (text: string) => post<{ ok: boolean }>("/api/live/ask", { text }),
+  sessions: () => get<SessionRow[]>("/api/coaching/sessions"),
+  session: (id: string) => get<SessionReport>("/api/coaching/session", { id }),
+  debrief: (id: string) => post<{ running: boolean }>("/api/coaching/debrief", { id }),
+  savePlan: (plan: { track: string; car: string; focus: number; cue_text?: string; note?: string; from_session?: string }) =>
+    post<{ focus: number; sessions_left: number }>("/api/coaching/plan", plan),
   /** Upload one .ibt recording and ingest it. */
   ingest: async (file: File) =>
     parse<IngestResult>(

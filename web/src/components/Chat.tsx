@@ -199,7 +199,7 @@ function describe(a: UiAction): string {
 }
 
 /** Just enough Markdown for the coach's replies: paragraphs, bullet lists, **bold** and `code`. */
-function renderText(text: string): ReactNode {
+export function renderText(text: string): ReactNode {
   const blocks = text.trim().split(/\n{2,}/);
   return blocks.map((block, i) => {
     const lines = block.split("\n");
