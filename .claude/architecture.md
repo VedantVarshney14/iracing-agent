@@ -1,7 +1,11 @@
 # Architecture
 
 Status: phases 1–3 are implemented (telemetry sources, laps, agent-facing CLI and skills, corner
-analysis, Garage61 reference laps); live telemetry, rules, voice and UI are design.
+analysis, Garage61 reference laps). Phase 4 is partly built: the live coach on irsdk or a replay
+(corner cues, feedback, focus, pace gate, TTS), the rule engine with backtests, and the coach's
+own words on the radio (debriefs, rule wake-ups via `claude -p`); `say`, push-to-talk and the
+standalone service are still design. The web UI
+(phase 5) covers lap review, the library and coached sessions.
 
 ## 1. Goals
 
@@ -98,7 +102,8 @@ coach/                            # the plugin (harness-agnostic content)
     lap-review/SKILL.md           # review a session's laps and give one focus
     name-corners/SKILL.md         # name derived corners, record track knowledge
     reference-laps/SKILL.md       # pick, import and coach from a faster Garage61 lap
-    (planned) pick-focus, write-cue, debrief, set-trigger
+    live-rules/SKILL.md           # write, backtest and activate rules for the live coach
+    (planned) pick-focus, write-cue, debrief
 iagent/                           # Python package; installs the `iagent` CLI
 workspace/                        # per-user data (git-ignored); the agent's working dir
 ```
@@ -126,8 +131,10 @@ has a `--help` that is accurate enough to be the documentation, and finds the wo
 | `iagent garage61 status/find/import` | find and import teammates' (and own) Garage61 laps | done |
 | `iagent garage61 ghost [--install]` | download a lap's iRacing ghost (.blap), install it for the sim | done |
 | `iagent refs list` | imported reference laps | done |
-| `iagent rules add/backtest/activate/list` | agent-defined triggers | phase 4 |
-| `iagent schedule add` | time/lap-based wake-ups | phase 4 |
+| `iagent rules add/list/show/vars/backtest/activate/deactivate/archive/remove` | agent-defined rules | done |
+| `iagent cues build/show/set` | the corner cue plan | done |
+| `iagent live run` | the live coach (iRacing or a replayed .ibt) | done |
+| `iagent schedule add` | time/lap-based wake-ups | phase 4 (schedule triggers exist as rules) |
 | `iagent say "<text>"` | speak through the arbiter | phase 4 |
 | `iagent live snapshot` | current channel values | phase 4 |
 | `iagent service start/status` | run the service | phase 4 |
@@ -170,7 +177,10 @@ workspace/
   notes/driver.md                               # who the driver is, goals, preferences
   notes/<track_key>.md                          # per-track learnings, current focus
   notes/sessions/<date>.md                      # debrief summaries
-  rules/<track_key>/*.json                      # active + archived rules
+  rules/<track_key>/<id>.json                   # rules: draft, active or archived (+ last backtest)
+  rules/_any/<id>.json                          # rules for every track
+  tracks/<track_key>/cues/<car_key>.json        # the corner cue plan
+  sessions/live/<id>.jsonl                      # each coached session's log (lines, laps, rules)
   scratch/                                      # agent's free space (analysis scripts, plots)
 ```
 
@@ -234,30 +244,51 @@ a brake point from raw samples to be useful.
 
 ## 8. Rules, schedules and events
 
-Created by the agent via the CLI; evaluated by the service. A rule is data, not code.
+Created by the agent via the CLI (`live-rules` skill); evaluated by the live coach on the same
+frames and events it uses itself. A rule is data, not code. Implemented in `iagent/live/`
+(`expr.py`, `rules.py`, `rulebook.py`).
 
 ```json
 {
-  "id": "spa-bus-stop-brake-feedback",
+  "id": "bus-stop-early-brake",
   "track": "spa-2024-up",
   "when": {"corner_exit": "Bus Stop"},
-  "if": "brake_m < target_brake_m - 10",
-  "action": {"say": "Bus Stop: braked {early_m:.0f} metres early.", "priority": "feedback"},
+  "if": "brake_diff_m < -10",
+  "action": {"say": "Bus Stop: braked {round5(-brake_diff_m)} metres early.", "priority": "feedback"},
   "limits": {"cooldown_laps": 1}
 }
 ```
 
-- **Triggers**: a track position with a lead time (`target − speed × lead_seconds`, so a cue ends
-  before the corner), a corner exit carrying that corner's metrics, lap complete, pit entry/exit,
-  or a schedule.
-- **Predicates**: a small restricted expression language over current channels and corner
-  metrics. No arbitrary code in the 60 Hz loop.
-- **Actions**: `say` (spoken directly by the service, no model), `wake` (send the event to the
-  agent), `log`.
-- **Backtest before activation**: `iagent rules backtest` runs the *same evaluator* over stored
-  laps and reports where it would have fired. Replay is fast enough that no separate engine is
-  needed.
-- Edge-triggered with hysteresis, cooldowns and global rate limits.
+- **Triggers** (`when`, one per rule): a track position (`at`: metres, or a corner with a point
+  and `lead_s`/`offset_m`; a spoken cue is timed to *finish* before the point at the current
+  speed, like the corner cues), a corner exit carrying that corner's metrics against the
+  reference (the same `corner_metrics` code as the lap review), lap complete, pit entry/exit, a
+  change of pace mode or focus, an edge-triggered `condition` over live channels (`for_s`,
+  `rearm_s` hysteresis), and schedules (`every_s`, `at_s`, `every_laps`, `at_lap`,
+  `session_start`). `iagent rules vars` lists every variable each trigger provides.
+- **Predicates and text**: a restricted expression language (a Python-syntax subset parsed with
+  `ast` and compiled to closures: arithmetic, comparisons, `and/or/not`, `in`, conditionals and
+  a few functions). No attribute access, subscripts or arbitrary calls in the 60 Hz loop. A
+  missing value makes a comparison false and keeps a line with that hole unsaid. Spoken text is
+  a template with `{expression:format}` holes.
+- **Actions**: `say` (queued with the speech arbiter at cue, feedback or summary priority, with
+  an optional `long` version for when the driver isn't pushing),
+  `wake` (the coach is asked, `claude -p`, with the rule, its values and the driver's state; its
+  reply is spoken, or SILENT),
+  `log`. One rule can have several.
+- **Limits**: per rule `cooldown_s`, `cooldown_laps`, `max_per_lap`, `max_per_session`, `once`,
+  and `in_a_row` (the condition held N occurrences running). `pushing_only` (default) ignores
+  corners, laps and positions while the coach judges the driver isn't pushing. Engine-wide: at
+  most 6 rule lines a lap and 4 s between rule lines (cues aside). The arbiter still decides
+  what is actually said.
+- **Lifecycle**: `add` validates (fields, variable names, corner names against the track's map)
+  and saves a draft; `backtest` replays recorded sessions (stored laps, or `.ibt` files) through
+  the *same* live coach and engine, with the other active rules competing for the voice, and
+  reports each firing with the values it saw and whether its line was said, cut or dropped (and
+  why); `activate` requires a backtest of the rule as it is now (a fingerprint of its
+  behaviour). Editing makes it a draft again. A running coach reloads rules when the files
+  change (checked every ~10 s), so the agent can adjust them mid-session.
+- Still to come: moving the built-in cues and feedback onto rules.
 
 ## 9. Voice and UI
 
@@ -274,7 +305,22 @@ Created by the agent via the CLI; evaluated by the service. A rule is data, not 
   plan: better known, but ~3.7 s before first audio, too slow for anything said in reaction.
   Audio is written with blocking, high-latency writes from the voice thread (a Python callback
   starved by the coach loop crackled).
-- **CrewChief coexistence:** our own audio path first (adaptive feedback needs it). Next: export
+- **The coach's own words:** where a model runs anyway or has time to (the cool-down debrief:
+  asked 5 s into a slow stretch, wanted at 15 s, waited for up to 12 s more; a rule's `wake`), the
+  reply from `claude -p` is spoken (`iagent/live/narrator.py`): given the live coach's facts, asked
+  for radio-style plain speech, split at sentences, handed back through the coach thread's call
+  queue. One request per kind in flight, wake-ups at most every 30 s. A missing or late reply
+  falls back to the template. Cues are never generated live.
+- **Delivery, like an engineer:** cues shorten to a reminder once heard in full; feedback carries
+  a longer version (what, why, how) that the arbiter says instead when the driver isn't pushing
+  and there's room before the next cue; a cool-down lap (not pushing for 15 s) gets a debrief
+  from the last laps at pace (the costliest corner, how to fix it, consistency); a repeated
+  mistake is said as a repeat, a fixed one gets a "better". Debrief openers rotate.
+- **CrewChief coexistence:** division of labour: CrewChief is the race engineer (spotter, lap
+  times, PBs, gaps, fuel, tyres, flags, pits), the coach does technique only
+  (`iagent/live/crewchief.py`). With CrewChief detected (or `--crewchief on`): the lap summary
+  says no lap time or gap, only cues for 5 s after the line, and rules that duplicate it are
+  flagged on `rules add`. Our own audio path first (adaptive feedback needs it). Next: export
   the cue plan as CrewChief **pace notes** (`Documents/CrewChiefV4/pace_notes/<game>/[<car>/]<track>/`,
   WAVs plus `metadata.json` entries keyed by `distanceRoundTrack`), so static cues go through
   CrewChief's own queue. To verify on the sim PC: synthesised WAVs accepted, iRacing folder names,
@@ -314,10 +360,14 @@ Test data: synthetic laps with exact ground truth (committed); real `.ibt` recor
 
 ```text
 iagent/
-  telemetry/   frames, session info, sources (ibt; irsdk live later)
+  telemetry/   frames, session info, sources (ibt)
   laps/        segmenter, resampling, store, pace, recorder
   analysis/    corner map and metrics, landmarks, splits, comparison
+  live/        live coach, cue plans, speech arbiter and voice, irsdk/replay sources,
+               rules (expr: the expression language, rules: schema + engine,
+               rulebook: storage + backtest), coached-session logs and reports
   testing/     synthetic generator, .ibt writer
+  ui/          `iagent ui`: local API server
   cli.py       the `iagent` command
 ```
 

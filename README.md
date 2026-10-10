@@ -4,8 +4,10 @@ An iRacing coach built as **skills for an existing agent harness** plus a **CLI 
 telemetry work**. The first goal is helping a driver learn a new track: find where time is lost,
 pick one thing to work on, and (later) cue it by voice at the right place on track.
 
-> **Status:** works today on recorded sessions: telemetry, laps, corner analysis, Garage61
-> reference laps and ghosts, and the coaching skills. Live telemetry, rules and voice are next.
+> **Status:** works on recorded sessions (telemetry, laps, corner analysis, Garage61 reference
+> laps and ghosts, coaching skills) and live: spoken corner cues and feedback on track, rules the
+> coach sets and backtests, debriefs and wake-ups in the coach's own words, and a browser UI.
+> Push-to-talk voice input is next.
 
 The design lives in [.claude/architecture.md](.claude/architecture.md). In short:
 
@@ -16,8 +18,9 @@ The design lives in [.claude/architecture.md](.claude/architecture.md). In short
   describe how to coach; the `iagent` CLI computes the numbers (JSON output), so the model
   interprets rather than calculates.
 - **No per-token API billing.** Claude through a subscription, or open-weight models run locally.
-- **Agent-defined events (planned):** the agent creates rules and schedules through the CLI; a
-  deterministic service on the sim PC fires them and wakes the agent. No LLM in the real-time loop.
+- **Agent-defined events:** the agent creates rules through the CLI and backtests them against
+  recorded sessions; the live coach on the sim PC runs them deterministically. No LLM in the
+  real-time loop; a rule can wake the agent, whose reply is spoken.
 - **Testable without the sim:** `.ibt` replay, a synthetic lap generator with exact ground truth,
   and regression tests against real recordings.
 
@@ -29,7 +32,7 @@ The design lives in [.claude/architecture.md](.claude/architecture.md). In short
 | 2 | Agent-facing CLI, `coach` plugin (`telemetry`, `lap-review` skills), headless harness test | **Done** |
 | 3 | Corner map, per-corner metrics, comparison and consistency, corner names and track knowledge | **Done** |
 | 3b | Garage61 reference laps (own and teammates'), iRacing ghost download and install | **Done** |
-| 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | In progress (corner cues, feedback, TTS) |
+| 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | In progress (corner cues, feedback, TTS, rules + backtests) |
 | 5 | Web UI: lap review against a ghost, racing lines, coach chat, session library | In progress |
 | 6 | Push-to-talk voice, debrief and focus skills, memory across sessions, local-model evals | |
 
@@ -213,15 +216,30 @@ start the coach or write to the workspace.
 
 ## Coaching while you drive
 
-`iagent live run` coaches you on track, without a model in the loop:
+`iagent live run` coaches you on track, without a model in the loop. It's meant to sound like
+an engineer on the radio, not a recording: brief when you're busy, fuller when you have time.
 
 - **Corner cues.** Approaching each corner: *"La Source, hairpin right. Hard brake, second
   gear."*, timed to finish at the reference lap's brake point at your current speed. Corners close
   together share a cue. The first two laps cue every corner; after that only the corners that
-  went badly, so it goes quiet as you learn.
+  went badly, so it goes quiet as you learn. Once you've heard a cue in full, it shortens to a
+  reminder: *"La Source. Hard brake."*
 - **Feedback.** After a corner that cost time, on the next straight: *"Turn 5: braked 20 metres
   early. Brake later."*, and a hint in that corner's cue next lap (*"Brake later than last
-  lap."*). Laps off the pace (out laps, cool-downs, a spin) are ignored.
+  lap."*). The same mistake again is a repeat (*"Turn 5 again: ..."*), and fixing it gets a
+  *"Turn 5: better."* Laps off the pace (out laps, cool-downs, a spin) are ignored.
+- **More when there's time.** Feedback has a longer version (the why and the how: *"you're
+  braking about 20 metres before the reference. There's more room than it feels: move the brake
+  point a few metres a lap..."*), said instead when you're not pushing. On a cool-down lap (15 s
+  or more off the pace, not just a moment) the coach debriefs: the corner costing the most over
+  your last laps at pace, what to change and how, and how consistent the laps were.
+- **In the coach's own words.** Where the model has time to answer, it does the talking: the
+  cool-down debrief is asked of your Claude Code (`claude -p`) as you slow down and said in its
+  words if it answers in time (it took ~7 s in testing; it's wanted ~15 s in), and a rule with a
+  `wake` action has the coach answer on the radio. The coach is given the numbers, not asked to
+  work them out. Corner cues stay fixed text, because they must be instant and exactly timed,
+  but the coach can rewrite them between sessions (`iagent cues set ... --short ...`). No reply in
+  time, or no `claude`: the coach's own phrasing is said. `--no-narrate` turns it off.
 - **One focus at a time.** After the learning laps the corner losing the most (over the last two
   laps at pace) becomes the focus: *"Focus now: Turns 15 and 16. Just a lift, no brakes."* It's
   cued every lap; other corners speak up only for a big loss or an off. Once you match the
@@ -250,17 +268,58 @@ Each session's log (and debrief) is kept in `workspace/sessions/live/`.
 
 Cues follow the fastest Garage61 teammate lap for the track and car, else your own best, and work
 on a track you've never driven if a teammate's lap is imported. Speech is
-[Pocket TTS](https://github.com/kyutai-labs/pocket-tts) on the CPU (2 threads); it stays quiet
-with a car alongside, when CrewChief's spotter is talking.
+[Pocket TTS](https://github.com/kyutai-labs/pocket-tts) on the CPU (2 threads).
+
+**With CrewChief.** CrewChief does the race engineer's job (spotter, lap times and personal
+bests, gaps, fuel, tyres, flags, pit calls); the coach does technique and leaves all of that to
+it. It never talks over the spotter (nothing new starts with a car alongside), and when
+CrewChief is running (`--crewchief auto`, the default, detects it; `on`/`off` to force it) the lap
+summary drops the lap time and gap and says only where the lap went (*"Most time lost at Pouhon."*),
+and for a few seconds after the line only corner cues are said, while CrewChief reads the time.
+`iagent rules add` warns about rules that would say what CrewChief already does.
 
 ```bash
 uv sync --extra voice                                    # Pocket TTS + audio output (PyTorch, CPU)
 iagent cues build --track spa-2024-up --car formulair04  # see / rebuild the cues (built on first use)
-iagent cues set --track spa-2024-up --car formulair04 1 "La Source. Hairpin right. Big stop, second gear."
+iagent cues set --track spa-2024-up --car formulair04 1 "La Source. Hairpin right. Big stop, second gear." \
+  --short "La Source. Big stop."                         # the reminder once it's been heard
 iagent live run                                          # on the sim PC: waits for iRacing
 iagent live run --replay session.ibt --start 700         # anywhere: hear a recording in real time
 iagent live run --replay session.ibt --print --speed 20  # what it would say, fast, no audio
 ```
+
+### Rules: what else to watch for
+
+On top of the built-in cues, the coach (or you) can set **rules**: a trigger, a condition and
+what to do, run by the live coach with no model involved. The `live-rules` skill writes them.
+
+```bash
+iagent rules add '{"id": "pouhon-wide", "track": "spa-2024-up",
+  "when": {"corner_exit": "Pouhon"}, "if": "off_track_m > 5", "in_a_row": 2,
+  "action": {"say": "Pouhon: wide twice now. Tighter entry."}}'
+iagent rules backtest pouhon-wide        # replay recent sessions: where it fires, what's said
+iagent rules activate pouhon-wide        # live (a running coach picks it up within ~10 s)
+iagent rules list
+iagent rules vars                        # every trigger and the variables it provides
+```
+
+- **Triggers:** a point on track (`{"at": "T9"}`: a cue timed to finish before the reference
+  brake point, or `"T9 apex"`, metres, `lead_s`, `offset_m`), a corner exit with that corner's
+  numbers against the reference (`brake_diff_m`, `min_speed_diff_kph`, `off_track_m`, ...), lap
+  complete (`new_best`, `gap_s`, ...), pit entry/exit, pace or focus changes, a condition on live
+  channels (`"speed_kph > 280"`, edge-triggered), and schedules (`every_laps`, `every_s`, ...).
+- **Conditions and text** use a small, safe expression language: arithmetic, comparisons,
+  `and`/`or`/`not`, `in`, and helpers like `round5()` and `say_time()`. Spoken text has
+  `{expression}` holes. A missing value (a corner taken without braking has no `brake_m`)
+  makes the condition false rather than failing.
+- **Actions:** `say` (cue, feedback or summary priority, through the same speech rules as the
+  cues; add `"long"` for a fuller version said when you're not pushing), `log`, and `wake`
+  (the coach answers on the radio in its own words, or stays silent).
+- **Limits:** cooldowns, per-lap and per-session caps, `once`, `in_a_row`. Rules ignore out
+  laps, cool-downs and moments unless `"pushing_only": false`.
+- **Safe to change:** a new or edited rule is a draft until it has been backtested and activated.
+  Rules live in `workspace/rules/<track>/` (or `rules/_any/` for every track). Each coached
+  session's log records every firing, and the Coaching tab shows rule lines.
 
 ## Using the coach
 
@@ -272,6 +331,7 @@ Skills in [coach/skills/](coach/skills/):
 | `lap-review` | Reviews a session corner by corner, finds the most *repeatable* time loss, gives one focus and writes it to the notes |
 | `name-corners` | Names the derived corners (driver, CrewChief, web, own knowledge, with confidence) and records track knowledge |
 | `reference-laps` | Picks a faster Garage61 lap (yours or a teammate's), coaches from the corner-by-corner difference, and installs its ghost for iRacing |
+| `live-rules` | Writes rules for the live coach (what to watch for on track and what to say), backtests them and activates them |
 
 ### Claude Code
 
@@ -310,6 +370,7 @@ iagent/
   laps/        segmentation, distance resampling, lap store, pace filter, recorder
   analysis/    corner map and metrics, CrewChief landmarks, splits, traces, position
   references/  Garage61 client, CSV import, iRacing ghost files
+  live/        the live coach: sources, cue plans, speech, rules (expr, engine, backtests)
   testing/     synthetic lap generator, .ibt writer
   ui/          `iagent ui`: the local API server and what the screens show (review.py)
   workspace.py lap stores, reference laps and corner maps, shared by the CLI and the UI

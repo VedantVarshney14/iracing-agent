@@ -418,6 +418,8 @@ button.status-pill:hover { border-color: var(--line-strong); color: var(--text-s
 .badge.feedback { color: #ff9b6e; background: #2a1a12; }
 .badge.focus { color: var(--bg); background: var(--you); }
 .badge.answer { color: var(--ghost); background: #12202d; }
+.badge.rule { color: #b9a4ff; background: #1d1830; }
+.badge.debrief, .badge.coach { color: var(--ghost); background: #12202d; }
 .link-btn { background: none; border: 0; color: #afc6de; cursor: pointer; font-size: 12px; min-height: 32px; white-space: nowrap; }
 .link-btn:hover { color: var(--text); }
 .debrief { margin: 0; line-height: 1.55; }

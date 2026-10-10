@@ -27,6 +27,7 @@ from iagent.laps.pace import DEFAULT_WITHIN, best_times, group_of, representativ
 from iagent.laps.recorder import record
 from iagent.laps.store import LapRecord
 from iagent.laps.tracks import update_track_info
+from iagent.live.rules import RuleError
 from iagent.references import garage61 as g61
 from iagent.references import imports as g61_imports
 from iagent.telemetry.ibt import IbtSource
@@ -68,12 +69,13 @@ class Ctx(Workspace):
 
 
 class _Cli(click.Group):
-    """Reports workspace errors (unknown lap, empty store, ...) as clean CLI errors."""
+    """Reports workspace and rule errors (unknown lap, empty store, a bad rule, ...) as clean CLI
+    errors."""
 
     def invoke(self, ctx: click.Context):
         try:
             return super().invoke(ctx)
-        except WorkspaceError as e:
+        except (WorkspaceError, RuleError) as e:
             raise click.ClickException(str(e)) from e
 
 
@@ -750,14 +752,16 @@ def cues():
 
 
 def _cue_rows(plan) -> list[dict]:
-    return [{"corners": c.corners, "target_m": round(c.target_m), "text": c.text, "source": c.source} for c in plan.cues]
+    return [{"corners": c.corners, "target_m": round(c.target_m), "text": c.text, "short": c.short, "source": c.source}
+            for c in plan.cues]
 
 
 def _print_plan(plan) -> None:
     click.echo(f"{plan.track_key} / {plan.car_key}, following {plan.ref_lap_id}")
     for c in plan.cues:
         corners = "+".join(f"T{i}" for i in c.corners)
-        click.echo(f"  {corners:<8} {c.target_m:7.0f} m  {c.text}" + ("" if c.source == "template" else f"  [{c.source}]"))
+        click.echo(f"  {corners:<8} {c.target_m:7.0f} m  {c.text}" + ("" if c.source == "template" else f"  [{c.source}]")
+                   + (f"\n  {'':<8} {'':>9}  then: {c.short}" if c.short else ""))
 
 
 @cues.command("build")
@@ -807,10 +811,13 @@ def cues_show(ctx: Ctx, track: str, car: str, as_json: bool):
 @click.argument("corner", type=int)
 @click.argument("text")
 @click.option("--source", default="coach", show_default=True, help="Who wrote it: coach or driver.")
+@click.option("--short", "short", help="The short form, said once the driver has heard TEXT a few times "
+              "(default: none, TEXT every time).")
 @click.pass_obj
-def cues_set(ctx: Ctx, track: str, car: str, corner: int, text: str, source: str):
+def cues_set(ctx: Ctx, track: str, car: str, corner: int, text: str, source: str, short: str | None):
     """Rewrite the cue for CORNER (the cue covering it). Keep it short: it is spoken on the approach
-    and must finish before the brake point; about 14 characters take a second to say."""
+    and must finish before the brake point; about 14 characters take a second to say. Once the
+    driver knows the corner, a shorter reminder (--short) sounds less robotic than the full cue."""
     from iagent.live.cues import load_plan, save_plan
 
     plan = load_plan(ctx.workspace, track, car)
@@ -819,9 +826,268 @@ def cues_set(ctx: Ctx, track: str, car: str, corner: int, text: str, source: str
     cue = plan.cue_for(corner)
     if cue is None:
         raise click.ClickException(f"No cue covers T{corner}.")
-    cue.text, cue.source = text.strip(), source
+    cue.text, cue.source, cue.short = text.strip(), source, short.strip() if short else None
     save_plan(ctx.workspace, plan)
-    click.echo(f"T{'+T'.join(map(str, cue.corners))}: {cue.text}")
+    click.echo(f"T{'+T'.join(map(str, cue.corners))}: {cue.text}" + (f"  (then: {cue.short})" if cue.short else ""))
+
+
+@cli.group()
+def rules():
+    """Rules the coach sets for the live service: when to say what (or wake the coach).
+
+    A rule is JSON: a trigger (`when`), an optional condition (`if`), actions and limits. Add it
+    (a draft), backtest it against recorded sessions, then activate it; the live coach picks up
+    active rules, also mid-session. `iagent rules vars` lists what each trigger provides.
+
+    \b
+    iagent rules add '{"id": "pouhon-wide", "track": "spa-2024-up",
+      "when": {"corner_exit": "Pouhon"}, "if": "off_track_m > 5", "in_a_row": 2,
+      "action": {"say": "Pouhon: wide twice now. Tighter entry."}}'
+    iagent rules backtest pouhon-wide
+    iagent rules activate pouhon-wide
+    """
+
+
+def _read_rule(text: str) -> dict:
+    if text == "-":
+        text = click.get_text_stream("stdin").read()
+    elif text.startswith("@"):
+        text = Path(text[1:]).read_text()
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise click.ClickException(f"The rule isn't valid JSON: {e}") from e
+    if not isinstance(raw, dict):
+        raise click.ClickException("A rule is a JSON object.")
+    return raw
+
+
+def _when(rule) -> str:
+    t = rule.trigger
+    value = rule.when[t]
+    extra = " ".join(f"{k}={v}" for k, v in rule.when.items() if k != t)
+    return f"{t} {json.dumps(value) if not isinstance(value, str) else value}" + (f" ({extra})" if extra else "")
+
+
+def _bt_line(bt: dict | None, fingerprint: str) -> str:
+    if not bt:
+        return "not backtested"
+    stale = "" if bt.get("fingerprint") == fingerprint else " (before the last edit)"
+    return f"backtest: fired {bt.get('fired', 0)}x on {bt.get('laps_fired', 0)}/{bt.get('laps', 0)} laps{stale}"
+
+
+@rules.command("add")
+@click.argument("rule_json")
+@click.option("--track", help="Track key (if the JSON has none). Without one the rule applies on every track.")
+@click.option("--car", help="Only with this car.")
+@click.option("--replace", is_flag=True, help="Change an existing rule (it becomes a draft again).")
+@click.option("--by", default="coach", show_default=True, help="Who wrote it: coach or driver.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def rules_add(ctx: Ctx, rule_json: str, track: str | None, car: str | None, replace: bool, by: str, as_json: bool):
+    """Add a rule from RULE_JSON (JSON text, @file.json or - for stdin), as a draft.
+
+    It's checked now (fields, variables, corner names against the track's map) so mistakes show
+    up here, not on track. Next: `iagent rules backtest ID`, then `iagent rules activate ID`.
+    """
+    from iagent.live.rulebook import add_rule
+
+    raw = _read_rule(rule_json)
+    if track:
+        raw["track"] = track
+    if car:
+        raw["car"] = car
+    from iagent.live.crewchief import overlaps
+
+    rule, path = add_rule(ctx.workspace, raw, replace=replace, by=by)
+    overlap = overlaps(rule)
+    if as_json:
+        _emit({"path": str(path), "rule": rule.to_dict(), "crewchief_overlap": overlap})
+        return
+    if overlap:
+        click.echo(f"Note: {overlap} Drivers running CrewChief would hear it twice.", err=True)
+    click.echo(f"{rule.id}: {_when(rule)}" + (f" if {rule.condition.text}" if rule.condition else "")
+               + f" -> {', '.join(a.kind for a in rule.actions)}  [draft]")
+    click.echo(f"Saved {path}. Next: iagent rules backtest {rule.id}")
+
+
+@rules.command("list")
+@click.option("--track", help="Rules for this track (and those for every track).")
+@click.option("--status", type=click.Choice(["draft", "active", "archived"]), help="Only with this status.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def rules_list(ctx: Ctx, track: str | None, status: str | None, as_json: bool):
+    """The rules, with their status and last backtest."""
+    from iagent.live.rulebook import broken_rules, load_rules
+
+    found = load_rules(ctx.workspace, track, status=status)
+    broken = broken_rules(ctx.workspace)
+    if as_json:
+        _emit({"rules": [r.to_dict() for r in found], "broken": [{"path": str(p), "error": e} for p, e in broken]})
+        return
+    if not found:
+        click.echo("No rules." + ("" if status else " Add one with `iagent rules add`."))
+    for r in found:
+        click.echo(f"{r.id:<28} {r.status:<8} {r.track or 'any track':<18} {_when(r)}")
+        if r.description:
+            click.echo(f"{'':<29}{r.description}")
+        click.echo(f"{'':<29}{_bt_line(r.meta.get('backtest'), r.fingerprint)}")
+    for path, error in broken:
+        click.echo(f"Broken: {path}: {error}", err=True)
+
+
+@rules.command("show")
+@click.argument("rule_id")
+@click.pass_obj
+def rules_show(ctx: Ctx, rule_id: str):
+    """A rule as JSON."""
+    from iagent.live.rulebook import find_rule
+
+    _emit(find_rule(ctx.workspace, rule_id).to_dict())
+
+
+@rules.command("vars")
+@click.option("--trigger", help="Only what this trigger provides.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+def rules_vars(trigger: str | None, as_json: bool):
+    """What rules can use: triggers and their variables, live channels, functions."""
+    from iagent.live.rules import TRIGGERS, describe
+
+    info = describe()
+    if trigger:
+        if trigger not in TRIGGERS:
+            raise click.ClickException(f"No trigger {trigger!r}; there are: {', '.join(TRIGGERS)}.")
+        info["triggers"] = {trigger: info["triggers"][trigger]}
+    if as_json:
+        _emit(info)
+        return
+    for t, names in info["triggers"].items():
+        click.echo(f"{t}:")
+        for k, v in names.items():
+            click.echo(f"  {k:<22} {v}")
+    click.echo("every trigger:")
+    for k, v in info["every_trigger"].items():
+        click.echo(f"  {k:<22} {v}")
+    click.echo("live channels (iRacing names):")
+    for k, v in info["channels"].items():
+        click.echo(f"  {k:<22} {v}")
+    click.echo("functions:")
+    for k, v in info["functions"].items():
+        click.echo(f"  {k:<22} {v}")
+
+
+@rules.command("backtest")
+@click.argument("rule_ids", nargs=-1, required=True)
+@click.option("--car", help="Car key (default: the rule's, else the one driven most on its track).")
+@click.option("--track", help="Track key (for a rule on every track).")
+@click.option("--session", "sessions", multiple=True, help="A recorded session id (repeatable; default: the last few).")
+@click.option("--ibt", "ibt", multiple=True, type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              help="Replay this .ibt instead (repeatable).")
+@click.option("--last", default=3, show_default=True, help="How many recent sessions, by default.")
+@click.option("--alone", is_flag=True, help="Without the other active rules (they normally compete for the voice).")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON.")
+@click.pass_obj
+def rules_backtest(ctx: Ctx, rule_ids: tuple[str, ...], car: str | None, track: str | None, sessions: tuple[str, ...],
+                   ibt: tuple[Path, ...], last: int, alone: bool, as_json: bool):
+    """Replay recorded sessions through the live coach with these rules: where they would have
+    fired, what they'd have said, and whether it would have been said (or dropped, and why).
+
+    The result is noted on each rule; `activate` needs a backtest of the rule as it is now.
+    """
+    from iagent.live.rulebook import backtest, find_rule, record_backtest
+
+    found = [find_rule(ctx.workspace, i) for i in rule_ids]
+    tracks = {r.track for r in found if r.track} | ({track} if track else set())
+    if len(tracks) != 1:
+        raise click.ClickException("Backtest rules for one track at a time" + (" (pass --track)." if not tracks else "."))
+    track = tracks.pop()
+    cars = {r.car for r in found if r.car} | ({car} if car else set())
+    if len(cars) > 1:
+        raise click.ClickException("These rules are for different cars: backtest them separately.")
+    car = cars.pop() if cars else _main_car(ctx, track)
+    report = backtest(ctx.workspace, found, track, car, list(sessions) or None, list(ibt) or None, last,
+                      with_active=not alone)
+    for rule in found:
+        record_backtest(ctx.workspace, rule, report["rules"][rule.id])
+    if as_json:
+        _emit(report)
+        return
+    click.echo(f"{track} / {car}, cues following {report['ref_lap_id']}: {', '.join(report['sessions'])}")
+    for rule in found:
+        r = report["rules"][rule.id]
+        t = r["totals"]
+        click.echo(f"\n{rule.id}: fired {t['fired']}x on {r['laps_fired']} of {r['laps']} laps driven "
+                   f"(trigger {t['occurrences']}x, not pushing {t['skipped']}, condition held {t['matched']}, "
+                   f"held by limits {t['limited']})")
+        if any(a.kind == "say" for a in rule.actions):
+            click.echo(f"  said {t['said']}, cut off {t['cut']}, dropped {t['dropped']}")
+        for f in r["firings"][:40]:
+            where = f"{f['lap_dist']:>5} m" if f.get("lap_dist") is not None else ""
+            values = " ".join(f"{k}={v}" for k, v in f["values"].items())
+            what = "; ".join(f"{k}: {v}" for a in f.get("actions", []) for k, v in a.items() if k in ("say", "wake", "log"))
+            status = f["result"] if f["result"] == "fired" else f"limited ({f['why']})"
+            click.echo(f"  {f['session']}  lap {f['lap_no'] + 1:>2}  {where}  {status}  {values}" + (f"\n      {what}" if what else ""))
+        if len(r["firings"]) > 40:
+            click.echo(f"  ... {len(r['firings']) - 40} more (--json for all)")
+        for ln in r["lines"]:
+            if ln["status"] != "said":
+                click.echo(f"  {ln['status']}: {ln['text']}" + (f" ({ln['note']})" if ln.get("note") else ""))
+
+
+def _main_car(ctx: Ctx, track: str) -> str:
+    counts: dict[str, int] = {}
+    if (ctx.workspace / "index.sqlite").exists():
+        for r in ctx.store().list(track=track):
+            counts[r.car_key] = counts.get(r.car_key, 0) + 1
+    if not counts:
+        raise click.ClickException(f"No laps on {track}: pass --car.")
+    return max(counts, key=counts.__getitem__)
+
+
+@rules.command("activate")
+@click.argument("rule_ids", nargs=-1, required=True)
+@click.option("--force", is_flag=True, help="Without a backtest of the rule as it is now.")
+@click.pass_obj
+def rules_activate(ctx: Ctx, rule_ids: tuple[str, ...], force: bool):
+    """Make rules live (a running coach picks them up within ~10 s)."""
+    from iagent.live.rulebook import set_status
+
+    for rule_id in rule_ids:
+        rule = set_status(ctx.workspace, rule_id, "active", force)
+        click.echo(f"{rule.id}: active")
+
+
+@rules.command("deactivate")
+@click.argument("rule_ids", nargs=-1, required=True)
+@click.pass_obj
+def rules_deactivate(ctx: Ctx, rule_ids: tuple[str, ...]):
+    """Take rules out of the live coach (back to draft)."""
+    from iagent.live.rulebook import set_status
+
+    for rule_id in rule_ids:
+        click.echo(f"{set_status(ctx.workspace, rule_id, 'draft').id}: draft")
+
+
+@rules.command("archive")
+@click.argument("rule_ids", nargs=-1, required=True)
+@click.pass_obj
+def rules_archive(ctx: Ctx, rule_ids: tuple[str, ...]):
+    """Keep rules for the record, out of use."""
+    from iagent.live.rulebook import set_status
+
+    for rule_id in rule_ids:
+        click.echo(f"{set_status(ctx.workspace, rule_id, 'archived').id}: archived")
+
+
+@rules.command("remove")
+@click.argument("rule_ids", nargs=-1, required=True)
+@click.pass_obj
+def rules_remove(ctx: Ctx, rule_ids: tuple[str, ...]):
+    """Delete rules."""
+    from iagent.live.rulebook import remove_rule
+
+    for rule_id in rule_ids:
+        click.echo(f"Removed {remove_rule(ctx.workspace, rule_id)}")
 
 
 @cli.group()
@@ -839,9 +1105,14 @@ def live():
 @click.option("--ref", "ref_id", help="Lap to follow (default: the saved cue plan's).")
 @click.option("--learning-laps", default=2, show_default=True, help="Laps with every corner cued.")
 @click.option("--threads", default=2, show_default=True, help="CPU threads for speech.")
+@click.option("--crewchief", type=click.Choice(["auto", "on", "off"]), default="auto", show_default=True,
+              help="Share the radio with CrewChief: leave lap times to it, keep quiet after the line. auto: if it's running.")
+@click.option("--narrate/--no-narrate", default=None,
+              help="Let the coach (claude -p) word cool-down debriefs and answer rules that wake it. "
+                   "Default: on if `claude` is found and the replay runs in real time.")
 @click.pass_obj
 def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None, voice: str, print_only: bool,
-             ref_id: str | None, learning_laps: int, threads: int):
+             ref_id: str | None, learning_laps: int, threads: int, crewchief: str, narrate: bool | None):
     """Coach live: cue each corner on the approach, say what went wrong after it, sum up each lap.
 
     On the sim PC this reads iRacing (start it before or after; Ctrl+C to stop). Elsewhere, use
@@ -852,7 +1123,9 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
     from iagent.live.sources import LIVE_CHANNELS, IrsdkSource, paced
     from iagent.live.speech import PrintVoice
 
-    settings = Settings(learning_laps=learning_laps)
+    from iagent.live import crewchief as cc
+
+    settings = Settings(learning_laps=learning_laps, crewchief=cc.resolve(crewchief))
     if print_only:
         out = PrintVoice()
     else:
@@ -865,18 +1138,62 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
             raise click.ClickException(str(e)) from e
         out = _SpokenToo(out)
 
-    on_start = lambda coach: click.echo(  # noqa: E731
-        f"Coaching {coach.session.track_name} in {coach.session.car_name}: {len(coach.plan.cues)} cues, "
-        f"following {coach.plan.ref_lap_id}.")
+    import queue
+    import shutil
+
+    from iagent.live.narrator import Narrator, Radio, ask_with
+    from iagent.ui.coach import CoachRuns
+
+    runs = CoachRuns(ctx.workspace)
+    if narrate is None:
+        narrate = shutil.which(runs.claude) is not None and (not replay or speed <= 1.0)
+    calls: queue.Queue = queue.Queue()
+    current: dict = {}
+
+    def note(event: dict) -> None:
+        if event.get("type") == "narration" and event.get("text"):
+            click.echo(f"[coach] {event['kind']}: {event['status']}")
+
+    radio = Radio(Narrator(ask_with(runs)), calls.put, note) if narrate else None
+
+    def on_start(coach):
+        rules = coach.rules.rules
+        current["coach"] = coach
+        click.echo(f"Coaching {coach.session.track_name} in {coach.session.car_name}: {len(coach.plan.cues)} cues, "
+                   f"following {coach.plan.ref_lap_id}." + (f" Rules: {', '.join(r.id for r in rules)}." if rules else "")
+                   + (" Sharing the radio with CrewChief." if coach.settings.crewchief else "")
+                   + (" The coach words debriefs and wake-ups." if radio else ""))
+
+        def wake(w):
+            click.echo(f"[wake] {w['rule']}: {w['message']}")
+            if radio is not None:
+                radio.wake(coach, w)
+        coach.rules.on_wake = wake
+        coach.rules.on_fire = on_fire
+        if radio is not None:
+            radio.attach(coach)
+
+    def with_calls(frames):
+        """Replies from the coach are applied on this thread, between frames."""
+        for frame in frames:
+            while current.get("coach") is not None and not calls.empty():
+                calls.get_nowait()(current["coach"], frame.session_time)
+            yield frame
+
+    def on_fire(fired):
+        for action in fired.get("actions", []):
+            if action.get("log"):
+                click.echo(f"[log] {fired['rule']}: {action['log']}")
     try:
         if replay:
             src = IbtSource(replay, channels=LIVE_CHANNELS)
-            run(ctx.workspace, lambda: src.session, paced(src.frames(), speed, start_at), out, settings, ref_id, on_start)
+            run(ctx.workspace, lambda: src.session, with_calls(paced(src.frames(), speed, start_at)), out, settings, ref_id,
+                on_start)
         else:
             live_src = IrsdkSource()
             click.echo("Waiting for iRacing...")
             live_src.connect()
-            run(ctx.workspace, lambda: live_src.session, live_src.frames(), out, settings, ref_id, on_start)
+            run(ctx.workspace, lambda: live_src.session, with_calls(live_src.frames()), out, settings, ref_id, on_start)
     except KeyboardInterrupt:
         pass
     finally:

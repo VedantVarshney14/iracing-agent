@@ -15,6 +15,20 @@ Per frame, no model involved:
   or an off. Once the focus is within `loss_s` on two laps at pace it's done and the next one is
   picked. Changes are announced in the lap summary. (`set_focus` overrides it.)
 - **Lap summary** at the line: lap time, gap to the reference, the corner that cost the most.
+  With CrewChief running it already reads lap times, so only the coaching part is said, and
+  nothing but cues for a few seconds after the line, while CrewChief talks.
+- **Says less as the driver learns.** A corner's full cue ("La Source, hairpin right. Hard brake,
+  second gear.") is said until it's been heard `learning_laps` times; then the short one ("La
+  Source. Hard brake."), plus any hint.
+- **Talks more when there's time.** Feedback has a longer version (what, why and how), said
+  instead when the driver isn't pushing. A cool-down lap (not pushing for `debrief_after_s`) gets
+  a short debrief, like an engineer on the radio: the corner costing the most over the last laps
+  at pace, what to change and how, and how consistent the laps were.
+- **In the coach's own words, when it's there.** With a narrator attached (`on_narrate`, the
+  live session's `claude -p`), the debrief is asked for as the driver slows and said in the
+  coach's words if the reply comes in time; otherwise the coach's own phrasing is said.
+- **Notices progress.** A corner that got feedback and is fixed the next lap gets a "better";
+  the same mistake again is said as a repeat ("Turn 2 again: ..."), not as if it were news.
 
 - **Pushing or not.** Pace over the last 400 m is compared with the driver's own best lap (on a
   track they haven't lapped yet, generously with the reference). Clearly slower (10%+) means
@@ -22,6 +36,9 @@ Per frame, no model involved:
   cued or assessed until they're back within 5%, so a moment doesn't write off the rest of the lap.
 
 Nothing is said on pit road or off the racing surface, and nothing new while a car is alongside.
+
+Rules the agent has activated (`iagent.live.rules`) are evaluated alongside, on the same frames
+and events, and speak through the same arbiter.
 """
 
 from collections import deque
@@ -34,6 +51,10 @@ import pandas as pd
 from iagent.analysis.corners import CornerMap, corner_metrics
 from iagent.laps.segment import Lap, LapSegmenter
 from iagent.live.cues import Cue, CuePlan
+from iagent.live.expr import round5 as _round5
+from iagent.live.expr import say_gap as _say_gap
+from iagent.live.expr import say_time as _say_time
+from iagent.live.rules import RuleEngine
 from iagent.live.speech import APPROACH, FEEDBACK, SUMMARY, Arbiter, Utterance
 from iagent.telemetry.frames import SURFACE_OFF_TRACK, SURFACE_ON_TRACK, Frame
 from iagent.telemetry.session import SessionInfo
@@ -64,6 +85,14 @@ class Settings:
     push_ratio: float = 1.05  # back to pushing at this pace or better (vs own best)
     tranquille_ratio: float = 1.10  # tranquille at this pace or slower
     new_track_ratio: float = 1.25  # with no lap of their own yet, vs the reference
+    short_cues: bool = True  # after a cue has been heard in full `learning_laps` times, say its short form
+    debrief: bool = True  # talk through the last laps on a cool-down lap
+    debrief_after_s: float = 15.0  # not pushing this long (not just a moment) before the debrief
+    debrief_topics: int = 2
+    narrate_after_s: float = 5.0  # ask the narrator this far into a slow stretch (it takes a few seconds)
+    narrate_wait_s: float = 12.0  # once settled, wait this much longer for its words before our own
+    crewchief: bool = False  # CrewChief is running: leave lap times to it, keep quiet after the line
+    crewchief_quiet_s: float = 5.0
 
 
 @dataclass
@@ -73,6 +102,10 @@ class CornerResult:
     advice: str | None  # said after the corner
     hint: str | None  # added to the corner's cue next lap
     struggling: bool
+    metrics: dict | None = None  # this lap's corner metrics (what rules see)
+    cause: str | None = None  # the clearest cause of the loss: see LiveCoach._cause
+    amount: float | None = None  # how much (metres, km/h), for the cause
+    longer: str | None = None  # the advice with the why and the how
 
 
 @dataclass
@@ -90,7 +123,7 @@ class _LapState:
 class LiveCoach:
     def __init__(self, session: SessionInfo, plan: CuePlan, cmap: CornerMap, ref_grid: pd.DataFrame,
                  arbiter: Arbiter, settings: Settings | None = None, own_best: pd.DataFrame | None = None,
-                 carried_focus: int | None = None):
+                 carried_focus: int | None = None, rules: RuleEngine | None = None):
         self.session = session
         self.plan = plan
         self.cmap = cmap
@@ -135,6 +168,23 @@ class LiveCoach:
             self.focus_log.append({"cue": cue.corner, "corners": cue.corners, "label": self._label(cue),
                                    "set_lap": 0, "done_lap": None, "manual": False, "carried": True})
         self.results: list[list[CornerResult]] = []  # per completed lap
+        self.lap_times: list[float] = []  # pushing laps, in order
+        self._full_heard: dict[int, int] = {}  # cue corner -> times its full text was said
+        self._slow_since: float | None = None  # session time the current tranquille stretch began
+        self._debriefed = False  # this tranquille stretch
+        self._line_at = -1e9  # session time of the last start/finish crossing
+        self._told: dict[int, tuple[str, int]] = {}  # corner -> (cause, lap) of the last feedback said
+        self._debriefs = 0
+        # Asks for the debrief in the coach's own words: (facts, stretch id); the reply comes back
+        # through `narrated`. Called on the coach thread; must not block.
+        self.on_narrate: Callable[[dict, int], None] | None = None
+        self._stretch = 0  # counts slow stretches, so a late reply isn't said in the wrong one
+        self._asked = False
+        self._narration: str | None = None
+        self.on_debrief: Callable[[dict], None] | None = None  # what was said, and whose words
+        self.rules = rules
+        if rules is not None:
+            rules.attach(self)
 
     # --- per frame -----------------------------------------------------------------------------
 
@@ -149,21 +199,41 @@ class LiveCoach:
         on_track = surface in (SURFACE_ON_TRACK, SURFACE_OFF_TRACK) and not frame.get("OnPitRoad", 0)
         if not on_track or d is None or v is None:
             self._lap.clean = False
+            if self.rules is not None:
+                self.rules.frame(frame, now, on_track=False)
             self.arbiter.clear(("approach", "feedback"), now, "you were in the pits or off the racing surface")
             self.arbiter.tick(now, hold=True)
             return
         self._lap.rows.append(tuple(float(frame.get(c, np.nan)) for c in LIVE_CHANNELS))
         self._track_pace(now, d)
+        if self.rules is not None:
+            self.rules.frame(frame, now, on_track=True)
+        alongside = (frame.get("CarLeftRight") or 0) >= CAR_ALONGSIDE
         if self.mode == "tranquille":
             self._assess(now, d)  # only an off-track hint for next lap comes out of this
-            self.arbiter.tick(now, hold=True)  # no cues, no feedback until pushing again
+            # No cues and no judging; once it's clearly a cool-down (not a moment), time to talk.
+            s = self.settings
+            slow_for = now - self._slow_since if self._slow_since is not None else 0.0
+            settled = slow_for >= s.debrief_after_s
+            if s.debrief and self.on_narrate is not None and not self._asked and slow_for >= s.narrate_after_s:
+                self._asked = True
+                facts = self.debrief_facts()
+                if facts["topics"] or facts["lap_times"]:
+                    self.on_narrate(facts, self._stretch)
+                else:
+                    self._asked = None  # nothing to talk about
+            waiting = self._asked is True and self._narration is None and slow_for < s.debrief_after_s + s.narrate_wait_s
+            if settled and not self._debriefed and not waiting:
+                self._debriefed = True
+                self._debrief(now)
+            self.arbiter.tick(now, hold=alongside or not settled or self._after_line(now), long_ok=True)
             return
 
         due = self._approach(now, d, max(v, 5.0))
         self._assess(now, d)
-        hold = (frame.get("CarLeftRight") or 0) >= CAR_ALONGSIDE
         # Between a cue and the end of its corners only cues are said: feedback waits for a straight.
-        self.arbiter.tick(now, hold=hold, free_for_s=0.0 if self._in_corner(d) else due)
+        free = 0.0 if self._in_corner(d) or self._after_line(now) else due
+        self.arbiter.tick(now, hold=alongside, free_for_s=free)
 
     # --- pushing or not ------------------------------------------------------------------------
 
@@ -204,8 +274,15 @@ class LiveCoach:
         best = float((b - a) % lap) or 1e-6
         return (t1 - t0) / best
 
+    def _after_line(self, now: float) -> bool:
+        """Just over the line, CrewChief reads the lap time: only cues are said then."""
+        return self.settings.crewchief and now - self._line_at < self.settings.crewchief_quiet_s
+
     def _set_mode(self, mode: str, now: float, d: float) -> None:
         self.mode = mode
+        self._slow_since, self._debriefed = (now, False) if mode == "tranquille" else (None, False)
+        self._stretch += 1
+        self._asked, self._narration = False, None
         if mode == "tranquille":
             self._lap.slow.append([round(max(0.0, d - self.settings.pace_window_m / 2)), round(d)])
             self.arbiter.clear(("approach", "feedback", "focus"), now, "you weren't pushing")
@@ -213,6 +290,8 @@ class LiveCoach:
             self._lap.slow[-1][1] = round(d)
         if self.on_mode is not None:
             self.on_mode(mode, now, d)
+        if self.rules is not None:
+            self.rules.pace(mode, now)
 
     def _in_corner(self, d: float) -> bool:
         for cue in self.plan.cues:
@@ -240,6 +319,8 @@ class LiveCoach:
             if now - self._last_cued.get(cue.corner, -1e9) < 20.0 or to_target > self.length / 2:
                 continue  # said already, or the target is behind us
             self._last_cued[cue.corner] = now
+            if not self._short(cue):
+                self._full_heard[cue.corner] = self._full_heard.get(cue.corner, 0) + 1
             if cue.corner == self.focus:
                 self._focus_heard = True
             for c in cue.corners:
@@ -260,15 +341,24 @@ class LiveCoach:
             return f"Focus. {text}"
         return text
 
+    def _short(self, cue: Cue) -> bool:
+        """Say the short form: the driver has heard the full cue enough, and it isn't news."""
+        if not (self.settings.short_cues and cue.short):
+            return False
+        if cue.corner == self.focus and not self._focus_heard:
+            return False  # a new focus is said in full
+        return self._full_heard.get(cue.corner, 0) >= max(1, self.settings.learning_laps)
+
     def _hinted(self, cue: Cue) -> str:
+        base = cue.short if self._short(cue) else cue.text
         corner = next((c for c in cue.corners if c in self._hints), None)
         if corner is None:
-            return cue.text
+            return base
         hint = self._hints[corner]
         if corner != cue.corner:  # about the second corner of the cue: say which
             c = self.cmap.get(corner)
             hint = f"{c.name or f'Turn {c.id}'}: {hint[0].lower()}{hint[1:]}"
-        return f"{cue.text} {hint}"
+        return f"{base} {hint}"
 
     def _wanted(self, cue: Cue) -> bool:
         if self._laps_done < self.settings.learning_laps:
@@ -299,6 +389,8 @@ class LiveCoach:
             result = self._corner_result(c.id, d)
             if result is None:
                 continue
+            if self.rules is not None:
+                self.rules.corner_exit(result, at_pace, now)
             if not at_pace:
                 # Not pushing: the numbers don't count, but going off is still worth a word next lap.
                 if result.hint and "off track" in (result.advice or ""):
@@ -323,9 +415,32 @@ class LiveCoach:
                                 "advice": result.advice, "hint": result.hint, "at": now})
             cue = self.plan.cue_for(c.id)
             said = any(r.advice for r in self._lap.results[:-1] if cue and r.corner in cue.corners)
-            if result.advice and not said and self._lap.feedback < s.feedback_per_lap:
+            if said or self._lap.feedback >= s.feedback_per_lap:
+                continue
+            line = self._feedback_line(c, result)
+            if line is not None:
                 self._lap.feedback += 1
-                self.arbiter.say(Utterance(result.advice, FEEDBACK, "feedback", now, now + s.feedback_expires_s, c.id))
+                text, longer = line
+                self.arbiter.say(Utterance(text, FEEDBACK, "feedback", now, now + s.feedback_expires_s, c.id,
+                                           longer=longer))
+
+    def _feedback_line(self, c, result: "CornerResult") -> tuple[str, str | None] | None:
+        """What to say after a corner, aware of what was said about it last time: a repeat of the
+        same mistake is said as a repeat, and a corner that was told off and is now fine gets a
+        "better", which a driver learning a track needs to hear as much as the corrections."""
+        lap = self._laps_done + 1
+        name = c.name or f"Turn {c.id}"
+        told = self._told.get(c.id)
+        recent = told is not None and lap - told[1] <= 1
+        if result.advice:
+            self._told[c.id] = (result.cause, lap)
+            if recent and told[0] == result.cause and result.cause not in (None, "off"):
+                return f"{name} again: {result.advice.split(': ', 1)[-1][0].lower()}{result.advice.split(': ', 1)[-1][1:]}", result.longer
+            return result.advice, result.longer
+        if recent and result.delta_s < self.settings.loss_s:
+            del self._told[c.id]
+            return f"{name}: better.", f"That's better at {name}. Right with the reference there, keep that."
+        return None
 
     def _corner_result(self, corner_id: int, d: float) -> CornerResult | None:
         c = self.cmap.get(corner_id)
@@ -342,39 +457,46 @@ class LiveCoach:
         start = max(c.segment_start_m, float(dist[0]))
         delta = (np.interp(d, dist, t) - np.interp(start, dist, t)) - (
             np.interp(d, self._ref_d, self._ref_t) - np.interp(start, self._ref_d, self._ref_t))
-        advice, hint = self._advice(c.name or f"Turn {c.id}", mine, ref, float(delta))
+        name = c.name or f"Turn {c.id}"
+        cause, amount = self._cause(mine, ref, float(delta))
+        advice, hint = _texts(name, cause, amount, ref)
         s = self.settings
         struggling = delta >= s.loss_s or (mine.get("off_track_m") or 0) >= s.off_track_m
         if delta > s.incident_s:
-            advice = hint = None  # a spin or a moment: the numbers describe the incident, not the technique
-        return CornerResult(corner_id, round(float(delta), 3), advice, hint, struggling)
+            # A spin or a moment: the numbers describe the incident, not the technique.
+            advice = hint = cause = amount = None
+        longer = _longer(name, cause, amount, ref, mine) if cause else None
+        return CornerResult(corner_id, round(float(delta), 3), advice, hint, struggling, mine, cause, amount, longer)
 
     def _advice(self, name: str, mine: dict, ref: dict, delta: float) -> tuple[str | None, str | None]:
         """The clearest cause of a corner that cost time, in the driver's terms: what to say after
         the corner, and the hint for its cue next lap."""
+        cause, amount = self._cause(mine, ref, delta)
+        return _texts(name, cause, amount, ref)
+
+    def _cause(self, mine: dict, ref: dict, delta: float) -> tuple[str | None, float | None]:
+        """Why a corner cost time: off, early_brake, late_brake, no_brake_needed, slow_apex or
+        late_throttle (with how much), or (None, None)."""
         s = self.settings
         if (mine.get("off_track_m") or 0) >= s.off_track_m:
-            return f"{name}: you ran off track. Brake a touch earlier and tidy the entry.", "Tidy entry, you ran wide last lap."
+            return "off", float(mine["off_track_m"])
         if delta < s.loss_s:
             return None, None
         bm, rb = mine.get("brake_m"), ref.get("brake_m")
         if bm is not None and rb is not None:
             diff = bm - rb
             if diff <= -s.brake_m:
-                return f"{name}: braked {_round5(-diff)} metres early. Brake later.", "Brake later than last lap."
+                return "early_brake", -diff
             if diff >= s.brake_m and (mine.get("min_speed_kph") or 0) < (ref.get("min_speed_kph") or 0):
-                return f"{name}: braked {_round5(diff)} metres late and lost the exit.", "Brake a little earlier than last lap."
+                return "late_brake", diff
         if bm is not None and rb is None:
-            lift = (ref.get("min_throttle") or 1) < 0.9
-            return (f"{name}: no need to brake there." + (" A lift is enough." if lift else ""),
-                    "Just a lift, no brakes." if lift else "Stay off the brakes.")
+            return "no_brake_needed", None
         dv = _diff(mine.get("min_speed_kph"), ref.get("min_speed_kph"))
         if dv is not None and dv <= -s.min_speed_kph:
-            return f"{name}: {round(-dv)} kilometres an hour slower at the apex. Carry more speed in.", "Carry more speed in."
+            return "slow_apex", -dv
         dt = _diff(mine.get("full_throttle_m"), ref.get("full_throttle_m"))
         if dt is not None and dt >= s.throttle_m:
-            return (f"{name}: full throttle {_round5(dt)} metres later than the reference. Get on it earlier.",
-                    "Earlier on the throttle.")
+            return "late_throttle", dt
         return None, None
 
     def _grid(self, lo: float, hi: float) -> pd.DataFrame | None:
@@ -400,6 +522,9 @@ class LiveCoach:
         state = self._lap
         self._lap = _LapState()
         self._last_cued = {k: t for k, t in self._last_cued.items() if now - t < 20.0}
+        self._line_at = now
+        if self.rules is not None:
+            self.rules.line_crossed()
         if not state.clean or not lap.complete:
             return  # out lap or a lap joined midway: it doesn't count towards learning
         self._laps_done += 1
@@ -411,25 +536,32 @@ class LiveCoach:
         # Focus moves on what the pushing parts of the lap showed (most of the corners at least).
         enough = len(state.results) >= max(1, len(self.cmap.corners) // 2)
         news = self._update_focus(state.results) if enough else None
+        best_before = self._pace_lap
+        if pace == "pushing" and lap.lap_time:
+            self.lap_times.append(lap.lap_time)
         if pace == "pushing" and lap.lap_time and (self._pace_lap is None or lap.lap_time < self._pace_lap):
             self._new_best(lap)
         # Both wait for the first straight with room for them, up to most of a lap.
         wait = 0.6 * (self.plan.ref_lap_time or lap.lap_time or 60.0)
-        if self.settings.summary and lap.lap_time is not None and pace != "tranquille":
-            self.arbiter.say(Utterance(self._summary(lap, state.results, moment_at), SUMMARY, "summary", now, now + wait))
+        summary = self._summary(lap, state.results, moment_at) if lap.lap_time is not None else None
+        if self.settings.summary and summary and pace != "tranquille":
+            self.arbiter.say(Utterance(summary, SUMMARY, "summary", now, now + wait))
         if news:
             self.arbiter.say(Utterance(news, FEEDBACK, "focus", now, now + wait, self.focus))
+        info = {
+            "lap": self._laps_done, "lap_time": lap.lap_time, "at": now,
+            "gap_s": round(lap.lap_time - ref_time, 3) if lap.lap_time and ref_time else None,
+            "pace": pace,  # "pushing", "moment" or "tranquille"
+            "pushing_share": round(state.pushing_frames / state.frames, 2) if state.frames else 0.0,
+            "slow": state.slow,  # [from_m, to_m] stretches not pushing
+            "moment_at": moment_at,
+            "corners": [{"corner": r.corner, "delta_s": r.delta_s} for r in state.results],
+            "focus": self.focus,
+        }
         if self.on_lap is not None:
-            self.on_lap({
-                "lap": self._laps_done, "lap_time": lap.lap_time, "at": now,
-                "gap_s": round(lap.lap_time - ref_time, 3) if lap.lap_time and ref_time else None,
-                "pace": pace,  # "pushing", "moment" or "tranquille"
-                "pushing_share": round(state.pushing_frames / state.frames, 2) if state.frames else 0.0,
-                "slow": state.slow,  # [from_m, to_m] stretches not pushing
-                "moment_at": moment_at,
-                "corners": [{"corner": r.corner, "delta_s": r.delta_s} for r in state.results],
-                "focus": self.focus,
-            })
+            self.on_lap(info)
+        if self.rules is not None:
+            self.rules.lap(info, best_before, now)
 
     def _classify(self, state: "_LapState") -> tuple[str, int | None]:
         """pushing (all the way), moment (mostly pushing, one slow stretch: returns the corner where
@@ -550,23 +682,131 @@ class LiveCoach:
             return names[0] or f"Turn {cue.corner}"
         return f"Turns {cue.corners[0]} and {cue.corners[-1]}"
 
-    def _summary(self, lap: Lap, results: list[CornerResult], moment_at: int | None = None) -> str:
-        """Short enough (~3 s) to fit the straights of a busy track: "1 33.9, 3 seconds down. Worst: Turn 6." """
+    def _summary(self, lap: Lap, results: list[CornerResult], moment_at: int | None = None) -> str | None:
+        """Short enough (~3 s) to fit the straights of a busy track: "1 33.9, 3 seconds down. Worst: Turn 6."
+        With CrewChief reading the lap time, only what it can't say: "Worst: Turn 6.", or nothing."""
         ref_time = self.plan.ref_lap_time
-        text = _say_time(lap.lap_time)
+        crewchief = self.settings.crewchief
+        text = "" if crewchief else _say_time(lap.lap_time)
         if moment_at is not None:  # the gap means nothing: say where it went
             c = self.cmap.get(moment_at)
-            return f"{text}. Lost it at {c.name or f'Turn {c.id}'}."
-        if not ref_time:
-            return text + "."
-        gap = lap.lap_time - ref_time
-        text += f", {_say_gap(gap)} {'down' if gap > 0 else 'up'}."
+            return f"{text + '. ' if text else ''}Lost it at {c.name or f'Turn {c.id}'}."
+        if not crewchief:
+            if not ref_time:
+                return text + "."
+            gap = lap.lap_time - ref_time
+            text += f", {_say_gap(gap)} {'down' if gap > 0 else 'up'}."
         worst = max((r for r in results if r.delta_s <= self.settings.incident_s), key=lambda r: r.delta_s, default=None)
         focus = self.plan.cue_for(self.focus).corners if self.focus is not None else []
         if worst is not None and worst.delta_s >= self.settings.loss_s and worst.corner not in focus:
             c = self.cmap.get(worst.corner)
-            text += f" Worst: {c.name or f'Turn {c.id}'}."
-        return text
+            name = c.name or f"Turn {c.id}"
+            text += f" Most time lost at {name}." if crewchief else f" Worst: {name}."
+        return text.strip() or None
+
+    # --- on a cool-down lap --------------------------------------------------------------------
+
+    def _debrief(self, now: float) -> None:
+        """What an engineer says on a cool-down lap: where the time is (over the last laps at
+        pace, so it's a habit, not one mistake), what to change and how, and the consistency."""
+        from iagent.live.narrator import chunks
+
+        words = self._narration
+        lines = chunks(words) if words else self.debrief_lines()
+        self._debriefs += 1
+        for i, text in enumerate(lines):
+            # One piece at a time, so a car alongside or the pits can come between them.
+            self.arbiter.say(Utterance(text, FEEDBACK, "debrief", now + i * 0.01, now + 90.0))
+        if lines and self.on_debrief is not None:
+            self.on_debrief({"at": now, "by": "coach" if words else "template", "text": " ".join(lines)})
+
+    def narrated(self, text: str | None, stretch: int) -> bool:
+        """The coach's words for the debrief of slow stretch STRETCH arrived (on the coach thread).
+        False if it's too late: the driver is pushing again, or our own words were said."""
+        if stretch != self._stretch or self.mode != "tranquille" or self._debriefed or not text:
+            if self._asked is True and stretch == self._stretch and not text:
+                self._asked = None  # nothing came: don't wait for it
+            return False
+        self._narration = text
+        return True
+
+    def _topics(self) -> tuple[list[dict], dict[int, list["CornerResult"]]]:
+        """The corners worth talking about: the focus, then the biggest losses over the last laps
+        at pace (a habit, not one mistake)."""
+        s = self.settings
+        recent = [lap for lap in self.results if lap][-3:]
+        by_corner: dict[int, list[CornerResult]] = {}
+        for lap in recent:
+            for r in lap:
+                if r.delta_s <= s.incident_s:
+                    by_corner.setdefault(r.corner, []).append(r)
+        mean = {c: sum(r.delta_s for r in rs) / len(rs) for c, rs in by_corner.items()}
+        focus = self.plan.cue_for(self.focus).corners if self.focus is not None else []
+        order = sorted(mean, key=lambda c: (c not in focus, -mean[c]))
+        topics = []
+        for corner in [c for c in order if mean[c] >= s.loss_s][: s.debrief_topics]:
+            rs = by_corner[corner]
+            c = self.cmap.get(corner)
+            latest = next((r for r in reversed(rs) if r.cause), None)
+            topics.append({"corner": corner, "name": c.name or f"Turn {c.id}", "in_focus": corner in focus,
+                           "loss_per_lap_s": round(mean[corner], 2), "laps": len(rs),
+                           "cause": latest.cause if latest else None,
+                           "amount": round(latest.amount, 1) if latest and latest.amount is not None else None,
+                           "advice": latest.longer if latest else None})
+        return topics, by_corner
+
+    def debrief_facts(self) -> dict:
+        """What the debrief is about, for the narrator (and the log)."""
+        topics, _ = self._topics()
+        times = self.lap_times[-3:]
+        return {"track": self.session.track_name, "laps_done": self._laps_done,
+                "focus": next((f["label"] for f in reversed(self.focus_log) if f["cue"] == self.focus), None)
+                if self.focus is not None else None,
+                "topics": topics, "lap_times": [round(t, 2) for t in times],
+                "lap_spread_s": round(max(times) - min(times), 2) if len(times) >= 2 else None,
+                "cause_meanings": CAUSES, "crewchief": self.settings.crewchief,
+                "fallback": self.debrief_lines()}
+
+    def debrief_lines(self) -> list[str]:
+        s = self.settings
+        if not s.debrief or not [lap for lap in self.results if lap]:
+            return []
+        topics, by_corner = self._topics()
+        lines = []
+        opener = DEBRIEF_OPENERS[self._debriefs % len(DEBRIEF_OPENERS)]
+        for n, t in enumerate(topics):
+            rs = by_corner[t["corner"]]
+            name = t["name"]
+            latest = next((r for r in reversed(rs) if r.cause), None)
+            laps = f"the last {len(rs)} laps" if len(rs) > 1 else "that lap"
+            lead = (opener if n == 0 else "And ") + (
+                f"{name} is still the focus. " if t["in_focus"] else f"{name} is where the time is. ")
+            cost = f"About {_say_gap(t['loss_per_lap_s'])} a lap over {laps}."
+            how = ""
+            if latest is not None:
+                how = " " + _longer(name, latest.cause, latest.amount, self._ref_metrics.get(t["corner"]) or {},
+                                    latest.metrics or {}, named=False)
+            lines.append(f"{lead}{cost}{how}")
+        pace = self._consistency()
+        if not lines:
+            # Nothing costing time at any one corner: the laps themselves are the topic.
+            tidy = f"{opener}no one corner stands out on those laps."
+            return [f"{tidy} {pace}" if pace else f"{tidy} Good work."]
+        if pace:
+            lines.append(pace)
+        return lines
+
+    def _consistency(self) -> str | None:
+        times = self.lap_times[-3:]
+        if len(times) < 3:
+            return None
+        spread = max(times) - min(times)
+        if spread <= 0.3:
+            return f"Last three laps within {_say_gap(spread)} of each other. Nice and consistent."
+        if spread <= 0.6:
+            return f"Last three laps within {_say_gap(spread)}. Fairly consistent, a bit more to tidy up."
+        return (f"Last three laps varied by {_say_gap(spread)}. Get the same lap every time first, "
+                "then go looking for more.")
 
     def finish(self, now: float) -> None:
         """End of the stream: let anything queued play out (for replays and tests)."""
@@ -581,19 +821,59 @@ def _diff(a, b):
     return None if a is None or b is None else a - b
 
 
-def _round5(x: float) -> int:
-    return max(5, int(round(x / 5.0)) * 5)
+CAUSES = {
+    "off": "ran off track (amount: metres off)", "early_brake": "braked earlier than the reference (amount: metres)",
+    "late_brake": "braked later and lost the exit (amount: metres)", "no_brake_needed": "braked where the reference doesn't",
+    "slow_apex": "slower at the apex (amount: km/h)", "late_throttle": "full throttle later than the reference (amount: metres)",
+}
+
+# How a debrief opens, in turn, so it doesn't sound like a recording.
+DEBRIEF_OPENERS = ("While you cool them down: ", "Okay, easy lap. ", "Right, while it's quiet: ")
 
 
-def _say_time(s: float) -> str:
-    minutes, seconds = divmod(s, 60)
-    return f"{int(minutes)} {seconds:04.1f}" if minutes else f"{seconds:.1f}"
+def _texts(name: str, cause: str | None, amount: float | None, ref: dict) -> tuple[str | None, str | None]:
+    """The short advice said after the corner, and the hint for its cue next lap."""
+    if cause == "off":
+        return f"{name}: you ran off track. Brake a touch earlier and tidy the entry.", "Tidy entry, you ran wide last lap."
+    if cause == "early_brake":
+        return f"{name}: braked {_round5(amount)} metres early. Brake later.", "Brake later than last lap."
+    if cause == "late_brake":
+        return f"{name}: braked {_round5(amount)} metres late and lost the exit.", "Brake a little earlier than last lap."
+    if cause == "no_brake_needed":
+        lift = (ref.get("min_throttle") or 1) < 0.9
+        return (f"{name}: no need to brake there." + (" A lift is enough." if lift else ""),
+                "Just a lift, no brakes." if lift else "Stay off the brakes.")
+    if cause == "slow_apex":
+        return f"{name}: {round(amount)} kilometres an hour slower at the apex. Carry more speed in.", "Carry more speed in."
+    if cause == "late_throttle":
+        return f"{name}: full throttle {_round5(amount)} metres later than the reference. Get on it earlier.", "Earlier on the throttle."
+    return None, None
 
 
-def _say_gap(gap: float) -> str:
-    gap = abs(gap)
-    if gap < 1.0:
-        tenths = max(1, round(gap * 10))
-        return f"{tenths} tenth{'s' if tenths != 1 else ''}"
-    whole = round(gap, 1)
-    return f"{whole:.0f} seconds" if whole == int(whole) else f"{whole:.1f} seconds"
+def _longer(name: str, cause: str | None, amount: float | None, ref: dict, mine: dict, named: bool = True) -> str | None:
+    """The advice as a coach would explain it with time to listen: what, why it costs, and how
+    to change it. Said instead of the short advice when the driver isn't pushing, and in debriefs."""
+    who = f"{name}: you" if named else "You"
+    if cause == "off":
+        return (f"{who} ran wide, {round(amount)} metres off track. That usually starts at the entry: brake a touch "
+                "earlier, get the car turned before you go back to the throttle, and build up from there once it sticks.")
+    if cause == "early_brake":
+        slow = _diff(mine.get("min_speed_kph"), ref.get("min_speed_kph"))
+        extra = " and you're slower at the apex too, so it costs you twice" if slow is not None and slow <= -3 else ""
+        return (f"{who}'re braking about {_round5(amount)} metres before the reference{extra}. There's more room than "
+                "it feels: move the brake point a few metres a lap, same pressure, and let the car tell you when it's enough.")
+    if cause == "late_brake":
+        return (f"{who}'re braking about {_round5(amount)} metres late and it's costing the exit. Brake a little earlier, "
+                "get it slowed and turned, and you'll be back on the power sooner. Exit speed is worth more than entry.")
+    if cause == "no_brake_needed":
+        lift = (ref.get("min_throttle") or 1) < 0.9
+        how = "a lift is enough" if lift else "it's flat"
+        return (f"{who} don't need the brakes there, {how}. Next time try {'just a lift' if lift else 'staying flat'} and "
+                "trust the grip, a little more each lap.")
+    if cause == "slow_apex":
+        return (f"{who}'re about {round(amount)} kilometres an hour slower at the apex. Ease off the brake more "
+                "gradually as you turn in and let the car roll more speed to the apex. Don't brake later, just release it smoother.")
+    if cause == "late_throttle":
+        return (f"Full throttle comes about {_round5(amount)} metres later than the reference" + (f" out of {name}" if named else "")
+                + ". Once you're past the apex, open the steering and commit to the throttle earlier, a bit more each lap.")
+    return None

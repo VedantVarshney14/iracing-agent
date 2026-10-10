@@ -320,7 +320,7 @@ function AdviceRow({ corner, said, when, before, after, verdict }: {
   );
 }
 
-const BADGES: Record<string, string> = { approach: "Cue", feedback: "Feedback", summary: "Lap", focus: "Focus", answer: "Answer" };
+const BADGES: Record<string, string> = { approach: "Cue", feedback: "Feedback", summary: "Lap", focus: "Focus", answer: "Answer", rule: "Rule", debrief: "Debrief", coach: "Coach" };
 
 function CommentaryCard({ report, open }: { report: SessionReport; open: (lapId: string | null, corner?: number) => (() => void) | undefined }) {
   const [filter, setFilter] = useState<"all" | "held" | "you">("all");
@@ -377,7 +377,7 @@ function Line({ e, openCorner }: { e: LiveEvent; openCorner?: (corner: number) =
         <li className={`line ${e.status}`}>
           <span className="mono t">{t}</span>
           <div>
-            <span><span className={`badge ${e.kind}`}>{BADGES[e.kind] ?? e.kind}</span>{e.text}</span>
+            <span><span className={`badge ${e.kind}`} title={e.rule ? `Rule ${e.rule}` : undefined}>{BADGES[e.kind] ?? e.kind}</span>{e.text}</span>
             {e.status === "dropped" && <span className="small warn">Not said{e.note ? `: ${e.note}` : ""}</span>}
             {e.status === "cut" && <span className="small warn">Cut off by a corner cue</span>}
           </div>
