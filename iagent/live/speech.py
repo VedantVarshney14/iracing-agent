@@ -27,12 +27,13 @@ def estimate_duration(text: str) -> float:
 class Utterance:
     text: str
     priority: int
-    kind: str  # "approach", "feedback", "summary"
+    kind: str  # "approach", "feedback", "summary", "focus", "answer", "rule"
     created_s: float
     expires_s: float  # session time after which it is no longer worth starting
     corner: int | None = None
     duration_s: float | None = None  # known for pre-rendered audio; estimated otherwise
     note: str | None = None  # why it's still waiting (reported if it's dropped)
+    rule: str | None = None  # the rule that said it, if one did
 
     @property
     def length_s(self) -> float:

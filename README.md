@@ -4,8 +4,9 @@ An iRacing coach built as **skills for an existing agent harness** plus a **CLI 
 telemetry work**. The first goal is helping a driver learn a new track: find where time is lost,
 pick one thing to work on, and (later) cue it by voice at the right place on track.
 
-> **Status:** works today on recorded sessions: telemetry, laps, corner analysis, Garage61
-> reference laps and ghosts, and the coaching skills. Live telemetry, rules and voice are next.
+> **Status:** works on recorded sessions (telemetry, laps, corner analysis, Garage61 reference
+> laps and ghosts, coaching skills) and live: spoken corner cues and feedback on track, rules the
+> coach sets and backtests, and a browser UI. Waking the agent on live events and voice input are next.
 
 The design lives in [.claude/architecture.md](.claude/architecture.md). In short:
 
@@ -16,8 +17,9 @@ The design lives in [.claude/architecture.md](.claude/architecture.md). In short
   describe how to coach; the `iagent` CLI computes the numbers (JSON output), so the model
   interprets rather than calculates.
 - **No per-token API billing.** Claude through a subscription, or open-weight models run locally.
-- **Agent-defined events (planned):** the agent creates rules and schedules through the CLI; a
-  deterministic service on the sim PC fires them and wakes the agent. No LLM in the real-time loop.
+- **Agent-defined events:** the agent creates rules through the CLI and backtests them against
+  recorded sessions; the live coach on the sim PC runs them deterministically. No LLM in the
+  real-time loop. (Waking the agent on a rule is next.)
 - **Testable without the sim:** `.ibt` replay, a synthetic lap generator with exact ground truth,
   and regression tests against real recordings.
 
@@ -29,7 +31,7 @@ The design lives in [.claude/architecture.md](.claude/architecture.md). In short
 | 2 | Agent-facing CLI, `coach` plugin (`telemetry`, `lap-review` skills), headless harness test | **Done** |
 | 3 | Corner map, per-corner metrics, comparison and consistency, corner names and track knowledge | **Done** |
 | 3b | Garage61 reference laps (own and teammates'), iRacing ghost download and install | **Done** |
-| 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | In progress (corner cues, feedback, TTS) |
+| 4 | Live service: irsdk, agent-defined rules and schedules, backtesting, TTS, waking the agent | In progress (corner cues, feedback, TTS, rules + backtests) |
 | 5 | Web UI: lap review against a ghost, racing lines, coach chat, session library | In progress |
 | 6 | Push-to-talk voice, debrief and focus skills, memory across sessions, local-model evals | |
 
@@ -262,6 +264,38 @@ iagent live run --replay session.ibt --start 700         # anywhere: hear a reco
 iagent live run --replay session.ibt --print --speed 20  # what it would say, fast, no audio
 ```
 
+### Rules: what else to watch for
+
+On top of the built-in cues, the coach (or you) can set **rules**: a trigger, a condition and
+what to do, run by the live coach with no model involved. The `live-rules` skill writes them.
+
+```bash
+iagent rules add '{"id": "pouhon-wide", "track": "spa-2024-up",
+  "when": {"corner_exit": "Pouhon"}, "if": "off_track_m > 5", "in_a_row": 2,
+  "action": {"say": "Pouhon: wide twice now. Tighter entry."}}'
+iagent rules backtest pouhon-wide        # replay recent sessions: where it fires, what's said
+iagent rules activate pouhon-wide        # live (a running coach picks it up within ~10 s)
+iagent rules list
+iagent rules vars                        # every trigger and the variables it provides
+```
+
+- **Triggers:** a point on track (`{"at": "T9"}`: a cue timed to finish before the reference
+  brake point, or `"T9 apex"`, metres, `lead_s`, `offset_m`), a corner exit with that corner's
+  numbers against the reference (`brake_diff_m`, `min_speed_diff_kph`, `off_track_m`, ...), lap
+  complete (`new_best`, `gap_s`, ...), pit entry/exit, pace or focus changes, a condition on live
+  channels (`"speed_kph > 280"`, edge-triggered), and schedules (`every_laps`, `every_s`, ...).
+- **Conditions and text** use a small, safe expression language: arithmetic, comparisons,
+  `and`/`or`/`not`, `in`, and helpers like `round5()` and `say_time()`. Spoken text has
+  `{expression}` holes. A missing value (a corner taken without braking has no `brake_m`)
+  makes the condition false rather than failing.
+- **Actions:** `say` (cue, feedback or summary priority, through the same speech rules as the
+  cues), `log`, and `wake` (logged for now; waking the coach is next).
+- **Limits:** cooldowns, per-lap and per-session caps, `once`, `in_a_row`. Rules ignore out
+  laps, cool-downs and moments unless `"pushing_only": false`.
+- **Safe to change:** a new or edited rule is a draft until it has been backtested and activated.
+  Rules live in `workspace/rules/<track>/` (or `rules/_any/` for every track). Each coached
+  session's log records every firing, and the Coaching tab shows rule lines.
+
 ## Using the coach
 
 Skills in [coach/skills/](coach/skills/):
@@ -272,6 +306,7 @@ Skills in [coach/skills/](coach/skills/):
 | `lap-review` | Reviews a session corner by corner, finds the most *repeatable* time loss, gives one focus and writes it to the notes |
 | `name-corners` | Names the derived corners (driver, CrewChief, web, own knowledge, with confidence) and records track knowledge |
 | `reference-laps` | Picks a faster Garage61 lap (yours or a teammate's), coaches from the corner-by-corner difference, and installs its ghost for iRacing |
+| `live-rules` | Writes rules for the live coach (what to watch for on track and what to say), backtests them and activates them |
 
 ### Claude Code
 
@@ -310,6 +345,7 @@ iagent/
   laps/        segmentation, distance resampling, lap store, pace filter, recorder
   analysis/    corner map and metrics, CrewChief landmarks, splits, traces, position
   references/  Garage61 client, CSV import, iRacing ghost files
+  live/        the live coach: sources, cue plans, speech, rules (expr, engine, backtests)
   testing/     synthetic lap generator, .ibt writer
   ui/          `iagent ui`: the local API server and what the screens show (review.py)
   workspace.py lap stores, reference laps and corner maps, shared by the CLI and the UI

@@ -22,6 +22,9 @@ Per frame, no model involved:
   cued or assessed until they're back within 5%, so a moment doesn't write off the rest of the lap.
 
 Nothing is said on pit road or off the racing surface, and nothing new while a car is alongside.
+
+Rules the agent has activated (`iagent.live.rules`) are evaluated alongside, on the same frames
+and events, and speak through the same arbiter.
 """
 
 from collections import deque
@@ -34,6 +37,10 @@ import pandas as pd
 from iagent.analysis.corners import CornerMap, corner_metrics
 from iagent.laps.segment import Lap, LapSegmenter
 from iagent.live.cues import Cue, CuePlan
+from iagent.live.expr import round5 as _round5
+from iagent.live.expr import say_gap as _say_gap
+from iagent.live.expr import say_time as _say_time
+from iagent.live.rules import RuleEngine
 from iagent.live.speech import APPROACH, FEEDBACK, SUMMARY, Arbiter, Utterance
 from iagent.telemetry.frames import SURFACE_OFF_TRACK, SURFACE_ON_TRACK, Frame
 from iagent.telemetry.session import SessionInfo
@@ -73,6 +80,7 @@ class CornerResult:
     advice: str | None  # said after the corner
     hint: str | None  # added to the corner's cue next lap
     struggling: bool
+    metrics: dict | None = None  # this lap's corner metrics (what rules see)
 
 
 @dataclass
@@ -90,7 +98,7 @@ class _LapState:
 class LiveCoach:
     def __init__(self, session: SessionInfo, plan: CuePlan, cmap: CornerMap, ref_grid: pd.DataFrame,
                  arbiter: Arbiter, settings: Settings | None = None, own_best: pd.DataFrame | None = None,
-                 carried_focus: int | None = None):
+                 carried_focus: int | None = None, rules: RuleEngine | None = None):
         self.session = session
         self.plan = plan
         self.cmap = cmap
@@ -135,6 +143,9 @@ class LiveCoach:
             self.focus_log.append({"cue": cue.corner, "corners": cue.corners, "label": self._label(cue),
                                    "set_lap": 0, "done_lap": None, "manual": False, "carried": True})
         self.results: list[list[CornerResult]] = []  # per completed lap
+        self.rules = rules
+        if rules is not None:
+            rules.attach(self)
 
     # --- per frame -----------------------------------------------------------------------------
 
@@ -149,11 +160,15 @@ class LiveCoach:
         on_track = surface in (SURFACE_ON_TRACK, SURFACE_OFF_TRACK) and not frame.get("OnPitRoad", 0)
         if not on_track or d is None or v is None:
             self._lap.clean = False
+            if self.rules is not None:
+                self.rules.frame(frame, now, on_track=False)
             self.arbiter.clear(("approach", "feedback"), now, "you were in the pits or off the racing surface")
             self.arbiter.tick(now, hold=True)
             return
         self._lap.rows.append(tuple(float(frame.get(c, np.nan)) for c in LIVE_CHANNELS))
         self._track_pace(now, d)
+        if self.rules is not None:
+            self.rules.frame(frame, now, on_track=True)
         if self.mode == "tranquille":
             self._assess(now, d)  # only an off-track hint for next lap comes out of this
             self.arbiter.tick(now, hold=True)  # no cues, no feedback until pushing again
@@ -213,6 +228,8 @@ class LiveCoach:
             self._lap.slow[-1][1] = round(d)
         if self.on_mode is not None:
             self.on_mode(mode, now, d)
+        if self.rules is not None:
+            self.rules.pace(mode, now)
 
     def _in_corner(self, d: float) -> bool:
         for cue in self.plan.cues:
@@ -299,6 +316,8 @@ class LiveCoach:
             result = self._corner_result(c.id, d)
             if result is None:
                 continue
+            if self.rules is not None:
+                self.rules.corner_exit(result, at_pace, now)
             if not at_pace:
                 # Not pushing: the numbers don't count, but going off is still worth a word next lap.
                 if result.hint and "off track" in (result.advice or ""):
@@ -347,7 +366,7 @@ class LiveCoach:
         struggling = delta >= s.loss_s or (mine.get("off_track_m") or 0) >= s.off_track_m
         if delta > s.incident_s:
             advice = hint = None  # a spin or a moment: the numbers describe the incident, not the technique
-        return CornerResult(corner_id, round(float(delta), 3), advice, hint, struggling)
+        return CornerResult(corner_id, round(float(delta), 3), advice, hint, struggling, mine)
 
     def _advice(self, name: str, mine: dict, ref: dict, delta: float) -> tuple[str | None, str | None]:
         """The clearest cause of a corner that cost time, in the driver's terms: what to say after
@@ -400,6 +419,8 @@ class LiveCoach:
         state = self._lap
         self._lap = _LapState()
         self._last_cued = {k: t for k, t in self._last_cued.items() if now - t < 20.0}
+        if self.rules is not None:
+            self.rules.line_crossed()
         if not state.clean or not lap.complete:
             return  # out lap or a lap joined midway: it doesn't count towards learning
         self._laps_done += 1
@@ -411,6 +432,7 @@ class LiveCoach:
         # Focus moves on what the pushing parts of the lap showed (most of the corners at least).
         enough = len(state.results) >= max(1, len(self.cmap.corners) // 2)
         news = self._update_focus(state.results) if enough else None
+        best_before = self._pace_lap
         if pace == "pushing" and lap.lap_time and (self._pace_lap is None or lap.lap_time < self._pace_lap):
             self._new_best(lap)
         # Both wait for the first straight with room for them, up to most of a lap.
@@ -419,17 +441,20 @@ class LiveCoach:
             self.arbiter.say(Utterance(self._summary(lap, state.results, moment_at), SUMMARY, "summary", now, now + wait))
         if news:
             self.arbiter.say(Utterance(news, FEEDBACK, "focus", now, now + wait, self.focus))
+        info = {
+            "lap": self._laps_done, "lap_time": lap.lap_time, "at": now,
+            "gap_s": round(lap.lap_time - ref_time, 3) if lap.lap_time and ref_time else None,
+            "pace": pace,  # "pushing", "moment" or "tranquille"
+            "pushing_share": round(state.pushing_frames / state.frames, 2) if state.frames else 0.0,
+            "slow": state.slow,  # [from_m, to_m] stretches not pushing
+            "moment_at": moment_at,
+            "corners": [{"corner": r.corner, "delta_s": r.delta_s} for r in state.results],
+            "focus": self.focus,
+        }
         if self.on_lap is not None:
-            self.on_lap({
-                "lap": self._laps_done, "lap_time": lap.lap_time, "at": now,
-                "gap_s": round(lap.lap_time - ref_time, 3) if lap.lap_time and ref_time else None,
-                "pace": pace,  # "pushing", "moment" or "tranquille"
-                "pushing_share": round(state.pushing_frames / state.frames, 2) if state.frames else 0.0,
-                "slow": state.slow,  # [from_m, to_m] stretches not pushing
-                "moment_at": moment_at,
-                "corners": [{"corner": r.corner, "delta_s": r.delta_s} for r in state.results],
-                "focus": self.focus,
-            })
+            self.on_lap(info)
+        if self.rules is not None:
+            self.rules.lap(info, best_before, now)
 
     def _classify(self, state: "_LapState") -> tuple[str, int | None]:
         """pushing (all the way), moment (mostly pushing, one slow stretch: returns the corner where
@@ -580,20 +605,3 @@ class LiveCoach:
 def _diff(a, b):
     return None if a is None or b is None else a - b
 
-
-def _round5(x: float) -> int:
-    return max(5, int(round(x / 5.0)) * 5)
-
-
-def _say_time(s: float) -> str:
-    minutes, seconds = divmod(s, 60)
-    return f"{int(minutes)} {seconds:04.1f}" if minutes else f"{seconds:.1f}"
-
-
-def _say_gap(gap: float) -> str:
-    gap = abs(gap)
-    if gap < 1.0:
-        tenths = max(1, round(gap * 10))
-        return f"{tenths} tenth{'s' if tenths != 1 else ''}"
-    whole = round(gap, 1)
-    return f"{whole:.0f} seconds" if whole == int(whole) else f"{whole:.1f} seconds"

@@ -197,7 +197,7 @@ export interface LiveStatus {
 
 export type LiveEvent = { seq: number; wall: string; at?: number | null } & (
   | { type: "status"; state: string; track?: string; car?: string; ref?: string }
-  | { type: "line"; status: "said" | "cut" | "dropped"; kind: string; text: string; corner: number | null; note: string | null }
+  | { type: "line"; status: "said" | "cut" | "dropped"; kind: string; text: string; corner: number | null; note: string | null; rule?: string | null }
   | { type: "lap"; lap: number; lap_time: number | null; gap_s: number | null; pace: "pushing" | "moment" | "tranquille";
       pushing_share: number; slow: [number, number][]; moment_at: number | null; corners: { corner: number; delta_s: number }[]; focus: number | null }
   | { type: "pace"; mode: "pushing" | "tranquille"; lap_dist: number }

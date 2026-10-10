@@ -243,16 +243,19 @@ class LiveSessions:
         coach.on_lap = lambda lap: self._lap(coach, lap)
         coach.on_mode = lambda mode, now, d: self._log({"type": "pace", "mode": mode, "at": now, "lap_dist": round(d)})
         coach.on_advice = lambda advice: self._log({"type": "advice", **advice})
+        coach.rules.on_fire = lambda fired: self._log({"type": "rule", **fired})
+        coach.rules.on_wake = lambda wake: self._log({"type": "wake", **wake})
         self._log({"type": "status", "state": "running", "track": coach.session.track_name,
                    "car": coach.session.car_name, "ref": coach.plan.ref_lap_id,
                    "track_key": coach.session.track_key, "car_key": coach.session.car_key,
                    "ref_lap_time": coach.plan.ref_lap_time, "length_m": coach.length,
                    "source": self.options.source, "file": self.options.file,
-                   "focus": coach.focus_log[-1] if coach.focus_log else None})
+                   "focus": coach.focus_log[-1] if coach.focus_log else None,
+                   "rules": [r.id for r in coach.rules.rules]})
 
     def _line(self, what: str, u: Utterance, now: float) -> None:
         self._log({"type": "line", "status": what, "kind": u.kind, "text": u.text, "corner": u.corner,
-                   "at": now, "note": u.note if what == "dropped" else None})
+                   "at": now, "note": u.note if what == "dropped" else None, "rule": u.rule})
 
     def _lap(self, coach: LiveCoach, lap: dict) -> None:
         self._log({"type": "lap", **lap})
