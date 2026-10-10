@@ -51,6 +51,9 @@ def screen_context(ctx: dict) -> str:
     lines = []
     if ctx.get("page") == "corner":
         lines.append("view: corner view (racing lines, line offset and traces for one corner)")
+    if ctx.get("page") == "live":
+        lines.append("view: live session. The driver is on track and hears your reply spoken: answer in at most "
+                     "two short sentences, plain words, no markdown, no lists.")
     if ctx.get("track"):
         lines.append(f"track: {ctx['track']}  car: {ctx.get('car', '')}")
     if ctx.get("lap"):
@@ -62,6 +65,8 @@ def screen_context(ctx: dict) -> str:
     if ctx.get("range"):
         a, b = ctx["range"]
         lines.append(f"zoomed to: {a:.0f}-{b:.0f} m")
+    for line in ctx.get("live") or []:
+        lines.append(line)
     return "<screen>\n" + "\n".join(lines) + "\n</screen>"
 
 

@@ -222,7 +222,17 @@ start the coach or write to the workspace.
 - **Feedback.** After a corner that cost time, on the next straight: *"Turn 5: braked 20 metres
   early. Brake later."*, and a hint in that corner's cue next lap (*"Brake later than last
   lap."*). Laps off the pace (out laps, cool-downs, a spin) are ignored.
-- **Lap summary** at the line: time, gap to the reference, the corner that cost the most.
+- **One focus at a time.** After the learning laps the corner losing the most (over the last two
+  laps at pace) becomes the focus: *"Focus now: Turns 15 and 16. Just a lift, no brakes."* It's
+  cued every lap; other corners speak up only for a big loss or an off. Once you match the
+  reference there twice, the next focus is picked.
+- **Lap summary** at the line, short enough for a short straight: *"2 27.0, 5 tenths down."*
+
+**From the browser:** the **Live** tab in `iagent ui` starts the coach (iRacing, or a replay of a
+recording), shows everything it said, and everything it held back and why ("in a corner", "a car
+was alongside"), lap by lap, with the focus. You can change the focus, and type a question: the
+coach (`claude -p`) answers in two sentences, spoken on the next straight. Each session's log is
+kept in `workspace/sessions/live/`.
 
 Cues follow the fastest Garage61 teammate lap for the track and car, else your own best, and work
 on a track you've never driven if a teammate's lap is imported. Speech is

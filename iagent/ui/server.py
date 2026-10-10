@@ -7,9 +7,11 @@ page on another site can't send that header without a CORS preflight, which this
 grants, so a site open in the browser can't start the coach or write to the workspace.
 """
 
+import json
 import shutil
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -25,6 +27,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from iagent.laps.watch import TelemetryWatcher, default_telemetry_dir, ingest_file
+from iagent.live.session import LiveSessions, SessionError, recordings
 from iagent.references import garage61 as g61
 from iagent.references import ghosts
 from iagent.references import imports
@@ -56,8 +59,10 @@ def create_app(
     lapfiles: Path | None = None,
     allowed_hosts: list[str] | None = None,
     token_file: Path | None = None,
+    live: LiveSessions | None = None,
 ) -> Starlette:
     coach = coach or CoachRuns(workspace)
+    live = live or LiveSessions(workspace)
     ghost_dir = (workspace / "reference" / "ghosts").resolve()
     g61_account: dict = {}  # Garage61's answer about the token, asked once
     # Garage61's laps per track/car for a minute: the library and the review screen both ask, and
@@ -264,6 +269,68 @@ def create_app(
         body = await request.json()
         return JSONResponse({"stopped": coach.stop(body.get("run_id", ""))})
 
+    # --- the live coach ---------------------------------------------------------------------
+
+    async def live_status(request: Request) -> JSONResponse:
+        return JSONResponse(live.status())
+
+    async def live_events(request: Request) -> JSONResponse:
+        since = int(request.query_params.get("since", "0") or 0)
+        return JSONResponse({"events": live.events(since), "status": live.status()})
+
+    async def live_recordings(request: Request) -> JSONResponse:
+        """Recordings to replay: the watched folder, iRacing's own, and the repo's data/telemetry."""
+        folders = [watcher.folder] if watcher else []
+        folders += [default_telemetry_dir(), workspace.resolve().parent / "data" / "telemetry"]
+        unique = list(dict.fromkeys(f.resolve() for f in folders))
+        return JSONResponse(await run_in_threadpool(recordings, unique))
+
+    async def live_start(request: Request) -> JSONResponse:
+        try:
+            return JSONResponse(live.start(await request.json()))
+        except SessionError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
+
+    async def live_stop(request: Request) -> JSONResponse:
+        return JSONResponse(await run_in_threadpool(live.stop))
+
+    async def live_focus(request: Request) -> JSONResponse:
+        corner = (await request.json()).get("corner")
+        try:
+            live.set_focus(int(corner) if corner is not None else None)
+        except SessionError as e:
+            return JSONResponse({"error": str(e)}, status_code=409)
+        return JSONResponse({"ok": True})
+
+    async def live_ask(request: Request) -> JSONResponse:
+        """A typed question: logged now, answered by the coach (`claude -p`) in the background,
+        and the answer spoken on the next straight."""
+        text = str((await request.json()).get("text") or "").strip()
+        if not text:
+            return JSONResponse({"error": "text is required"}, status_code=400)
+        live.note_driver(text)
+        context = live.context()
+
+        def answer() -> None:
+            parts, error = [], None
+            for line in coach.run(text, context, None):
+                event = json.loads(line)
+                if event["type"] == "text_start":
+                    parts = []  # keep the final block: the answer, not the narration before tools
+                elif event["type"] == "text":
+                    parts.append(event["text"])
+                elif event["type"] == "error":
+                    error = event["message"]
+            reply = "".join(parts).strip()
+            if reply:
+                live.note_answer(reply)
+                live.say(reply)
+            else:
+                live.note_answer(f"(No answer: {error or 'the coach said nothing'})")
+
+        threading.Thread(target=answer, name="live-ask", daemon=True).start()
+        return JSONResponse({"ok": True})
+
     async def not_built(request: Request) -> HTMLResponse:
         return HTMLResponse(_NOT_BUILT)
 
@@ -281,6 +348,13 @@ def create_app(
         Route("/api/telemetry/rescan", telemetry_rescan, methods=["POST"]),
         Route("/api/garage61/status", garage61_status),
         Route("/api/garage61/token", garage61_token, methods=["POST"]),
+        Route("/api/live", live_status),
+        Route("/api/live/events", live_events),
+        Route("/api/live/recordings", live_recordings),
+        Route("/api/live/start", live_start, methods=["POST"]),
+        Route("/api/live/stop", live_stop, methods=["POST"]),
+        Route("/api/live/focus", live_focus, methods=["POST"]),
+        Route("/api/live/ask", live_ask, methods=["POST"]),
         Route("/api/chat", chat, methods=["POST"]),
         Route("/api/chat/stop", chat_stop, methods=["POST"]),
     ]

@@ -327,3 +327,48 @@ button.status-pill:hover { border-color: var(--line-strong); color: var(--text-s
 .note { margin: 0; }
 .picker-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .picker-foot .btn { margin-left: auto; min-height: 40px; padding: 0 16px; }
+
+/* --- live (screen 6) -------------------------------------------------------------------- */
+.live { display: flex; flex-direction: column; gap: 16px; padding: 16px 20px 24px; }
+.live .error { margin: 0; }
+.live-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 20px; padding: 14px 16px; background: #11161a; border: 1px solid var(--line); border-radius: 10px; }
+.live-controls.running { align-items: center; }
+.field-col { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.live-controls select { min-height: 40px; background: #161b20; border: 1px solid var(--line-strong); border-radius: 6px; padding: 0 10px; }
+.live-controls select.wide { min-width: 300px; max-width: 100%; }
+.check { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; }
+.btn.start { margin-left: auto; min-height: 44px; padding: 0 22px; }
+.btn.stop { margin-left: auto; min-height: 40px; background: #3a1a12; color: #ffcdb5; border-color: #5a3220; font-weight: 600; }
+.live-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--loss-strong); box-shadow: 0 0 0 4px rgba(255, 106, 61, 0.18); }
+.ghost-text { color: var(--ghost); }
+.focus-pill { padding: 4px 10px; border-radius: 999px; background: var(--you); color: var(--bg); font-weight: 600; font-size: 13px; }
+.focus-text { color: var(--you); }
+.live-body { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.live-feed { flex: 999 1 560px; }
+.live-cues { flex: 1 1 340px; }
+.feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 62vh; overflow-y: auto; }
+.feed-line { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.feed-line .t { color: var(--muted); font-size: 12px; padding-top: 2px; }
+.feed-line > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; line-height: 1.4; }
+.feed-line.dropped, .feed-line.cut { opacity: 0.65; }
+.badge { align-self: flex-start; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 4px; padding: 2px 6px; background: var(--raised); color: var(--text-soft); }
+.badge.approach { color: var(--you); background: #2a2214; }
+.badge.feedback { color: #ff9b6e; background: #2a1a12; }
+.badge.focus { color: var(--bg); background: var(--you); }
+.badge.answer { color: var(--ghost); background: #12202d; }
+.feed-lap { display: flex; align-items: center; gap: 10px; padding: 10px 0 2px; }
+.feed-lap .rule { flex: 1; height: 1px; background: var(--line); }
+.feed-status { font-size: 12px; color: var(--muted); padding: 4px 0; }
+.feed-driver { display: flex; justify-content: flex-end; }
+.feed-driver span { max-width: 80%; background: var(--raised); border: 1px solid var(--line-strong); border-radius: 10px 10px 2px 10px; padding: 8px 12px; }
+.ask { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.ask .row { flex-wrap: nowrap; }
+.ask .text-input { flex: 1; min-width: 0; font-size: 14px; }
+.live-cues ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.live-cues li { display: grid; grid-template-columns: 64px minmax(0, 1fr) 48px auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+.live-cues li.cued { background: #1f1a12; }
+.live-cues li.focus { background: #2a2214; outline: 1px solid var(--you); }
+.live-cues li.quiet { color: var(--muted); }
+.live-cues .cue-text { line-height: 1.35; }
+.live-cues .btn { min-height: 30px; font-size: 12px; }

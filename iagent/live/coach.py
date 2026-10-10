@@ -10,12 +10,17 @@ Per frame, no model involved:
   code the lap review uses and compared with the reference lap; when the corner cost time, the
   clearest cause is said on the next straight ("braked 20 metres early"), and a short hint is
   added to that corner's cue next lap ("Brake later than last lap."), which is when it's useful.
+- **Focus.** After the learning laps one cue becomes the focus: the corners losing the most time
+  over the last two laps at pace. It's cued every lap; other corners speak up only for a big loss
+  or an off. Once the focus is within `loss_s` on two laps at pace it's done and the next one is
+  picked. Changes are announced in the lap summary. (`set_focus` overrides it.)
 - **Lap summary** at the line: lap time, gap to the reference, the corner that cost the most.
 
 Nothing is said on pit road or off the racing surface, and nothing new while a car is alongside.
 """
 
 from dataclasses import dataclass, field, replace
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -47,6 +52,9 @@ class Settings:
     incident_s: float = 1.5  # a corner that cost more than this was an incident, not technique
     summary: bool = True
     off_pace: float = 0.07  # laps this far off the reference get no gap or worst corner
+    focus: bool = True  # after the learning laps, coach one cue at a time
+    focus_min_s: float = 0.15  # a cue must lose at least this (mean of the last two laps) to be the focus
+    others_s: float = 0.25  # with a focus, other corners speak up only past this loss (or an off)
 
 
 @dataclass
@@ -85,6 +93,13 @@ class LiveCoach:
         self._last_cued: dict[int, float] = {}  # cue corner -> session time it was said
         self._struggling: set[int] = set()  # corners cued after the learning laps
         self._hints: dict[int, str] = {}  # corner -> hint for its next cue
+        self._big_trouble: set[int] = set()  # corners worth a cue even with a focus set
+        self._cue_losses: list[dict[int, float]] = []  # per lap at pace: cue -> time lost (s)
+        self.focus: int | None = None  # the focus cue (its first corner)
+        self.focus_manual = False
+        self._focus_heard = True  # the focus cue says "Focus." the first time after a change
+        self.focus_log: list[dict] = []  # {"cue", "label", "set_lap", "done_lap"}
+        self.on_lap: Callable[[dict], None] | None = None  # called with each counted lap
         self.results: list[list[CornerResult]] = []  # per completed lap
 
     # --- per frame -----------------------------------------------------------------------------
@@ -100,7 +115,7 @@ class LiveCoach:
         on_track = surface in (SURFACE_ON_TRACK, SURFACE_OFF_TRACK) and not frame.get("OnPitRoad", 0)
         if not on_track or d is None or v is None:
             self._lap.clean = False
-            self.arbiter.clear(("approach", "feedback"))
+            self.arbiter.clear(("approach", "feedback"), now, "you were in the pits or off the racing surface")
             self.arbiter.tick(now, hold=True)
             return
         self._lap.rows.append(tuple(float(frame.get(c, np.nan)) for c in LIVE_CHANNELS))
@@ -137,6 +152,8 @@ class LiveCoach:
             if now - self._last_cued.get(cue.corner, -1e9) < 20.0 or to_target > self.length / 2:
                 continue  # said already, or the target is behind us
             self._last_cued[cue.corner] = now
+            if cue.corner == self.focus:
+                self._focus_heard = True
             for c in cue.corners:
                 self._hints.pop(c, None)
             # Not worth starting once it can't finish before the target.
@@ -150,6 +167,12 @@ class LiveCoach:
         return float((tb - ta) % lap)
 
     def _cue_text(self, cue: Cue) -> str:
+        text = self._hinted(cue)
+        if cue.corner == self.focus and not self._focus_heard:
+            return f"Focus. {text}"
+        return text
+
+    def _hinted(self, cue: Cue) -> str:
         corner = next((c for c in cue.corners if c in self._hints), None)
         if corner is None:
             return cue.text
@@ -162,7 +185,18 @@ class LiveCoach:
     def _wanted(self, cue: Cue) -> bool:
         if self._laps_done < self.settings.learning_laps:
             return True
+        if self.focus is not None:
+            return cue.corner == self.focus or any(c in self._big_trouble or c in self._hints for c in cue.corners)
         return any(c in self._struggling or c in self._hints for c in cue.corners)
+
+    def _quiet(self, corner: int, result: "CornerResult") -> bool:
+        """With a focus set, keep a corner's feedback and hints to itself unless it was bad."""
+        if self.focus is None:
+            return False
+        cue = self.plan.cue_for(corner)
+        if cue is not None and cue.corner == self.focus:
+            return False
+        return corner not in self._big_trouble
 
     # --- after each corner ---------------------------------------------------------------------
 
@@ -182,9 +216,15 @@ class LiveCoach:
                 self._struggling.add(c.id)
             else:
                 self._struggling.discard(c.id)
+            s = self.settings
+            if result.delta_s >= s.others_s or "off track" in (result.advice or ""):
+                self._big_trouble.add(c.id)
+            else:
+                self._big_trouble.discard(c.id)
+            if self._quiet(c.id, result):
+                continue
             if result.hint:
                 self._hints[c.id] = result.hint
-            s = self.settings
             cue = self.plan.cue_for(c.id)
             said = any(r.advice for r in self._lap.results[:-1] if cue and r.corner in cue.corners)
             if result.advice and not said and self._lap.feedback < s.feedback_per_lap:
@@ -275,21 +315,107 @@ class LiveCoach:
             return  # out lap or a lap joined midway: it doesn't count towards learning
         self._laps_done += 1
         self.results.append(state.results)
+        ref_time = self.plan.ref_lap_time
+        at_pace = lap.lap_time is not None and (not ref_time or lap.lap_time <= ref_time * (1 + self.settings.off_pace))
+        news = self._update_focus(state.results) if at_pace else None
+        # Both wait for the first straight with room for them, up to most of a lap.
+        wait = 0.6 * (self.plan.ref_lap_time or lap.lap_time or 60.0)
         if self.settings.summary and lap.lap_time is not None:
-            self.arbiter.say(Utterance(self._summary(lap, state.results), SUMMARY, "summary", now, now + 20.0))
+            self.arbiter.say(Utterance(self._summary(lap, state.results), SUMMARY, "summary", now, now + wait))
+        if news:
+            self.arbiter.say(Utterance(news, FEEDBACK, "focus", now, now + wait, self.focus))
+        if self.on_lap is not None:
+            self.on_lap({
+                "lap": self._laps_done, "lap_time": lap.lap_time, "at": now,
+                "gap_s": round(lap.lap_time - ref_time, 3) if lap.lap_time and ref_time else None,
+                "at_pace": at_pace,
+                "corners": [{"corner": r.corner, "delta_s": r.delta_s} for r in state.results],
+                "focus": self.focus,
+            })
+
+    # --- focus ---------------------------------------------------------------------------------
+
+    def _update_focus(self, results: list["CornerResult"]) -> str | None:
+        """After a lap at pace: is the focus done, and what's next? Returns what to announce."""
+        s = self.settings
+        losses: dict[int, float] = {}
+        for r in results:
+            cue = self.plan.cue_for(r.corner)
+            if cue is not None and r.delta_s <= s.incident_s:
+                losses[cue.corner] = losses.get(cue.corner, 0.0) + r.delta_s
+        self._cue_losses.append(losses)
+        if not s.focus or self._laps_done < s.learning_laps:
+            return None
+        news = []
+        if self.focus is not None:
+            recent = [lap.get(self.focus) for lap in self._cue_losses[-2:]]
+            entry = next(f for f in reversed(self.focus_log) if f["cue"] == self.focus)
+            if len(recent) == 2 and all(x is not None and x < s.loss_s for x in recent) and self._laps_done > entry["set_lap"]:
+                entry["done_lap"] = self._laps_done
+                news.append(f"{entry['label']} sorted.")
+                self.focus, self.focus_manual = None, False
+        if self.focus is None:
+            pick = self._pick_focus()
+            if pick is not None:
+                cue = self.plan.cue_for(pick)
+                label = self._label(cue)
+                self.focus = pick
+                self._focus_heard = False
+                self.focus_log.append({"cue": pick, "corners": cue.corners, "label": label,
+                                       "set_lap": self._laps_done, "done_lap": None, "manual": False})
+                hint = next((self._hints[c] for c in cue.corners if c in self._hints), None)
+                news.append(f"Focus now: {label}." + (f" {hint}" if hint else ""))
+        return " ".join(news) or None
+
+    def _pick_focus(self) -> int | None:
+        s = self.settings
+        recent = self._cue_losses[-2:]
+        done = {f["cue"] for f in self.focus_log if f["done_lap"] is not None}
+        mean = {}
+        for cue in self.plan.cues:
+            values = [lap.get(cue.corner) for lap in recent]
+            if values and all(v is not None for v in values):
+                mean[cue.corner] = sum(values) / len(values)
+        candidates = {k: v for k, v in mean.items() if v >= s.focus_min_s and k not in done}
+        return max(candidates, key=candidates.get) if candidates else None
+
+    def set_focus(self, corner: int | None) -> dict | None:
+        """The driver (or coach) picks the focus: the cue covering CORNER, or None to let the
+        coach pick again after the next lap."""
+        if corner is None:
+            self.focus, self.focus_manual = None, False
+            return None
+        cue = self.plan.cue_for(corner)
+        if cue is None:
+            raise KeyError(f"No cue covers T{corner}.")
+        self.focus, self.focus_manual = cue.corner, True
+        self._focus_heard = False
+        entry = {"cue": cue.corner, "corners": cue.corners, "label": self._label(cue),
+                 "set_lap": self._laps_done, "done_lap": None, "manual": True}
+        self.focus_log.append(entry)
+        return entry
+
+    def _label(self, cue: Cue) -> str:
+        names = [self.cmap.get(c).name for c in cue.corners]
+        if all(names):
+            return " and ".join(names)
+        if len(cue.corners) == 1:
+            return names[0] or f"Turn {cue.corner}"
+        return f"Turns {cue.corners[0]} and {cue.corners[-1]}"
 
     def _summary(self, lap: Lap, results: list[CornerResult]) -> str:
+        """Short enough (~3 s) to fit the straights of a busy track: "1 33.9, 3 seconds down. Worst: Turn 6." """
         ref_time = self.plan.ref_lap_time
-        text = f"{_say_time(lap.lap_time)}."
-        if ref_time and lap.lap_time > ref_time * (1 + self.settings.off_pace):
-            return text
-        if ref_time:
-            gap = lap.lap_time - ref_time
-            text += f" {_say_gap(gap)} {'down on' if gap > 0 else 'up on'} the reference."
+        text = _say_time(lap.lap_time)
+        if not ref_time or lap.lap_time > ref_time * (1 + self.settings.off_pace):
+            return text + "."
+        gap = lap.lap_time - ref_time
+        text += f", {_say_gap(gap)} {'down' if gap > 0 else 'up'}."
         worst = max((r for r in results if r.delta_s <= self.settings.incident_s), key=lambda r: r.delta_s, default=None)
-        if worst is not None and worst.delta_s >= self.settings.loss_s:
+        focus = self.plan.cue_for(self.focus).corners if self.focus is not None else []
+        if worst is not None and worst.delta_s >= self.settings.loss_s and worst.corner not in focus:
             c = self.cmap.get(worst.corner)
-            text += f" Most time lost at {c.name or f'Turn {c.id}'}."
+            text += f" Worst: {c.name or f'Turn {c.id}'}."
         return text
 
     def finish(self, now: float) -> None:
@@ -319,4 +445,5 @@ def _say_gap(gap: float) -> str:
     if gap < 1.0:
         tenths = max(1, round(gap * 10))
         return f"{tenths} tenth{'s' if tenths != 1 else ''}"
-    return f"{gap:.1f} seconds"
+    whole = round(gap, 1)
+    return f"{whole:.0f} seconds" if whole == int(whole) else f"{whole:.1f} seconds"

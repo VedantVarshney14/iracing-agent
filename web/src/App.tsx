@@ -5,13 +5,14 @@ import { Chat } from "./components/Chat";
 import { CornerTable } from "./components/CornerTable";
 import { CornerView } from "./components/CornerView";
 import { Library } from "./components/Library";
+import { Live } from "./components/Live";
 import { Telemetry } from "./components/Telemetry";
 import { TopBar } from "./components/TopBar";
 import { TrackMap } from "./components/TrackMap";
 import type { Garage61Lap, Garage61Laps, LapsResponse, Review, SystemInfo, TrackRow } from "./types";
 
 type Group = { track: string; car: string };
-export type Page = "library" | "review" | "corner";
+export type Page = "library" | "review" | "corner" | "live";
 
 const params = new URLSearchParams(window.location.search);
 // The URL's lap, ghost, corner and map view apply to the first load only.
@@ -296,7 +297,9 @@ export function App() {
         onRef={onRef}
       />
       {error && <div className="error" role="alert">{error}</div>}
-      {page === "library" ? (
+      {page === "live" ? (
+        <Live system={system} />
+      ) : page === "library" ? (
         <Library
           tracks={tracks}
           system={system}
@@ -396,5 +399,5 @@ export function App() {
 }
 
 function pageFrom(value: string | null): Page {
-  return value === "corner" || value === "library" ? value : "review";
+  return value === "corner" || value === "library" || value === "live" ? value : "review";
 }

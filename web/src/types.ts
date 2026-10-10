@@ -167,3 +167,46 @@ export interface GhostResult {
   installed: string | null;
   download: string;
 }
+
+// The live coach (iagent/live/session.py).
+export interface LiveFocus {
+  cue: number;
+  corners: number[];
+  label: string;
+  set_lap: number;
+  done_lap: number | null;
+  manual: boolean;
+}
+
+export interface LiveStatus {
+  state: "idle" | "starting" | "waiting" | "running" | "stopping" | "error";
+  error: string | null;
+  session_id: string | null;
+  options: { source: string; file: string | null; speed: number; voice: string; learning_laps: number; focus: boolean } | null;
+  events: number;
+  track?: { key: string; name: string; car: string; car_name: string };
+  ref?: { lap_id: string; lap_time: number | null };
+  laps_done?: number;
+  learning?: boolean;
+  focus?: LiveFocus | null;
+  cues?: { corners: number[]; text: string; cued: boolean }[];
+  lap_dist?: number | null;
+  session_time?: number | null;
+}
+
+export type LiveEvent = { seq: number; wall: string; at?: number | null } & (
+  | { type: "status"; state: string; track?: string; car?: string; ref?: string }
+  | { type: "line"; status: "said" | "cut" | "dropped"; kind: string; text: string; corner: number | null; note: string | null }
+  | { type: "lap"; lap: number; lap_time: number | null; gap_s: number | null; at_pace: boolean; corners: { corner: number; delta_s: number }[]; focus: number | null }
+  | { type: "focus"; focus: LiveFocus | null; by: string }
+  | { type: "driver"; text: string }
+  | { type: "answer"; text: string }
+  | { type: "error"; message: string }
+);
+
+export interface Recording {
+  path: string;
+  name: string;
+  size: number;
+  modified: string;
+}
