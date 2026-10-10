@@ -32,10 +32,11 @@ import pandas as pd
 from iagent.analysis.corners import CornerMap
 from iagent.live.components import COMPONENTS, CornerResult, CueCaller, Focus, Speaking
 from iagent.live.cues import CuePlan
-from iagent.live.events import Event
-from iagent.live.pipeline import Pipeline
+from iagent.live.events import Event, SessionEnd
+from iagent.live.pipeline import Component, Pipeline
 from iagent.live.rules import Rule, RuleEngine
 from iagent.live.settings import Settings
+from iagent.live.state import CoachState
 from iagent.live.speech import Arbiter
 from iagent.telemetry.frames import Frame
 from iagent.telemetry.session import SessionInfo
@@ -64,7 +65,7 @@ class LiveCoach:
     def __init__(self, session: SessionInfo, plan: CuePlan, cmap: CornerMap, ref_grid: pd.DataFrame,
                  arbiter: Arbiter, settings: Settings | None = None, own_best: pd.DataFrame | None = None,
                  carried_focus: int | None = None, rules: list[Rule] | None = None, engineer=None,
-                 radio_context: Callable[[], dict] | None = None, components: tuple[type, ...] = ()):
+                 radio_context: Callable[[], dict] | None = None, components: tuple[type[Component], ...] = ()):
         """COMPONENTS are added to the standard ones (before the rules and speech): an extension
         that only defines events, components and rules plugs in here."""
         self.ctx = Context(session, plan, cmap, ref_grid["LapDist"].to_numpy(dtype=float),
@@ -78,17 +79,17 @@ class LiveCoach:
     def push(self, frame: Frame) -> None:
         self.pipeline.push(frame)
 
-    def post(self, event: str, **fields) -> None:
+    def post(self, event: Event) -> None:
         """Hand in an event from any thread (a command, a reply): handled at the next frame."""
-        self.pipeline.post(event, **fields)
+        self.pipeline.post(event)
 
-    def on(self, event: str, fn: Callable[[Event], None]) -> None:
+    def on(self, event: type[Event] | str, fn: Callable[[Event], None]) -> None:
         self.pipeline.on(event, fn)
 
     def finish(self, now: float) -> None:
         """End of the stream: the session is over (the engineer writes up its notes); let anything
         queued play out (for replays and tests)."""
-        self.pipeline.emit("session_end")
+        self.pipeline.emit(SessionEnd())
         self.pipeline.run()
         end, t = now + 30.0, now
         while self.arbiter.queue and t < end:
@@ -99,7 +100,7 @@ class LiveCoach:
     # --- what it knows -------------------------------------------------------------------------
 
     @property
-    def state(self) -> dict:
+    def state(self) -> CoachState:
         return self.pipeline.state
 
     @property
@@ -128,19 +129,19 @@ class LiveCoach:
 
     @property
     def laps(self) -> int:
-        return self.state["lap"]
+        return self.state.lap
 
     @property
     def mode(self) -> str:
-        return self.state["mode"]
+        return self.state.mode
 
     @property
     def focus(self) -> int | None:
-        return self.state["focus"]
+        return self.state.focus
 
     @property
     def focus_log(self) -> list[dict]:
-        return self.state["focus_log"]
+        return self.state.focus_log
 
     def focus_entry(self) -> dict | None:
         return self.pipeline.get(Focus)._entry()
@@ -148,4 +149,4 @@ class LiveCoach:
     def wanted(self, cue) -> bool:
         """Would this cue be said on its next approach (if the driver is pushing)?"""
         caller = self.pipeline.get(CueCaller)
-        return caller.wanted(cue) if self.state["pushing"] else bool(self.state["learning"])
+        return caller.wanted(cue) if self.state.pushing else self.state.learning

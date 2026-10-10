@@ -233,7 +233,8 @@ def test_rules_cli(root):
     assert runner.invoke(cli, [*args, "activate", "lap-call"]).exit_code == 0
     listed = runner.invoke(cli, [*args, "list"])
     assert "lap-call" in listed.output and "active" in listed.output
-    assert runner.invoke(cli, [*args, "vars", "--trigger", "corner_exit"]).output.count("brake_diff_m") == 1
+    out = runner.invoke(cli, [*args, "vars", "--event", "corner_exit"]).output
+    assert "  brake_diff_m " in out and "ref_min_speed_kph" in out
     assert runner.invoke(cli, [*args, "remove", "lap-call"]).exit_code == 0
 
 

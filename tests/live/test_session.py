@@ -8,6 +8,7 @@ from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live.coach import CornerResult, LiveCoach, Settings
 from iagent.live.components import CueCaller, Focus, Pace
+from iagent.live.events import SetFocus
 from iagent.live.cues import build_plan
 from iagent.live.session import LiveSessions, recordings
 from iagent.live.speech import Arbiter, CapturedVoice
@@ -48,7 +49,7 @@ def coach_for(root, **settings) -> LiveCoach:
 
 
 def lap(coach: LiveCoach, losses: dict[int, float]) -> str | None:
-    coach.state["lap"] += 1
+    coach.state.lap += 1
     return coach.pipeline.get(Focus).update([CornerResult(c, d, None, None, d >= 0.08) for c, d in losses.items()])
 
 
@@ -65,10 +66,11 @@ def test_the_focus_is_the_biggest_loss_and_moves_on_once_sorted(root):
 
 def test_with_a_focus_only_it_and_big_losses_are_cued(root):
     coach = coach_for(root, learning_laps=0)
-    coach.state.update(lap=2, learning=False, focus=2, big_trouble={4})
+    st = coach.state
+    st.lap, st.learning, st.focus, st.big_trouble = 2, False, 2, {4}
     wanted = [c.corner for c in coach.plan.cues if coach.wanted(c)]
     assert wanted == [2, 4]
-    coach.post("set_focus", corner=3)
+    coach.post(SetFocus(corner=3))
     coach.pipeline.run_inbox()
     assert coach.focus == 3 and coach.focus_log[-1]["manual"] is True
     assert coach.pipeline.get(CueCaller).text(coach.plan.cue_for(3)).startswith("Focus. ")
@@ -170,4 +172,4 @@ def test_pace_is_judged_against_your_own_best_not_the_reference(root):
     coach, laps = drive_kinds(root, [LapKind.CLEAN] * 3)
     pace = coach.pipeline.get(Pace)
     assert pace._own and all(lap["pace"] == "pushing" for lap in laps)
-    assert 0.9 < pace.ratio(coach.state["lap_dist"]) < 1.1  # where the car is now
+    assert 0.9 < pace.ratio(coach.state.lap_dist) < 1.1  # where the car is now

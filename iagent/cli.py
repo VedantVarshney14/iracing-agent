@@ -905,7 +905,7 @@ def rules_add(ctx: Ctx, rule_json: str, track: str | None, car: str | None, repl
     if overlap:
         click.echo(f"Note: {overlap} Drivers running CrewChief would hear it twice.", err=True)
     click.echo(f"{rule.id}: {_when(rule)}" + (f" if {rule.condition.text}" if rule.condition else "")
-               + f" -> {', '.join(a.kind for a in rule.actions)}  [draft]")
+               + f" -> {', '.join(a.key for a in rule.actions)}  [draft]")
     click.echo(f"Saved {path}. Next: iagent rules backtest {rule.id}")
 
 
@@ -1017,7 +1017,7 @@ def rules_backtest(ctx: Ctx, rule_ids: tuple[str, ...], car: str | None, track: 
         click.echo(f"\n{rule.id}: fired {t['fired']}x on {r['laps_fired']} of {r['laps']} laps driven "
                    f"(trigger {t['occurrences']}x, not pushing {t['skipped']}, condition held {t['matched']}, "
                    f"held by limits {t['limited']})")
-        if any(a.kind == "say" for a in rule.actions):
+        if any(a.key == "say" for a in rule.actions):
             click.echo(f"  said {t['said']}, cut off {t['cut']}, dropped {t['dropped']}")
         for f in r["firings"][:40]:
             where = f"{f['lap_dist']:>5} m" if f.get("lap_dist") is not None else ""
@@ -1140,6 +1140,7 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
 
     from iagent.agent import ClaudeCode
     from iagent.live.engineer import Engineer
+    from iagent.live.events import CoachWords, DebriefWords, NotesWritten, RuleFired, Wake
 
     runs = ClaudeCode(ctx.workspace)
     if narrate is None:
@@ -1147,11 +1148,11 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
     engineer = Engineer.over(runs) if narrate else None  # one conversation for the whole session
     # What the terminal shows besides the lines said: events, by name.
     shown = {
-        "wake": lambda e: f"[wake] {e['rule']}: {e['message']}",
-        "rule": lambda e: "; ".join(f"[log] {e['rule']}: {a['log']}" for a in e.get("actions") or [] if a.get("log")),
-        "debrief_words": lambda e: f"[coach] debrief: {e['status']}",
-        "coach_words": lambda e: f"[engineer] {e['kind']}: {e['text'] or 'nothing to say'}",
-        "notes_written": lambda e: f"[engineer] notes: {e['text'] or 'nothing written'}",
+        Wake: lambda e: f"[wake] {e.rule}: {e.message}",
+        RuleFired: lambda e: "; ".join(f"[log] {e.rule}: {a['log']}" for a in e.actions if a.get("log")),
+        DebriefWords: lambda e: f"[engineer] debrief: {e.status}",
+        CoachWords: lambda e: f"[engineer] {e.kind}: {e.text or 'nothing to say'}",
+        NotesWritten: lambda e: f"[engineer] notes: {e.text or 'nothing written'}",
     }
 
     def on_start(coach):

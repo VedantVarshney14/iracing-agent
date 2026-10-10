@@ -4,12 +4,12 @@ Components decide what matters; this module decides how it sounds. Templates rea
 engineer on the radio: the short form for a driver who's busy, the longer one (what, why, how)
 for one with time to listen.
 
-Causes of a corner's lost time are definitions: how to spot one, and how to say it. A new cause
-is a new `Cause` in `CAUSES` (they're tried in order; the first that fits is the clearest).
+Causes of a corner's lost time are subclasses of `Cause`: how to spot one, and how to say it. A
+new cause is a new subclass in `CAUSES` (they're tried in order; the first that fits is the
+clearest).
 """
 
-from dataclasses import dataclass
-from typing import Callable
+from abc import ABC, abstractmethod
 
 from iagent.live.expr import round5, say_gap, say_time
 
@@ -25,77 +25,151 @@ def _diff(a, b):
     return None if a is None or b is None else a - b
 
 
-@dataclass(frozen=True)
-class Cause:
-    name: str
-    doc: str
-    # (this lap's corner metrics, the reference's, time lost, settings) -> how much, or None if it isn't this
-    detect: Callable[[dict, dict, float, object], float | None]
-    short: Callable[[str, float, dict], str]  # (corner name, amount, ref metrics) -> said after the corner
-    hint: Callable[[dict], str]  # (ref metrics) -> added to the corner's cue next lap
-    longer: Callable[[str, float, dict, dict], str]  # (who, amount, ref, mine) -> the why and the how
+class Cause(ABC):
+    """A reason a corner cost time: how to spot it, and how to say it. Subclasses are tried in
+    `CAUSES` order; the first that fits is the clearest."""
+
+    name: str = ""
+    doc: str = ""
     any_loss: bool = False  # worth saying even when the corner cost little (going off)
+
+    @abstractmethod
+    def detect(self, mine: dict, ref: dict, delta: float, s) -> float | None:
+        """How much (metres, km/h, ...) if it's this cause, else None."""
+
+    @abstractmethod
+    def short(self, name: str, amount: float, ref: dict) -> str:
+        """Said after the corner."""
+
+    @abstractmethod
+    def hint(self, ref: dict) -> str:
+        """Added to the corner's cue next lap."""
+
+    @abstractmethod
+    def longer(self, who: str, amount: float, ref: dict, mine: dict) -> str:
+        """The why and the how, for a driver with time to listen. WHO is "Pouhon: you" or "You"."""
 
 
 def _lift(ref: dict) -> bool:
     return (ref.get("min_throttle") or 1) < 0.9
 
 
-def _early_longer(who, amount, ref, mine):
-    slow = _diff(mine.get("min_speed_kph"), ref.get("min_speed_kph"))
-    extra = " and you're slower at the apex too, so it costs you twice" if slow is not None and slow <= -3 else ""
-    return (f"{who}'re braking about {round5(amount)} metres before the reference{extra}. There's more room than "
-            "it feels: move the brake point a few metres a lap, same pressure, and let the car tell you when it's enough.")
+class OffTrack(Cause):
+    name, doc, any_loss = "off", "ran off track (amount: metres off)", True
+
+    def detect(self, m, r, d, s):
+        return float(m["off_track_m"]) if (m.get("off_track_m") or 0) >= s.off_track_m else None
+
+    def short(self, n, a, r):
+        return f"{n}: you ran off track. Brake a touch earlier and tidy the entry."
+
+    def hint(self, r):
+        return "Tidy entry, you ran wide last lap."
+
+    def longer(self, who, a, r, m):
+        return (f"{who} ran wide, {round(a)} metres off track. That usually starts at the entry: brake a touch earlier, "
+                "get the car turned before you go back to the throttle, and build up from there once it sticks.")
 
 
-CAUSES: list[Cause] = [
-    Cause("off", "ran off track (amount: metres off)",
-          lambda m, r, d, s: float(m["off_track_m"]) if (m.get("off_track_m") or 0) >= s.off_track_m else None,
-          lambda n, a, r: f"{n}: you ran off track. Brake a touch earlier and tidy the entry.",
-          lambda r: "Tidy entry, you ran wide last lap.",
-          lambda who, a, r, m: (f"{who} ran wide, {round(a)} metres off track. That usually starts at the entry: brake a "
-                                "touch earlier, get the car turned before you go back to the throttle, and build up "
-                                "from there once it sticks."),
-          any_loss=True),
-    Cause("early_brake", "braked earlier than the reference (amount: metres)",
-          lambda m, r, d, s: (-(m["brake_m"] - r["brake_m"]) if m.get("brake_m") is not None and r.get("brake_m") is not None
-                              and m["brake_m"] - r["brake_m"] <= -s.brake_m else None),
-          lambda n, a, r: f"{n}: braked {round5(a)} metres early. Brake later.",
-          lambda r: "Brake later than last lap.",
-          _early_longer),
-    Cause("late_brake", "braked later and lost the exit (amount: metres)",
-          lambda m, r, d, s: (m["brake_m"] - r["brake_m"] if m.get("brake_m") is not None and r.get("brake_m") is not None
-                              and m["brake_m"] - r["brake_m"] >= s.brake_m
-                              and (m.get("min_speed_kph") or 0) < (r.get("min_speed_kph") or 0) else None),
-          lambda n, a, r: f"{n}: braked {round5(a)} metres late and lost the exit.",
-          lambda r: "Brake a little earlier than last lap.",
-          lambda who, a, r, m: (f"{who}'re braking about {round5(a)} metres late and it's costing the exit. Brake a "
-                                "little earlier, get it slowed and turned, and you'll be back on the power sooner. Exit "
-                                "speed is worth more than entry.")),
-    Cause("no_brake_needed", "braked where the reference doesn't",
-          lambda m, r, d, s: 0.0 if m.get("brake_m") is not None and r.get("brake_m") is None else None,
-          lambda n, a, r: f"{n}: no need to brake there." + (" A lift is enough." if _lift(r) else ""),
-          lambda r: "Just a lift, no brakes." if _lift(r) else "Stay off the brakes.",
-          lambda who, a, r, m: (f"{who} don't need the brakes there, {'a lift is enough' if _lift(r) else 'it is flat'}. "
-                                f"Next time try {'just a lift' if _lift(r) else 'staying flat'} and trust the grip, a "
-                                "little more each lap.")),
-    Cause("slow_apex", "slower at the apex (amount: km/h)",
-          lambda m, r, d, s: (-dv if (dv := _diff(m.get("min_speed_kph"), r.get("min_speed_kph"))) is not None
-                              and dv <= -s.min_speed_kph else None),
-          lambda n, a, r: f"{n}: {round(a)} kilometres an hour slower at the apex. Carry more speed in.",
-          lambda r: "Carry more speed in.",
-          lambda who, a, r, m: (f"{who}'re about {round(a)} kilometres an hour slower at the apex. Ease off the brake "
-                                "more gradually as you turn in and let the car roll more speed to the apex. Don't brake "
-                                "later, just release it smoother.")),
-    Cause("late_throttle", "full throttle later than the reference (amount: metres)",
-          lambda m, r, d, s: (dt if (dt := _diff(m.get("full_throttle_m"), r.get("full_throttle_m"))) is not None
-                              and dt >= s.throttle_m else None),
-          lambda n, a, r: f"{n}: full throttle {round5(a)} metres later than the reference. Get on it earlier.",
-          lambda r: "Earlier on the throttle.",
-          lambda who, a, r, m: (f"{'Full throttle comes' if who == 'You' else who.split(':')[0] + ': full throttle comes'} "
-                                f"about {round5(a)} metres later than the reference. Once you're past the apex, open the "
-                                "steering and commit to the throttle earlier, a bit more each lap.")),
-]
+class EarlyBrake(Cause):
+    name, doc = "early_brake", "braked earlier than the reference (amount: metres)"
+
+    def detect(self, m, r, d, s):
+        if m.get("brake_m") is None or r.get("brake_m") is None:
+            return None
+        diff = m["brake_m"] - r["brake_m"]
+        return -diff if diff <= -s.brake_m else None
+
+    def short(self, n, a, r):
+        return f"{n}: braked {round5(a)} metres early. Brake later."
+
+    def hint(self, r):
+        return "Brake later than last lap."
+
+    def longer(self, who, a, r, m):
+        slow = _diff(m.get("min_speed_kph"), r.get("min_speed_kph"))
+        extra = " and you're slower at the apex too, so it costs you twice" if slow is not None and slow <= -3 else ""
+        return (f"{who}'re braking about {round5(a)} metres before the reference{extra}. There's more room than it "
+                "feels: move the brake point a few metres a lap, same pressure, and let the car tell you when it's enough.")
+
+
+class LateBrake(Cause):
+    name, doc = "late_brake", "braked later and lost the exit (amount: metres)"
+
+    def detect(self, m, r, d, s):
+        if m.get("brake_m") is None or r.get("brake_m") is None:
+            return None
+        diff = m["brake_m"] - r["brake_m"]
+        slower = (m.get("min_speed_kph") or 0) < (r.get("min_speed_kph") or 0)
+        return diff if diff >= s.brake_m and slower else None
+
+    def short(self, n, a, r):
+        return f"{n}: braked {round5(a)} metres late and lost the exit."
+
+    def hint(self, r):
+        return "Brake a little earlier than last lap."
+
+    def longer(self, who, a, r, m):
+        return (f"{who}'re braking about {round5(a)} metres late and it's costing the exit. Brake a little earlier, get "
+                "it slowed and turned, and you'll be back on the power sooner. Exit speed is worth more than entry.")
+
+
+class NoBrakeNeeded(Cause):
+    name, doc = "no_brake_needed", "braked where the reference doesn't"
+
+    def detect(self, m, r, d, s):
+        return 0.0 if m.get("brake_m") is not None and r.get("brake_m") is None else None
+
+    def short(self, n, a, r):
+        return f"{n}: no need to brake there." + (" A lift is enough." if _lift(r) else "")
+
+    def hint(self, r):
+        return "Just a lift, no brakes." if _lift(r) else "Stay off the brakes."
+
+    def longer(self, who, a, r, m):
+        lift = _lift(r)
+        return (f"{who} don't need the brakes there, {'a lift is enough' if lift else 'it is flat'}. Next time try "
+                f"{'just a lift' if lift else 'staying flat'} and trust the grip, a little more each lap.")
+
+
+class SlowApex(Cause):
+    name, doc = "slow_apex", "slower at the apex (amount: km/h)"
+
+    def detect(self, m, r, d, s):
+        dv = _diff(m.get("min_speed_kph"), r.get("min_speed_kph"))
+        return -dv if dv is not None and dv <= -s.min_speed_kph else None
+
+    def short(self, n, a, r):
+        return f"{n}: {round(a)} kilometres an hour slower at the apex. Carry more speed in."
+
+    def hint(self, r):
+        return "Carry more speed in."
+
+    def longer(self, who, a, r, m):
+        return (f"{who}'re about {round(a)} kilometres an hour slower at the apex. Ease off the brake more gradually as "
+                "you turn in and let the car roll more speed to the apex. Don't brake later, just release it smoother.")
+
+
+class LateThrottle(Cause):
+    name, doc = "late_throttle", "full throttle later than the reference (amount: metres)"
+
+    def detect(self, m, r, d, s):
+        dt = _diff(m.get("full_throttle_m"), r.get("full_throttle_m"))
+        return dt if dt is not None and dt >= s.throttle_m else None
+
+    def short(self, n, a, r):
+        return f"{n}: full throttle {round5(a)} metres later than the reference. Get on it earlier."
+
+    def hint(self, r):
+        return "Earlier on the throttle."
+
+    def longer(self, who, a, r, m):
+        lead = "Full throttle comes" if who == "You" else f"{who.split(':')[0]}: full throttle comes"
+        return (f"{lead} about {round5(a)} metres later than the reference. Once you're past the apex, open the steering "
+                "and commit to the throttle earlier, a bit more each lap.")
+
+
+CAUSES: list[Cause] = [OffTrack(), EarlyBrake(), LateBrake(), NoBrakeNeeded(), SlowApex(), LateThrottle()]
 CAUSE_BY_NAME = {c.name: c for c in CAUSES}
 
 

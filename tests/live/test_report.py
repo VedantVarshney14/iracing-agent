@@ -83,7 +83,7 @@ def carried_coach(root, corner):
 
 
 def pushing_lap(coach, losses):
-    coach.state["lap"] += 1
+    coach.state.lap += 1
     return coach.pipeline.get(Focus).update([CornerResult(c, d, None, None, d >= 0.08) for c, d in losses.items()])
 
 

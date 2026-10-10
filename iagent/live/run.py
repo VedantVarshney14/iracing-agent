@@ -51,7 +51,7 @@ def start_coach(root: Path, session: SessionInfo, voice: Voice, settings: Settin
     if rules:
         logger.info("Active rules: %s", ", ".join(r.id for r in rules))
     if hasattr(voice, "prepare"):  # cue-like rule lines with fixed text can be rendered now too
-        fixed = [a.template.text for r in rules for a in r.actions if a.kind == "say" and not a.template.names]
+        fixed = [a.template.text for r in rules for a in r.actions if a.key == "say" and not a.template.names]
         if fixed:
             voice.prepare(fixed)
     return LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own,

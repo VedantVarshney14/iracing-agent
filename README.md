@@ -9,7 +9,9 @@ pick one thing to work on, and (later) cue it by voice at the right place on tra
 > coach sets and backtests, debriefs and wake-ups in the coach's own words, and a browser UI.
 > Push-to-talk voice input is next.
 
-The design lives in [.claude/architecture.md](.claude/architecture.md). In short:
+How it's built is explained in [ARCHITECTURE.md](ARCHITECTURE.md) (diagrams, the live pipeline,
+rules, the engineer, how to extend it); the design notes are in
+[.claude/architecture.md](.claude/architecture.md). In short:
 
 - **No custom agent loop.** The coach runs inside an agent harness. Claude Code is the primary
   target (it works with a Claude subscription *or* local open models via Ollama); the skills use
@@ -18,9 +20,11 @@ The design lives in [.claude/architecture.md](.claude/architecture.md). In short
   describe how to coach; the `iagent` CLI computes the numbers (JSON output), so the model
   interprets rather than calculates.
 - **No per-token API billing.** Claude through a subscription, or open-weight models run locally.
-- **Agent-defined events:** the agent creates rules through the CLI and backtests them against
-  recorded sessions; the live coach on the sim PC runs them deterministically. No LLM in the
-  real-time loop; a rule can wake the agent, whose reply is spoken.
+- **One event pipeline, built like a race team.** The live coach is a pipeline of typed events
+  and small components; everything it says goes through rules (its own built-in ones, and the
+  agent's, which are backtested before they go live). No model in the real-time loop. A race
+  engineer (one Claude Code conversation per session) hears the radio, answers questions and
+  wake-ups, debriefs, and writes notes for the next session.
 - **Testable without the sim:** `.ibt` replay, a synthetic lap generator with exact ground truth,
   and regression tests against real recordings.
 
@@ -377,8 +381,10 @@ iagent/
   laps/        segmentation, distance resampling, lap store, pace filter, recorder
   analysis/    corner map and metrics, CrewChief landmarks, splits, traces, position
   references/  Garage61 client, CSV import, iRacing ghost files
-  live/        the live coach: one event pipeline (pipeline, events), components/, rules and
-               builtin_rules, phrasing, speech, narrator, sources, cue plans, backtests
+  agent.py     the agent harness: Agent (abstract), ClaudeCode (`claude -p`)
+  live/        the live coach: pipeline + events + state (typed), components/, rules/ (schema,
+               actions, engine) + builtin_rules, phrasing, speech, engineer + narrator (radio),
+               rulebook (backtests), cues, sources, sessions and reports
   testing/     synthetic lap generator, .ibt writer
   ui/          `iagent ui`: the local API server and what the screens show (review.py)
   workspace.py lap stores, reference laps and corner maps, shared by the CLI and the UI

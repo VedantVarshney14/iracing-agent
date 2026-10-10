@@ -19,6 +19,7 @@ Used by the lap review's chat (`iagent.ui.coach`) and the live session's enginee
 
 import json
 import os
+from abc import ABC, abstractmethod
 import shutil
 import subprocess
 import sys
@@ -35,10 +36,25 @@ COACH_PLUGIN = Path(iagent.__file__).resolve().parents[1] / "coach"
 ALLOWED_TOOLS = ["Bash(iagent *)", "Read", "Glob", "Grep", "Write", "Edit", "Skill"]
 
 
-class ClaudeCode:
+class Agent(ABC):
+    """An agent harness the coach runs in: one turn of a conversation at a time. Claude Code is
+    the one we use; another harness (Codex, OpenCode, Goose) is another subclass, the same few
+    lines with a different command."""
+
+    @abstractmethod
+    def turn(self, prompt: str, system_prompt: str, session_id: str | None = None,
+             new_session: bool = False) -> Iterator[dict]:
+        """One turn, as events (see the module docstring), starting with {"type": "run", "run_id"}.
+        SESSION_ID continues that conversation, or starts it with that id when NEW_SESSION."""
+
+    @abstractmethod
+    def stop(self, run_id: str) -> bool:
+        """Stop a running turn."""
+
+
+class ClaudeCode(Agent):
     """The driver's own Claude Code, run headless (`claude -p`) with the coach plugin, on the
-    workspace. Each run is one turn of a conversation: a new one, a given session id to start
-    (`new_session`), or one to resume. Running processes can be stopped."""
+    workspace. `--session-id` starts a conversation with a given id, `--resume` continues it."""
 
     def __init__(self, workspace: Path, claude: str | None = None):
         self.workspace = workspace.resolve()
@@ -77,7 +93,6 @@ class ClaudeCode:
 
     def turn(self, prompt: str, system_prompt: str, session_id: str | None = None,
              new_session: bool = False) -> Iterator[dict]:
-        """One turn, as events (see StreamParser), starting with {"type": "run", "run_id"}."""
         run_id = uuid.uuid4().hex
         yield {"type": "run", "run_id": run_id}
         if shutil.which(self.claude) is None:

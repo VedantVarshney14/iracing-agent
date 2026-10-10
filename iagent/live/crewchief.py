@@ -56,14 +56,14 @@ def resolve(setting: str | bool | None) -> bool:
 def overlaps(rule) -> str | None:
     """Why a rule would duplicate CrewChief, or None."""
     names = set(rule.condition.names) if rule.condition else set()
-    for a in rule.actions:
-        if a.kind == "say":
-            names |= a.template.names
-    if rule.trigger == "pit" and any(a.kind == "say" for a in rule.actions):
+    says = [a for a in rule.actions if a.key == "say"]
+    for a in says:
+        names |= a.template.names
+    if rule.trigger == "pit" and says:
         return "CrewChief already calls pit entry and exit."
-    said = {n for a in rule.actions if a.kind == "say" for n in a.template.names}
+    said = {n for a in says for n in a.template.names}
     if said & {"lap_time", "gap_s", "best_gap_s", "best_lap"}:
         return "CrewChief already reads lap times and gaps; say what it can't (where the lap went)."
-    if rule.trigger == "lap" and "new_best" in names and any(a.kind == "say" for a in rule.actions):
+    if rule.trigger == "lap" and "new_best" in names and says:
         return "CrewChief already announces personal bests."
     return None

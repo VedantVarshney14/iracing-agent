@@ -11,6 +11,7 @@ from iagent.live import rulebook
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan
 from iagent.live.engineer import Engineer, debrief_prompt, wake_prompt
+from iagent.live.events import DebriefGiven, DebriefWords, Narrate
 from iagent.live.narrator import chunks, clean
 from iagent.live.run import own_best
 from iagent.live.session import LiveSessions
@@ -165,9 +166,9 @@ def drive(root, reply_after_s: float | None, settings: Settings):
     finally:
         ws.close()
     asked, said, words = [], [], []
-    coach.on("narrate", lambda e: asked.append((e["facts"], e["stretch"], e.at)))
-    coach.on("debrief", lambda e: said.append(e.public()))
-    coach.on("debrief_words", lambda e: words.append(e.public()))
+    coach.on(Narrate, lambda e: e.kind == "debrief" and asked.append((e.payload["facts"], e.stretch, e.at)))
+    coach.on(DebriefGiven, lambda e: said.append(e.public()))
+    coach.on(DebriefWords, lambda e: words.append(e.public()))
     for f in src.frames():
         narrator.tick(f.session_time)
         coach.push(f)

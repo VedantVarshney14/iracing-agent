@@ -25,7 +25,7 @@ from typing import Callable, Iterator
 
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.run import run
-from iagent.live.events import EVENTS
+from iagent.live.events import CoachWords, Narrate, Say, SetFocus
 from iagent.live.speech import CapturedVoice, Voice
 from iagent.telemetry.frames import Frame
 from iagent.workspace import Workspace
@@ -122,12 +122,12 @@ class LiveSessions:
     def say(self, text: str, kind: str = "answer") -> None:
         """Say a line (e.g. the coach's answer to a question) on the next straight."""
         if self.coach is not None:
-            self.coach.post("say", text=text, kind=kind)
+            self.coach.post(Say(text=text, kind=kind))
 
     def set_focus(self, corner: int | None) -> None:
         if self.coach is None:
             raise SessionError("No session running.")
-        self.coach.post("set_focus", corner=corner)
+        self.coach.post(SetFocus(corner=corner))
 
     def note_driver(self, text: str) -> dict:
         return self._log({"type": "driver", "at": self._now(), "text": text})
@@ -137,7 +137,7 @@ class LiveSessions:
         False if there's no engineer to ask."""
         if self.coach is None or self.engineer is None:
             return False
-        self.coach.post("narrate", kind="question", reply="coach_words", text=text)
+        self.coach.post(Narrate(kind="question", reply=CoachWords.name, payload={"text": text}))
         return True
 
     def note_answer(self, text: str) -> dict:
@@ -163,7 +163,7 @@ class LiveSessions:
                 "ref": {"lap_id": coach.plan.ref_lap_id, "lap_time": coach.plan.ref_lap_time, "driver": self._ref_driver},
                 "laps_done": coach.laps,
                 "mode": coach.mode,
-                "learning": coach.state["learning"],
+                "learning": coach.state.learning,
                 "focus": focus,
                 "cues": [{"corners": c.corners, "text": c.text, "cued": coach.wanted(c)} for c in coach.plan.cues],
                 "lap_dist": last.get("LapDist") if last else None,
@@ -261,10 +261,10 @@ class LiveSessions:
 
     def _event(self, e) -> None:
         """The pipeline's events that are defined as logged go in the session log."""
-        if EVENTS[e.type].log:
-            self._log({"type": e.type, "at": e.at, **e.public()})
-        if e.type == "coach_words" and e.get("kind") == "question":  # shown with the question on the page
-            self.note_answer(e["text"] or "(No answer: the coach said nothing)")
+        if e.log:
+            self._log({"type": e.name, "at": e.at, **e.public()})
+        if isinstance(e, CoachWords) and e.kind == "question":  # shown with the question on the page
+            self.note_answer(e.text or "(No answer: the coach said nothing)")
 
     def _log(self, event: dict) -> dict:
         event = {"seq": len(self._events), "wall": datetime.now(timezone.utc).isoformat(), **event}

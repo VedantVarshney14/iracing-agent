@@ -21,6 +21,7 @@ import numpy as np
 from iagent.laps.tracks import load_track_info
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan, load_plan
+from iagent.live.events import Line
 from iagent.live.rules import Rule, RuleError, RuleStats, check_against_map, uses_corners
 from iagent.live.speech import Arbiter, CapturedVoice
 from iagent.telemetry.frames import Frame
@@ -256,11 +257,11 @@ def _replay(ws: Workspace, name: str, session: SessionInfo, frames: Iterator[Fra
     coach = LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own, rules=rules)
     lines: dict[str, list[dict]] = {}
 
-    def on_line(e):
-        if e["rule"] in testing:
-            lines.setdefault(e["rule"], []).append({"status": e["status"], "text": e["text"], "at": round(e.at, 2),
-                                                    "lap": coach.laps, "note": e["note"]})
-    coach.on("line", on_line)
+    def on_line(e: Line):
+        if e.rule in testing:
+            lines.setdefault(e.rule, []).append({"status": e.status, "text": e.text, "at": round(e.at, 2),
+                                                 "lap": coach.laps, "note": e.note})
+    coach.on(Line, on_line)
     last = None
     for frame in frames:
         coach.push(frame)
@@ -268,7 +269,7 @@ def _replay(ws: Workspace, name: str, session: SessionInfo, frames: Iterator[Fra
     if last is not None:
         coach.finish(last.session_time)
     engine = coach.rules
-    out = {"session": name, "laps": coach.laps, "laps_driven": coach.state["laps_driven"] + 1, "rules": {}}
+    out = {"session": name, "laps": coach.laps, "laps_driven": coach.state.laps_driven + 1, "rules": {}}
     for rule_id in testing:
         out["rules"][rule_id] = {
             "session": name,
