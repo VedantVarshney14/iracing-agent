@@ -17,7 +17,10 @@ no model involved, so they must be exact. Backtest every rule before it goes liv
 2. **See what's available:** `iagent rules vars` (or `--event corner_exit`) lists every event the
    live coach knows, its fields, the shared state every rule can read (the focus, the pace mode,
    the corners the driver struggles with), functions and actions. `when` is
-   `{"event": <name>, <field>: <value>, ...}`; the shorthand below works too. Corner metrics at `corner_exit` use the same numbers as
+   `{"event": <name>, <field>: <value>, ...}`; `iagent rules schema` is the exact format (JSON
+   Schema): match it, there is no shorthand. Corners are **numbers**: look them up with
+   `iagent corners list --track T --json` (La Source is 1 at Spa, say), never write "T1" or a
+   name. Corner metrics at `corner_exit` use the same numbers as
    `iagent corners compare`; `brake_diff_m` < 0 means braked earlier than the reference.
    `iagent rules list --track T` shows rules already set: change one with `add --replace`
    rather than adding a near-duplicate.
@@ -26,12 +29,13 @@ no model involved, so they must be exact. Backtest every rule before it goes liv
    ```bash
    iagent rules add '{"id": "t1-early-brake", "track": "spa-2024-up",
      "description": "Brakes ~15 m early for La Source (lap review, 3 sessions).",
-     "when": {"corner_exit": "La Source"}, "if": "brake_diff_m < -10",
-     "action": {"say": "La Source: braked {round5(-brake_diff_m)} metres early."},
+     "when": {"event": "corner_exit", "corner": 1}, "if": "brake_diff_m < -10",
+     "actions": [{"say": "La Source: braked {round5(-brake_diff_m)} metres early."}],
      "limits": {"cooldown_laps": 1}}'
    ```
 
-   The command checks fields, variables and corner names and says what to fix.
+   The command checks the rule against the schema, its variables and the track's corners, and
+   says which field to fix.
 4. **Backtest:** `iagent rules backtest <id>` replays the last few recorded sessions through the
    live coach with the rule. Read it:
    - **Fires on most laps:** a nag. Tighten the condition, add `in_a_row`, or a cooldown.
@@ -56,19 +60,21 @@ no model involved, so they must be exact. Backtest every rule before it goes liv
   gaps, fuel, tyres, flags and pit calls; `rules add` warns when a rule says those. Rules are
   for technique and for what the driver asked to be told.
 - **Feedback after, cues before.** `corner_exit` + `feedback` priority for what happened;
-  `{"at": "T1"}` (the reference brake point) + `cue` priority for a reminder on the approach.
-  Use `"lead_s"` / `"offset_m"` to move it; `"T1 apex"`, `"T1 exit"`, `"T1 entry"` or metres work too.
+  `{"event": "approach", "at": {"corner": 1}}` (the reference brake point) + `cue` priority for a
+  reminder on the approach. Use `"lead_s"` / `"offset_m"` to move it; `"point": "apex"`,
+  `"exit"` or `"entry"` in `at`, or `{"metres": 1830}`, for other points.
 - **Don't nag.** `in_a_row: 2` for things that only matter when repeated; `cooldown_laps`,
   `max_per_lap`, `once`. Rules ignore out laps, cool-downs and moments by default
   (`pushing_only`); set it false only for things like pit or tyre reminders.
 - **Missing values are quiet.** A condition on a missing value is false, and a line whose text
   needs a missing value isn't said, so `brake_diff_m < -10` simply doesn't fire on a lap the
   corner was taken flat.
-- **Track-wide rules** (no `track`) work everywhere: lap rules (`{"lap": "complete"}`),
-  schedules (`{"every_laps": 5}`), a reminder on a cool-down (`{"pace": "tranquille"}`).
-- `wake` hands the event to the coach (you) during the session: what you reply is spoken to
-  the driver (one short sentence while they're pushing), or reply `SILENT`. Use it where a
-  judgement in your own words beats a fixed line; at most one wake-up every 30 s gets through.
+- **Track-wide rules** (no `track`) work everywhere: lap rules (`{"event": "lap"}`), every
+  fifth lap (`{"event": "lap", "where": "lap % 5 == 0"}`), a reminder on a cool-down
+  (`{"event": "pace", "mode": "tranquille"}`). They can't name corners.
+- `wake` hands the event to the engineer (you) during the session: what you put in `say` is
+  spoken to the driver (one short sentence while they're pushing), or `say` is null. Use it where
+  a judgement in your own words beats a fixed line; at most one wake-up every 30 s gets through.
 
 ## Cues and lines in your words
 
@@ -86,20 +92,23 @@ after a lap review, so the driver hears your voice even where no model runs.
 
 ## Examples
 
+Corner numbers below are examples: take them from `iagent corners list --json` for the track.
+
 ```json
-{"id": "pouhon-wide", "track": "spa-2024-up", "when": {"corner_exit": "Pouhon"},
+{"id": "pouhon-wide", "track": "spa-2024-up", "when": {"event": "corner_exit", "corner": 9},
  "if": "off_track_m > 5", "in_a_row": 2,
- "action": {"say": "Pouhon: wide twice now. Tighter entry."}}
+ "actions": [{"say": "Pouhon: wide twice now. Tighter entry."}]}
 
-{"id": "bus-stop-lift", "track": "spa-2024-up", "when": {"at": "Bus Stop", "lead_s": 1.0},
- "if": "not learning", "action": {"say": "Bus Stop. Just a lift."}}
+{"id": "bus-stop-lift", "track": "spa-2024-up",
+ "when": {"event": "approach", "at": {"corner": 18}, "lead_s": 1.0},
+ "if": "not learning", "actions": [{"say": "Bus Stop. Just a lift."}]}
 
-{"id": "t1-repeat", "track": "spa-2024-up", "when": {"lap": "complete"},
+{"id": "t1-repeat", "track": "spa-2024-up", "when": {"event": "lap"},
  "if": "worst_corner == 1 and worst_delta_s > 0.3", "in_a_row": 2,
- "action": {"say": "La Source again.", "priority": "summary",
-            "long": "La Source again: that's where the lap goes, two laps running. Braking point first, then the rest."}}
+ "actions": [{"say": "La Source again.", "priority": "summary",
+              "long": "La Source again: that's where the lap goes, two laps running. Braking point first, then the rest."}]}
 
-{"id": "slow-exit-t3", "track": "okayama-full", "when": {"corner_exit": 3},
+{"id": "slow-exit-t3", "track": "okayama-full", "when": {"event": "corner_exit", "corner": 3},
  "if": "exit_speed_diff_kph < -6 and throttle_diff_m > 20",
- "action": {"say": "Turn 3: late on the throttle, {round(-exit_speed_diff_kph)} down on exit."}}
+ "actions": [{"say": "Turn 3: late on the throttle, {round(-exit_speed_diff_kph)} down on exit."}]}
 ```

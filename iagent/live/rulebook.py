@@ -22,7 +22,7 @@ from iagent.laps.tracks import load_track_info
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan, load_plan
 from iagent.live.events import Line
-from iagent.live.rules import Rule, RuleError, RuleStats, check_against_map, uses_corners
+from iagent.live.rules import Rule, RuleError, RuleStats, check_against_map
 from iagent.live.speech import Arbiter, CapturedVoice
 from iagent.telemetry.frames import Frame
 from iagent.telemetry.session import SessionInfo
@@ -106,9 +106,9 @@ def add_rule(root: Path, raw: dict, replace: bool = False, by: str = "coach") ->
         existing = None
     if existing is not None and not replace:
         raise RuleError(f"A rule {rule.id!r} exists already: pass --replace to change it, or pick another id.")
-    if rule.track is None and uses_corners(rule):
+    if rule.track is None and rule.corners():
         raise RuleError(f"{rule.id}: a rule about a corner needs a track.")
-    if rule.track is not None and uses_corners(rule):
+    if rule.track is not None and rule.corners():
         ws = Workspace(root)
         try:
             cmap = ws.corner_map(rule.track)

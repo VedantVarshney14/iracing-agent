@@ -1,5 +1,4 @@
 import json
-import sys
 import time
 
 import pytest
@@ -10,15 +9,14 @@ from iagent.live.coach import CornerResult, LiveCoach, Settings
 from iagent.live.components import CueCaller, Focus, Pace
 from iagent.live.events import SetFocus
 from iagent.live.cues import build_plan
+from iagent.live.engineer import Engineer
 from iagent.live.session import LiveSessions, recordings
 from iagent.live.speech import Arbiter, CapturedVoice
 from iagent.testing.ibt_writer import write_ibt
 from iagent.testing.synthetic import SyntheticSource
 from iagent.testing.web import ui_client
-from iagent.ui.coach import CoachRuns
 from iagent.ui.server import create_app
 from iagent.workspace import Workspace
-from tests.ui.test_coach import TURN
 
 TRACK, CAR = "synthetic", "synthcar"
 
@@ -103,16 +101,21 @@ def test_a_running_session_can_be_stopped(root, recording):
 
 
 def test_live_api_starts_a_replay_and_answers_a_question(root, recording, tmp_path):
-    if sys.platform == "win32":
-        pytest.skip("shebang scripts")
-    claude = tmp_path / "claude"
-    claude.write_text(f"#!{sys.executable}\nimport sys\nsys.stdin.read()\nsys.stdout.write({''.join(TURN)!r})\n")
-    claude.chmod(0o755)
-    live = LiveSessions(root, voice_factory=lambda name: CapturedVoice())
-    web = ui_client(create_app(root, static_dir=tmp_path / "no-build", live=live, coach=CoachRuns(root, claude=str(claude))))
+    asked = []
+
+    def turn(prompt, session_id, resume, schema):
+        asked.append(prompt)
+        return {"say": "Pouhon costs 0.48 s." if "Where am I slow?" in prompt else None}, True
+    live = LiveSessions(root, voice_factory=lambda name: CapturedVoice(), engineer=lambda: Engineer(turn))
+    web = ui_client(create_app(root, static_dir=tmp_path / "no-build", live=live))
 
     assert web.post("/api/live/start", json={"source": "replay", "file": str(tmp_path / "nope.ibt")}).status_code == 409
+    assert web.post("/api/live/ask", json={"text": "Where am I slow?"}).status_code == 409  # no session, no engineer
     assert web.post("/api/live/start", json={"source": "replay", "file": str(recording), "speed": 2}).status_code == 200
+    for _ in range(200):
+        if live.status()["state"] == "running":
+            break
+        time.sleep(0.05)
     assert web.post("/api/live/ask", json={"text": "Where am I slow?"}).json() == {"ok": True}
     for _ in range(100):
         events = web.get("/api/live/events").json()["events"]
@@ -121,10 +124,6 @@ def test_live_api_starts_a_replay_and_answers_a_question(root, recording, tmp_pa
         time.sleep(0.05)
     kinds = [e["type"] for e in events]
     assert "driver" in kinds and [e["text"] for e in events if e["type"] == "answer"] == ["Pouhon costs 0.48 s."]
-    for _ in range(200):  # the answer can come back before the coach has started
-        if live.status()["state"] == "running":
-            break
-        time.sleep(0.05)
     assert web.post("/api/live/focus", json={"corner": 3}).json() == {"ok": True}
     assert web.post("/api/live/stop").json()["state"] == "idle"
 

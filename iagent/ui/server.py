@@ -29,7 +29,6 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from iagent.laps.watch import TelemetryWatcher, default_telemetry_dir, ingest_file
 from iagent.live import report as session_report
 from iagent.live.cues import load_next_plan, load_plan, save_next_plan, save_plan
-from iagent.live.narrator import clean
 from iagent.live.session import LiveSessions, SessionError, recordings
 from iagent.references import garage61 as g61
 from iagent.references import ghosts
@@ -310,34 +309,15 @@ def create_app(
         return JSONResponse({"ok": True})
 
     async def live_ask(request: Request) -> JSONResponse:
-        """A typed question: logged now, answered by the coach (`claude -p`) in the background,
-        and the answer spoken on the next straight."""
+        """A typed question for the session's engineer: logged now, answered in its conversation in
+        the background, and the answer spoken on the next straight."""
         text = str((await request.json()).get("text") or "").strip()
         if not text:
             return JSONResponse({"error": "text is required"}, status_code=400)
+        if live.coach is None or live.engineer is None:
+            return JSONResponse({"error": "No live session with an engineer to ask."}, status_code=409)
         live.note_driver(text)
-        if live.ask(text):  # the session's engineer answers, in its conversation
-            return JSONResponse({"ok": True})
-        context = live.context()
-
-        def answer() -> None:
-            parts, error = [], None
-            for line in coach.run(text, context, None):
-                event = json.loads(line)
-                if event["type"] == "text_start":
-                    parts = []  # keep the final block: the answer, not the narration before tools
-                elif event["type"] == "text":
-                    parts.append(event["text"])
-                elif event["type"] == "error":
-                    error = event["message"]
-            reply = clean("".join(parts)) or ""
-            if reply:
-                live.note_answer(reply)
-                live.say(reply)
-            else:
-                live.note_answer(f"(No answer: {error or 'the coach said nothing'})")
-
-        threading.Thread(target=answer, name="live-ask", daemon=True).start()
+        live.ask(text)
         return JSONResponse({"ok": True})
 
     # --- coached sessions, afterwards ------------------------------------------------------

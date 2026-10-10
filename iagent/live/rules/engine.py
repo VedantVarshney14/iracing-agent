@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 
 from iagent.live.events import Event, RuleFired, Unwatch, Watch
 from iagent.live.pipeline import Component, on
-from iagent.live.rules.actions import Say
-from iagent.live.rules.schema import Rule, resolve_at, resolve_filters
+from iagent.live.rules.actions import RuleError, Say
+from iagent.live.rules.schema import Rule, check_against_map, filter_sets, resolve_at
 from iagent.live.speech import APPROACH, Utterance
 
 logger = logging.getLogger("iagent.live")
@@ -57,7 +57,7 @@ class _GroupState:
 @dataclass
 class _Compiled:
     rule: Rule
-    filters: dict[str, set | None]
+    filters: dict[str, set]
 
 
 class RuleEngine(Component):
@@ -89,12 +89,13 @@ class RuleEngine(Component):
             if rule.enabled_by and not getattr(self.settings, rule.enabled_by):
                 continue
             try:
-                filters = resolve_filters(rule, self.ctx.cmap)
-                if "at" in rule.match:
-                    filters["watch"] = {self._watch(rule)}
-            except KeyError as e:
-                errors.append(f"{rule.id}: {e.args[0]}")
+                check_against_map(rule, self.ctx.cmap)
+            except RuleError as e:
+                errors.append(str(e))
                 continue
+            filters = filter_sets(rule)
+            if "at" in rule.when:
+                filters["watch"] = {self._watch(rule)}
             by_event.setdefault(rule.trigger, []).append(_Compiled(rule, filters))
             self.stats.setdefault(rule.id, RuleStats())
             self._st.setdefault(rule.id, _RuleState())
@@ -108,13 +109,13 @@ class RuleEngine(Component):
     def _watch(self, rule: Rule) -> str:
         """A rule on a point on track: watched like the corner cues, timed by what it will say."""
         plan = self.ctx.plan
-        target, corner = resolve_at(rule.match, self.ctx.cmap,
+        target, corner = resolve_at(rule.when["at"], float(rule.when.get("offset_m", 0.0)), self.ctx.cmap,
                                     lambda c: (cue.target_m if (cue := plan.cue_for(c)) is not None else None))
         tags = {"source": "rule"}
         if corner is not None:
             tags.update(corner=corner.id, corner_name=corner.name or f"Turn {corner.id}")
         says = [a for a in rule.actions if isinstance(a, Say)]
-        lead = float(rule.match.get("lead_s", 0.8 if says else 0.0))
+        lead = float(rule.when.get("lead_s", 0.8 if says else 0.0))
 
         def speak() -> float:
             env = {**self.pipe.channels, **self.state.variables(), "target_m": target, "corner": tags.get("corner"),
@@ -138,7 +139,7 @@ class RuleEngine(Component):
         for c in rules:
             if env is None:
                 env = {**self.pipe.channels, **self.state.variables(), **e.variables()}
-            if any(allowed is not None and env.get(key) not in allowed for key, allowed in c.filters.items()):
+            if any(env.get(key) not in allowed for key, allowed in c.filters.items()):
                 continue
             if c.rule.where is not None and not c.rule.where(env):
                 continue
@@ -149,7 +150,7 @@ class RuleEngine(Component):
     def _edge(self, rule: Rule, env: dict, now: float) -> bool:
         st = self._st[rule.id]
         holds = bool(rule.edge(env))
-        for_s, rearm_s = float(rule.match.get("for_s", 0.0)), float(rule.match.get("rearm_s", 1.0))
+        for_s, rearm_s = float(rule.when.get("for_s", 0.0)), float(rule.when.get("rearm_s", 1.0))
         if holds:
             st.false_since = None
             st.true_since = now if st.true_since is None else st.true_since

@@ -282,18 +282,21 @@ Created by the agent via the CLI (`live-rules` skill); stored per track in the w
 {
   "id": "bus-stop-early-brake",
   "track": "spa-2024-up",
-  "when": {"event": "corner_exit", "corner": "Bus Stop"},
+  "when": {"event": "corner_exit", "corner": 18},
   "if": "brake_diff_m < -10",
-  "action": {"say": "Bus Stop: braked {round5(-brake_diff_m)} metres early.", "priority": "feedback"},
+  "actions": [{"say": "Bus Stop: braked {round5(-brake_diff_m)} metres early.", "priority": "feedback"}],
   "limits": {"cooldown_laps": 1}
 }
 ```
 
-- **`when`**: any defined event, with filters on its fields (a value, a list, "any"; corner
-  fields take names) and an optional `where`. `approach` takes `at` (metres, or a corner and a
-  point, with `lead_s`/`offset_m`: a spoken line is timed to finish before it); `frame` takes
-  `edge` (a condition, edge-triggered with `for_s`/`rearm_s`). The earlier forms
-  (`{"corner_exit": "T9"}`, `{"at": "T9"}`, `{"every_laps": 5}`, ...) are shorthand for these.
+- **`when`**: any defined event, with filters on its fields (a value or a list; omitted means
+  any) and an optional `where`. `approach` takes `at` (`{"corner": N, "point": ...}` or
+  `{"metres": M}`, with `lead_s`/`offset_m`: a spoken line is timed to finish before it); `frame`
+  takes `edge` (a condition, edge-triggered with `for_s`/`rearm_s`).
+- **Strict schema, no normalising.** Rules are validated against a JSON Schema generated from the
+  event classes (`iagent rules schema`). Corners are integers from the corner map (`iagent corners
+  list --json`); names like "T9" are never parsed. The engineer's replies are structured the same
+  way (`claude -p --json-schema`: `{"say": ... | null}`).
 - **Conditions and text**: a restricted expression language (a Python-syntax subset parsed with
   `ast` and compiled to closures; no attribute access, subscripts or arbitrary calls). A missing
   value makes a comparison false and keeps a line with that hole unsaid.

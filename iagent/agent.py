@@ -10,6 +10,7 @@ Its stream-json output is turned into a few simple events:
 - {"type": "text", "text"}              more of that text
 - {"type": "tool", "id", "command"}     the coach ran a command (shown, not trusted)
 - {"type": "ui", "action"}              `iagent ui show` succeeded: highlight this on screen
+- {"type": "structured", "data"}        the reply, as the turn's JSON Schema asked (if one was given)
 - {"type": "done", "session_id", "is_error"}
 - {"type": "error", "message"}
 
@@ -43,9 +44,10 @@ class Agent(ABC):
 
     @abstractmethod
     def turn(self, prompt: str, system_prompt: str, session_id: str | None = None,
-             new_session: bool = False) -> Iterator[dict]:
+             new_session: bool = False, schema: dict | None = None) -> Iterator[dict]:
         """One turn, as events (see the module docstring), starting with {"type": "run", "run_id"}.
-        SESSION_ID continues that conversation, or starts it with that id when NEW_SESSION."""
+        SESSION_ID continues that conversation, or starts it with that id when NEW_SESSION.
+        SCHEMA (a JSON Schema) makes the reply structured: a {"type": "structured"} event."""
 
     @abstractmethod
     def stop(self, run_id: str) -> bool:
@@ -72,7 +74,8 @@ class ClaudeCode(Agent):
         proc.kill()
         return True
 
-    def command(self, system_prompt: str, session_id: str | None = None, new_session: bool = False) -> list[str]:
+    def command(self, system_prompt: str, session_id: str | None = None, new_session: bool = False,
+                schema: dict | None = None) -> list[str]:
         cmd = [self.claude, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
                "--append-system-prompt", system_prompt, "--permission-mode", "acceptEdits",
                "--allowedTools", *ALLOWED_TOOLS]
@@ -82,6 +85,8 @@ class ClaudeCode(Agent):
             cmd += ["--model", model]
         if session_id:
             cmd += ["--session-id" if new_session else "--resume", session_id]
+        if schema is not None:
+            cmd += ["--json-schema", json.dumps(schema)]
         return cmd
 
     def env(self) -> dict[str, str]:
@@ -92,7 +97,7 @@ class ClaudeCode(Agent):
         return env
 
     def turn(self, prompt: str, system_prompt: str, session_id: str | None = None,
-             new_session: bool = False) -> Iterator[dict]:
+             new_session: bool = False, schema: dict | None = None) -> Iterator[dict]:
         run_id = uuid.uuid4().hex
         yield {"type": "run", "run_id": run_id}
         if shutil.which(self.claude) is None:
@@ -102,7 +107,7 @@ class ClaudeCode(Agent):
         errors = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")  # never blocks the run
         try:
             proc = subprocess.Popen(
-                self.command(system_prompt, session_id, new_session), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors,
+                self.command(system_prompt, session_id, new_session, schema), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors,
                 text=True, encoding="utf-8", errors="replace", env=self.env(), cwd=self.workspace.parent,
             )
         except OSError as e:
@@ -183,7 +188,10 @@ class StreamParser:
             return out
         if kind == "result":
             self.finished = True
-            return [{"type": "done", "session_id": msg.get("session_id"), "is_error": bool(msg.get("is_error"))}]
+            out = []
+            if msg.get("structured_output") is not None:
+                out.append({"type": "structured", "data": msg["structured_output"]})
+            return [*out, {"type": "done", "session_id": msg.get("session_id"), "is_error": bool(msg.get("is_error"))}]
         return []
 
 
@@ -200,6 +208,11 @@ def _ui_action(content) -> dict | None:
         if isinstance(data, dict) and isinstance(data.get("ui_action"), dict):
             return data["ui_action"]
     return None
+
+
+def structured(events: Iterable[dict]) -> dict | None:
+    """The turn's structured reply (when it was asked for with a schema)."""
+    return next((e["data"] for e in events if e["type"] == "structured"), None)
 
 
 def final_text(events: Iterable[dict]) -> str | None:

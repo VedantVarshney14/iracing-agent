@@ -207,21 +207,26 @@ A rule is data: an event, an optional condition, actions and limits
 
 ```json
 {"id": "bus-stop-early-brake", "track": "spa-2024-up",
- "when": {"event": "corner_exit", "corner": "Bus Stop"},
+ "when": {"event": "corner_exit", "corner": 18},
  "if": "brake_diff_m < -10",
- "action": {"say": "{name}: braked {round5(-brake_diff_m)} metres early.", "priority": "feedback"},
+ "actions": [{"say": "{name}: braked {round5(-brake_diff_m)} metres early.", "priority": "feedback"}],
  "limits": {"cooldown_laps": 1}}
 ```
 
-- **`when`** names any event and filters on its fields (a value, a list, "any"; corner fields
-  accept names). `approach` takes `at` (a point on track: metres, or "T9", "T9 apex", with
-  `lead_s`/`offset_m`, timed so a spoken line finishes before it); `frame` takes `edge` (a
-  condition, edge-triggered). Short forms (`{"corner_exit": "T9"}`, `{"every_laps": 5}`, ...) expand
-  to these.
+- **Strict, structured, never normalised.** The format is a JSON Schema generated from the event
+  classes ([`rules/schema.py`](iagent/live/rules/schema.py), `iagent rules schema`): each event's
+  `when` allows exactly its own fields, typed from the dataclass (a corner is an integer). Nothing
+  turns "T9" or "turn 9" into 9: the writer (the agent) looks the number up in the corner map
+  (`iagent corners list --json`), and a rule naming a corner the track doesn't have is rejected
+  with the corners it does have. Errors name the field (`when.corner: 'T9' is not valid ...`).
+- **`when`** names any event and filters on its fields (a value or a list; leave a field out for
+  any) and an optional `where` condition. `approach` takes `at` (`{"corner": 9, "point": "apex"}`
+  or `{"metres": 1830}`, with `lead_s`/`offset_m`, timed so a spoken line finishes before it);
+  `frame` takes `edge` (a condition, edge-triggered with `for_s`/`rearm_s`).
 - **Conditions and text** use a small expression language ([`expr.py`](iagent/live/expr.py)): a
   Python-syntax subset compiled to closures, no attribute access or arbitrary calls. A missing
   value makes a comparison false and keeps a line with that hole unsaid.
-- **Actions** are subclasses of `Action` ([`rules/actions.py`](iagent/live/rules/actions.py)):
+- **Actions** (a list) are subclasses of `Action` ([`rules/actions.py`](iagent/live/rules/actions.py)):
   `Say` (priority, a `long` version for when there's time, kind, expiry), `WakeEngineer` (the
   engineer is asked and may answer on the radio) and `Log`.
 - **Limits**: `cooldown_s`, `cooldown_laps`, `max_per_lap`, `max_per_session`, `once`,
@@ -289,6 +294,10 @@ sequenceDiagram
   | the briefing | 4 | 90 s |
   | the wrap-up | 5 | 10 min |
 
+- **Structured replies.** Each kind of turn (`TURNS` in `engineer.py`) asks for a reply in a JSON
+  Schema (`claude -p --json-schema`): `{"say": "..." | null}` for words on the radio,
+  `{"changed": "..."}` for the wrap-up. What's spoken is a field, and silence is `null`: no
+  parsing of free text, no magic "SILENT" word.
 - **It listens.** Each turn starts with what went out on the radio and the laps since its last
   turn, so it knows what the driver heard.
 - **Isolated.** Its own conversation, the coach plugin, and only the tools the coach needs
@@ -348,7 +357,7 @@ class KerbDetector(Component):
 
 ```json
 {"id": "kerbs", "when": {"event": "kerb_strike"}, "if": "jolt > 25",
- "action": {"say": "Easy on the kerbs."}, "limits": {"cooldown_laps": 2}}
+ "actions": [{"say": "Easy on the kerbs."}], "limits": {"cooldown_laps": 2}}
 ```
 
 **A new reason to keep quiet.** A `Gate` in `GATES`. **A new cause of lost time.** A `Cause`

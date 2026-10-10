@@ -833,16 +833,18 @@ def cues_set(ctx: Ctx, track: str, car: str, corner: int, text: str, source: str
 
 @cli.group()
 def rules():
-    """Rules the coach sets for the live service: when to say what (or wake the coach).
+    """Rules the coach sets for the live service: when to say what (or wake the engineer).
 
-    A rule is JSON: a trigger (`when`), an optional condition (`if`), actions and limits. Add it
-    (a draft), backtest it against recorded sessions, then activate it; the live coach picks up
-    active rules, also mid-session. `iagent rules vars` lists what each trigger provides.
+    A rule is JSON, validated against `iagent rules schema`: an event (`when`), an optional
+    condition (`if`), actions and limits. Corners are the corner map's numbers (`iagent corners
+    list --track T --json`). Add it (a draft), backtest it against recorded sessions, then activate
+    it; the live coach picks up active rules, also mid-session. `iagent rules vars` lists what each
+    event provides.
 
     \b
     iagent rules add '{"id": "pouhon-wide", "track": "spa-2024-up",
-      "when": {"corner_exit": "Pouhon"}, "if": "off_track_m > 5", "in_a_row": 2,
-      "action": {"say": "Pouhon: wide twice now. Tighter entry."}}'
+      "when": {"event": "corner_exit", "corner": 10}, "if": "off_track_m > 5", "in_a_row": 2,
+      "actions": [{"say": "Pouhon: wide twice now. Tighter entry."}]}'
     iagent rules backtest pouhon-wide
     iagent rules activate pouhon-wide
     """
@@ -863,7 +865,7 @@ def _read_rule(text: str) -> dict:
 
 
 def _when(rule) -> str:
-    extra = " ".join(f"{k}={v}" for k, v in rule.match.items() if k != "event")
+    extra = " ".join(f"{k}={v}" for k, v in rule.when.items() if k != "event")
     return rule.trigger + (f" ({extra})" if extra else "")
 
 
@@ -971,7 +973,14 @@ def rules_vars(event: str | None, as_json: bool):
         click.echo(f"{title}:")
         for k, v in info[key].items():
             click.echo(f"  {k:<22} {v}")
-    click.echo(f"shorthand for `when`: {', '.join(info['shorthand'])}")
+
+
+@rules.command("schema")
+def rules_schema():
+    """The JSON Schema rules are validated against (generated from the live coach's events)."""
+    from iagent.live.rules import rule_schema
+
+    _emit(rule_schema())
 
 
 @rules.command("backtest")

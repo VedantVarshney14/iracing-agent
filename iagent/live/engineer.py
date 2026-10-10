@@ -32,7 +32,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Callable
 
-from iagent.agent import ClaudeCode, final_text
+from iagent.agent import ClaudeCode, structured
 
 logger = logging.getLogger("iagent.live")
 
@@ -40,24 +40,22 @@ SYSTEM = """\
 You're the driver's race engineer and driving coach for this whole iRacing session, on the radio.
 This conversation is the session: earlier turns are what you've already said and heard. Each turn
 starts with what went out on the radio since your last turn (the live coach's cues and feedback,
-which the driver heard) and the laps driven. Whatever you reply is spoken to the driver by
-text-to-speech, word for word, unless the request says otherwise. Talk like a good race engineer:
+which the driver heard) and the laps driven. Your reply is structured: what you put in `say` is
+spoken to the driver by text-to-speech, word for word. Talk like a good race engineer:
 natural, calm, specific, encouraging but honest, and consistent with what you've said before.
 Plain spoken English: no markdown, no lists, no quotes, numbers the way people say them ("about
 twenty metres", "three tenths"). Facts the live coach measured are given: use them as they are,
-and only run `iagent` commands when you really need more, because the driver is waiting. If
-there's nothing worth saying, reply SILENT."""
+and only run `iagent` commands when you really need more, because the driver is waiting. When
+there's nothing worth saying, `say` is null."""
 
-# kind -> (priority: lower first, how long a request stays worth answering, in seconds)
-KINDS: dict[str, tuple[int, float]] = {
-    "question": (0, 60.0),
-    "debrief": (1, 20.0),
-    "wake": (2, 20.0),
-    "briefing": (3, 90.0),
-    "wrap_up": (4, 600.0),
-}
+# Replies are structured (`claude -p --json-schema`): no parsing of free text.
+SAY = {"type": "object", "additionalProperties": False, "required": ["say"], "properties": {
+    "say": {"type": ["string", "null"],
+            "description": "the words spoken to the driver (plain spoken English), or null to say nothing"}}}
+NOTES = {"type": "object", "additionalProperties": False, "required": ["changed"], "properties": {
+    "changed": {"type": "string", "description": "one line: what you changed in the notes"}}}
 
-Turn = Callable[[str, str, bool], tuple[str | None, bool]]  # (prompt, session id, resume) -> (reply, conversation exists)
+Turn = Callable[[str, str, bool, dict], tuple[dict | None, bool]]  # (prompt, session id, resume, schema) -> (reply, exists)
 
 
 @dataclass(order=True)
@@ -66,6 +64,7 @@ class _Request:
     seq: int
     kind: str = field(compare=False)
     prompt: str = field(compare=False)
+    schema: dict = field(compare=False)
     context: dict = field(compare=False)
     on_reply: Callable[[str | None], None] = field(compare=False)
     deadline: float = field(compare=False)
@@ -89,12 +88,12 @@ class Engineer:
     @classmethod
     def over(cls, runner: ClaudeCode, session_id: str | None = None) -> "Engineer":
         """An engineer whose turns are the driver's Claude Code (`claude -p`)."""
-        def turn(prompt: str, sid: str, resume: bool) -> tuple[str | None, bool]:
-            events = list(runner.turn(prompt, SYSTEM, sid, new_session=not resume))
+        def turn(prompt: str, sid: str, resume: bool, schema: dict) -> tuple[dict | None, bool]:
+            events = list(runner.turn(prompt, SYSTEM, sid, new_session=not resume, schema=schema))
             for e in events:
                 if e["type"] == "error":
                     logger.warning("The engineer's turn failed: %s", e["message"])
-            return final_text(events), any(e["type"] in ("session", "done") for e in events)
+            return structured(events), any(e["type"] in ("session", "done") for e in events)
         return cls(turn, session_id)
 
     # --- what it hears -------------------------------------------------------------------------
@@ -107,12 +106,12 @@ class Engineer:
 
     # --- what it's asked -----------------------------------------------------------------------
 
-    def request(self, kind: str, prompt: str, context: dict, on_reply: Callable[[str | None], None],
+    def request(self, kind: str, payload: dict, context: dict, on_reply: Callable[[str | None], None],
                 min_gap_s: float = 0.0) -> bool:
-        """Queue a turn; ON_REPLY gets the words (None: nothing to say, too late, or it failed).
-        False if one of this kind is already waiting or running (questions always queue), or
-        the last was under MIN_GAP_S ago."""
-        priority, wait = KINDS.get(kind, (5, 60.0))
+        """Queue a turn of KIND (a key of TURNS) made from PAYLOAD; ON_REPLY gets the words (None:
+        nothing to say, too late, or it failed). False if one of this kind is already waiting or
+        running (questions always queue), or the last was under MIN_GAP_S ago."""
+        spec = TURNS[kind]
         now = time.monotonic()
         with self._cv:
             if self._closed:
@@ -121,7 +120,8 @@ class Engineer:
                 return False
             self._busy.add(kind)
             self._last[kind] = now
-            heapq.heappush(self._queue, _Request(priority, next(self._seq), kind, prompt, context, on_reply, now + wait))
+            heapq.heappush(self._queue, _Request(spec.priority, next(self._seq), kind, spec.prompt(payload), spec.schema,
+                                                 context, on_reply, now + spec.wait_s))
             if self._thread is None:
                 self._thread = threading.Thread(target=self._work, name="engineer", daemon=True)
                 self._thread.start()
@@ -173,13 +173,13 @@ class Engineer:
             parts.append("<session>\n" + _context(req.context) + "\n</session>")
         parts.append(req.prompt)
         try:
-            reply, exists = self._turn("\n\n".join(parts), self.session_id, self._exists)
+            reply, exists = self._turn("\n\n".join(parts), self.session_id, self._exists, req.schema)
         except Exception:
             logger.exception("Engineer: the turn failed")
             return None
         self._exists = self._exists or exists
         self.turns += 1
-        return reply
+        return TURNS[req.kind].words(reply) if isinstance(reply, dict) else None
 
 
 def _context(ctx: dict) -> str:
@@ -214,7 +214,6 @@ def debrief_prompt(f: dict) -> str:
     lines += ["", "<facts>", json.dumps(f, indent=1), "</facts>", "",
               "The live coach's own phrasing, if you have nothing better:"]
     lines += [f"- {t}" for t in f.get("fallback", [])]
-    lines.append("\nReply with only what to say.")
     return "\n".join(lines)
 
 
@@ -226,9 +225,9 @@ def wake_prompt(wake: dict, state: dict) -> str:
              f"Lap {state.get('lap')}, focus: {state.get('focus_label') or 'none'}."]
     if state.get("crewchief"):
         lines.append("CrewChief is running and reads lap times, gaps and personal bests: don't repeat those.")
-    lines += ["", "If something is worth saying to the driver now, reply with only that. If not, reply SILENT. You may "
-              "also change rules for later with `iagent rules` (they reload within ten seconds), but only if the driver "
-              "asked for it or a rule is clearly wrong."]
+    lines += ["", "If something is worth saying to the driver now, put it in `say`; if not, `say` is null. You may also "
+              "change rules for later with `iagent rules` (they reload within ten seconds), but only if the driver asked "
+              "for it or a rule is clearly wrong."]
     return "\n".join(lines)
 
 
@@ -238,8 +237,29 @@ def question_prompt(text: str) -> str:
 
 
 def wrap_up_prompt(f: dict) -> str:
-    return ("The session is over; the driver is back in the pits. This isn't spoken. Update your notes for this "
+    return ("The session is over; the driver is back in the pits. Nothing is spoken now. Update your notes for this "
             f"track (`{f['notes']}` in the workspace; create it if there isn't one): what the driver worked on, what "
             "changed, what still costs the most, and what to start with next session. Keep it short and keep what's "
-            "still true from before. Reply with one line saying what you changed.\n\n<facts>\n"
+            "still true from before. In `changed`, one line saying what you changed.\n\n<facts>\n"
             + json.dumps(f, indent=1) + "\n</facts>")
+
+
+@dataclass(frozen=True)
+class TurnKind:
+    """A kind of turn: how urgent, how long it stays worth answering, what's asked, and the
+    structured reply wanted (and which of its fields are the words)."""
+
+    priority: int  # lower first
+    wait_s: float  # dropped if it can't start within this
+    prompt: Callable[[dict], str]  # the request's payload -> the prompt
+    schema: dict = field(default_factory=lambda: SAY)
+    words: Callable[[dict], str | None] = lambda r: r.get("say")
+
+
+TURNS: dict[str, TurnKind] = {
+    "question": TurnKind(0, 60.0, lambda p: question_prompt(p["text"])),
+    "debrief": TurnKind(1, 20.0, lambda p: debrief_prompt(p["facts"])),
+    "wake": TurnKind(2, 20.0, lambda p: wake_prompt(p["wake"], p["state"])),
+    "briefing": TurnKind(3, 90.0, lambda p: briefing_prompt(p["facts"])),
+    "wrap_up": TurnKind(4, 600.0, lambda p: wrap_up_prompt(p["facts"]), NOTES, lambda r: r.get("changed")),
+}

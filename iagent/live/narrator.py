@@ -8,30 +8,16 @@ answers when a rule wakes it, words the cool-down debrief, and writes up its not
 `Radio` is the pipeline's side of that. It tells the engineer what went out on the radio and the
 laps driven (as a real engineer hears it), puts `narrate` requests to it, and hands the replies
 back through the pipeline's inbox as the event the request named, so the coach never waits; if
-no reply comes in time, the coach says its own words. Corner cues are never generated: they must
-be instant and exactly timed.
+no reply comes in time, the coach says its own words. Replies are structured (a JSON Schema per
+kind of turn, `engineer.TURNS`), so nothing is parsed out of free text. Corner cues are never
+generated: they must be instant and exactly timed.
 """
 
-import re
-from typing import Callable
 
-from iagent.live import engineer as eng
+import re
+
 from iagent.live.events import EVENTS, CoachWords, Lap, Line, Narrate, NarrationAsked, NotesWritten, SessionEnd, SessionStart
 from iagent.live.pipeline import Component, on
-
-SILENT = "SILENT"
-
-
-def clean(reply: str | None) -> str | None:
-    """Spoken text only: no markdown, quotes or stage directions; SILENT means nothing to say."""
-    if not reply:
-        return None
-    text = re.sub(r"[*_`#>]+", "", reply).strip().strip('"').strip()
-    text = re.sub(r"\s+", " ", text)
-    if not text or text.upper().rstrip(".") == SILENT:
-        return None
-    return text
-
 
 def chunks(text: str, max_chars: int = 140) -> list[str]:
     """Split a longer reply into radio-sized pieces at sentence ends, so a car alongside or the
@@ -46,16 +32,6 @@ def chunks(text: str, max_chars: int = 140) -> list[str]:
     return [c for c in out if c]
 
 
-# How each kind of request is put to the engineer: kind -> (the request's payload -> prompt).
-PROMPTS: dict[str, Callable[[dict], str]] = {
-    "briefing": lambda p: eng.briefing_prompt(p["facts"]),
-    "debrief": lambda p: eng.debrief_prompt(p["facts"]),
-    "wake": lambda p: eng.wake_prompt(p["wake"], p["state"]),
-    "question": lambda p: eng.question_prompt(p["text"]),
-    "wrap_up": lambda p: eng.wrap_up_prompt(p["facts"]),
-}
-
-
 class Radio(Component):
     """Between the pipeline and the engineer (if there is one: `ctx.engineer`)."""
 
@@ -67,9 +43,10 @@ class Radio(Component):
         reply_cls, asked_at = EVENTS[e.reply], e.at
 
         def reply(text: str | None) -> None:
-            self.pipe.post(reply_cls(text=clean(text), asked_at=asked_at, stretch=e.stretch, rule=e.rule, kind=e.kind))
+            words = text.strip() if text else None
+            self.pipe.post(reply_cls(text=words or None, asked_at=asked_at, stretch=e.stretch, rule=e.rule, kind=e.kind))
         context = self.ctx.radio_context() if self.ctx.radio_context else {}
-        if engineer.request(e.kind, PROMPTS[e.kind](e.payload), context, reply, e.min_gap_s):
+        if engineer.request(e.kind, e.payload, context, reply, e.min_gap_s):
             self.emit(NarrationAsked(kind=e.kind, reply=e.reply, stretch=e.stretch))
 
     # --- what the engineer hears and is asked, as a real one would be --------------------------

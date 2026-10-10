@@ -111,7 +111,7 @@ class KerbDetector(Component):
 
 def test_a_new_event_component_and_rule_need_nothing_but_their_definitions(root):
     rule = Rule.from_dict({"id": "kerbs", "when": {"event": "kerb_strike"}, "if": "jolt > 20",
-                           "action": {"say": "Kerb, {count} so far."}, "limits": {"max_per_lap": 1}})
+                           "actions": [{"say": "Kerb, {count} so far."}], "limits": {"max_per_lap": 1}})
     assert describe()["events"]["kerb_strike"]["fields"]["jolt"].startswith("vertical")  # documented by itself
     ws = Workspace(root)
     try:

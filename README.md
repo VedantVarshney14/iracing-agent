@@ -302,30 +302,38 @@ run with no model involved. Its own cues, feedback, summaries and debriefs are b
 the coach (or you) can add more. The `live-rules` skill writes them.
 
 ```bash
+iagent corners list --track spa-2024-up --json   # the corners' numbers: Pouhon is 9
 iagent rules add '{"id": "pouhon-wide", "track": "spa-2024-up",
-  "when": {"corner_exit": "Pouhon"}, "if": "off_track_m > 5", "in_a_row": 2,
-  "action": {"say": "Pouhon: wide twice now. Tighter entry."}}'
+  "when": {"event": "corner_exit", "corner": 9}, "if": "off_track_m > 5", "in_a_row": 2,
+  "actions": [{"say": "Pouhon: wide twice now. Tighter entry."}]}'
 iagent rules backtest pouhon-wide        # replay recent sessions: where it fires, what's said
 iagent rules activate pouhon-wide        # live (a running coach picks it up within ~10 s)
 iagent rules list
 iagent rules vars                        # every event, its fields, the shared state, functions
+iagent rules schema                      # the exact format, as JSON Schema
 ```
 
+- **One strict format.** A rule is checked against a JSON Schema generated from the event
+  definitions (`iagent rules schema`): no shorthand and no guessing. Corners are the corner map's
+  numbers (`iagent corners list --json`), not names like "T9" or "Pouhon" to be parsed; whoever
+  writes the rule (the agent, usually) looks the number up. A rule the schema rejects says which
+  field is wrong.
 - **Events:** `when` names any event the live coach knows (`{"event": "corner_exit", "corner":
-  "Pouhon"}`), with filters on its fields. Among them: a point on track (`{"at": "T9"}`: timed to
-  finish before the reference brake point, or `"T9 apex"`, metres, `lead_s`, `offset_m`), a corner
-  exit with that corner's numbers against the reference (`brake_diff_m`, `min_speed_diff_kph`,
-  `off_track_m`, ...), lap complete (`new_best`, `gap_s`, ...), pit entry/exit, pace or focus
-  changes, a cool-down, a condition on live channels (`{"condition": "speed_kph > 280"}`,
-  edge-triggered), and schedules (`every_laps`, `every_s`, ...). `iagent rules vars` lists them
-  all, generated from their definitions.
+  9}`; a list for several), with filters on its fields and an optional `where` condition. Among
+  them: a point on track (`{"event": "approach", "at": {"corner": 9}}`: timed to finish before
+  the reference brake point; `"point": "apex"` / `"entry"` / `"exit"`, or `{"metres": 1830}`, with
+  `lead_s` and `offset_m`), a corner exit with that corner's numbers against the reference
+  (`brake_diff_m`, `min_speed_diff_kph`, `off_track_m`, ...), a lap (`new_best`, `gap_s`, ...;
+  `"where": "lap % 5 == 0"` for every fifth), pit entry/exit, pace or focus changes, and a
+  condition on live channels (`{"event": "frame", "edge": "speed_kph > 280"}`, edge-triggered).
+  `iagent rules vars` lists them all, generated from their definitions.
 - **Conditions and text** use a small, safe expression language: arithmetic, comparisons,
   `and`/`or`/`not`, `in`, and helpers like `round5()` and `say_time()`. Spoken text has
   `{expression}` holes. A missing value (a corner taken without braking has no `brake_m`)
   makes the condition false rather than failing.
-- **Actions:** `say` (cue, feedback or summary priority, through the same speech rules as the
+- **Actions** (a list, run in order): `say` (cue, feedback or summary priority, through the same speech rules as the
   cues; add `"long"` for a fuller version said when you're not pushing), `log`, and `wake`
-  (the coach answers on the radio in its own words, or stays silent).
+  (the engineer answers on the radio in its own words, or stays silent).
 - **Limits:** cooldowns, per-lap and per-session caps, `once`, `in_a_row`. Rules ignore out
   laps, cool-downs and moments unless `"pushing_only": false`.
 - **Safe to change:** a new or edited rule is a draft until it has been backtested and activated.

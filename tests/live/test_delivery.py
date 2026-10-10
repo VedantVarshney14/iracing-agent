@@ -111,18 +111,18 @@ def test_crewchief_quiet_window_after_the_line(root):
 
 
 def test_rules_that_duplicate_crewchief_are_flagged():
-    lap_time = Rule.from_dict({"id": "a", "when": {"lap": "complete"}, "action": {"say": "{say_time(lap_time)}."}})
-    pb = Rule.from_dict({"id": "b", "when": {"lap": "complete"}, "if": "new_best", "action": {"say": "New best."}})
-    coaching = Rule.from_dict({"id": "c", "when": {"lap": "complete"}, "if": "worst_delta_s > 0.3",
-                               "action": {"say": "{worst_name} again."}})
+    lap_time = Rule.from_dict({"id": "a", "when": {"event": "lap"}, "actions": [{"say": "{say_time(lap_time)}."}]})
+    pb = Rule.from_dict({"id": "b", "when": {"event": "lap"}, "if": "new_best", "actions": [{"say": "New best."}]})
+    coaching = Rule.from_dict({"id": "c", "when": {"event": "lap"}, "if": "worst_delta_s > 0.3",
+                               "actions": [{"say": "{worst_name} again."}]})
     assert "lap times" in crewchief.overlaps(lap_time) and "personal bests" in crewchief.overlaps(pb)
     assert crewchief.overlaps(coaching) is None
     assert crewchief.resolve("on") and not crewchief.resolve("off") and crewchief.resolve(True)
 
 
 def test_a_rule_can_say_more_when_the_driver_is_cruising(root):
-    rule = Rule.from_dict({"id": "cool", "when": {"pace": "tranquille"}, "action": {
-        "say": "Cool-down. Tyres.", "long": "Cool-down lap. Keep some heat in the tyres, gentle weaving on the straights."}})
+    rule = Rule.from_dict({"id": "cool", "when": {"event": "pace", "mode": "tranquille"}, "actions": [{
+        "say": "Cool-down. Tyres.", "long": "Cool-down lap. Keep some heat in the tyres, gentle weaving on the straights."}]})
     assert Rule.from_dict(rule.to_dict()).actions[0].longer.text.startswith("Cool-down lap.")
     kinds = [LapKind.CLEAN, LapKind.CLEAN, LapKind.SLOW, LapKind.CLEAN]
     coach, _, _ = drive(root, kinds, Settings(learning_laps=1, debrief=False, debrief_after_s=5.0), [rule])
