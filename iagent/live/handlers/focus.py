@@ -10,10 +10,10 @@ Sets `focus_news` on `Lap` ("Focus now: Turn 5."); saying it is a rule (`builtin
 
 from iagent.live import phrasing
 from iagent.live.events import Error, FocusChanged, Lap, SessionStart, SetFocus
-from iagent.live.pipeline import Component, enrich, on
+from iagent.live.pipeline import EventHandler, enrich, on
 
 
-class Focus(Component):
+class Focus(EventHandler):
     def start(self):
         self.manual = False
         self.cue_losses: list[dict[int, float]] = []  # per lap at pace: cue -> time lost (s)

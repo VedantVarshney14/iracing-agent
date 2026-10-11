@@ -7,7 +7,7 @@ its own through the CLI (`iagent.live.rulebook`).
 
 - `schema`: the rule format, a JSON Schema generated from the events (`rule_schema`), and `Rule`;
 - `actions`: what a rule does when it fires (`Say`, `WakeEngineer`, `Log`: subclasses of `Action`);
-- `engine`: the pipeline component that evaluates them (`RuleEngine`), with limits and groups.
+- `engine`: the event handler that evaluates them (`RuleEngine`), with limits and groups.
 """
 
 from iagent.live.events import EVENTS

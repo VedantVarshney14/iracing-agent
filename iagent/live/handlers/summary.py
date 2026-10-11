@@ -6,10 +6,10 @@ times, only the coaching part.
 
 from iagent.live import phrasing
 from iagent.live.events import Lap
-from iagent.live.pipeline import Component, enrich
+from iagent.live.pipeline import EventHandler, enrich
 
 
-class Summary(Component):
+class Summary(EventHandler):
     @enrich(Lap)
     def words(self, e: Lap):
         if e.lap_time is None:

@@ -10,11 +10,11 @@ it is a rule (`builtin_rules`).
 
 from iagent.live import phrasing
 from iagent.live.events import Approach, Frame, Watch
-from iagent.live.pipeline import Component, enrich, on
+from iagent.live.pipeline import EventHandler, enrich, on
 from iagent.live.speech import Utterance
 
 
-class CueCaller(Component):
+class CueCaller(EventHandler):
     def start(self):
         for cue in self.ctx.plan.cues:
             self.emit(Watch(id=f"cue:{cue.corner}", target_m=cue.target_m, lead_s=self.settings.lead_s,

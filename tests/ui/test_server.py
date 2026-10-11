@@ -36,7 +36,7 @@ def add_reference(root, source, rec, driver: str):
     session = dataclasses.replace(source.session, session_id=f"g61-{driver.lower()}")
     lap = csv_to_lap(to_garage61_csv(raw, source.session.track_length_m), session, rec.lap_time)
     refs = ParquetLapStore(root / "reference")
-    saved = refs.save(lap, "garage61")
+    saved = refs.save(lap)
     refs.close()
     meta = root / "reference" / "meta" / f"{saved.lap_id}.json"
     meta.parent.mkdir(parents=True, exist_ok=True)

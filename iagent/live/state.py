@@ -1,7 +1,7 @@
-"""The live coach's shared state: what components know and every rule can read.
+"""The live coach's shared state: what event handlers know and every rule can read.
 
-One typed object, maintained by the components (each field says which) and read by the others and
-by rules (as variables of the same names). Components talk only through events and this state.
+One typed object, maintained by the event handlers (each field says which) and read by the others and
+by rules (as variables of the same names). Event handlers talk only through events and this state.
 """
 
 from dataclasses import dataclass, fields

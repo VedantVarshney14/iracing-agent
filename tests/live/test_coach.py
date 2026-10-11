@@ -7,7 +7,7 @@ from iagent.cli import cli
 from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live.coach import LiveCoach, Settings
-from iagent.live.components import Debrief
+from iagent.live.handlers import Debrief
 from iagent.live import phrasing
 from iagent.live.cues import Cue, build_plan, load_plan, merge_close, save_plan
 from iagent.live.speech import Arbiter, CapturedVoice

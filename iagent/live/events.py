@@ -1,12 +1,15 @@
 """The live coach's events: everything that happens, as typed dataclasses.
 
 Every event is a subclass of `Event` with its fields declared (and documented) on the class, so
-an event's schema is its class. The pipeline delivers them, components act on them
+an event's schema is its class. The pipeline delivers them, event handlers act on them
 (`iagent.live.pipeline`), rules are written against them by `name`, and `iagent rules vars` lists
 them from these classes. A new event is a new class here (or anywhere: subclassing registers it).
 
-Fields are declared with `doc(...)`: a description, and whether it's a corner (rules accept a
-corner's name for it) or internal (objects for components only: not logged, not for rules).
+Fields are declared with `doc(...)`: a description, and whether it's a corner (a corner number
+from the corner map) or internal (objects for handlers only: not logged, not for rules).
+
+Only named classes are events the pipeline carries; a class without a `name` (`AtTheLine`,
+`Reply`) is a base that groups the fields its events share, and a handler of it sees them all.
 """
 
 from dataclasses import dataclass, field, fields
@@ -140,10 +143,10 @@ class CoolDown(Event):
 
 
 @dataclass(kw_only=True)
-class Crossing(Event):
-    """The car crossed the start/finish line (every lap, counted or not). Components add what they
-    know about the lap just finished; a counted one becomes a `Lap`."""
-    name: ClassVar[str] = "crossing"
+class AtTheLine(Event):
+    """The car reached the start/finish line: what's known about the lap just finished. Never
+    emitted itself: it is either a `Crossing` (every lap) or a `Lap` (a counted one), and a handler
+    of `AtTheLine` sees both."""
     complete: bool = doc("the lap ran line to line", False)
     clean: bool = doc("it started at the line and stayed off pit road", False)
     pace: str = doc('"pushing", "moment" or "tranquille"', "pushing")
@@ -152,12 +155,19 @@ class Crossing(Event):
     slow: list = doc("[from_m, to_m] stretches not pushing", factory=list)
     moment_at: int | None = doc("corner where a moment started, or none", corner=True)
     corners: list = doc("[{corner, delta_s}] for the corners driven at pace", factory=list)
-    segment: Any = doc("the lap's samples (iagent.laps.segment.Lap)", internal=True)
+    segment: Any = doc("the lap's samples (iagent.laps.lap.Lap)", internal=True)
     results: list = doc("the corners at pace (CornerResult)", internal=True, factory=list)
 
 
 @dataclass(kw_only=True)
-class Lap(Crossing):
+class Crossing(AtTheLine):
+    """The car crossed the start/finish line (every lap, counted or not). Handlers add what they
+    know about the lap just finished; a counted one is then a `Lap` as well."""
+    name: ClassVar[str] = "crossing"
+
+
+@dataclass(kw_only=True)
+class Lap(AtTheLine):
     """A counted lap, at the line: complete, from the line, no pit road."""
     name: ClassVar[str] = "lap"
     log: ClassVar[bool] = True

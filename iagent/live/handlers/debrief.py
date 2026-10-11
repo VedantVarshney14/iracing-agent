@@ -10,12 +10,12 @@ from iagent.live import phrasing
 from iagent.live.events import (CoolDown, DebriefGiven, DebriefLine, DebriefWords, Frame, Lap, Narrate, NarrationAsked,
                                 PaceChanged, Slowing)
 from iagent.live.narrator import chunks
-from iagent.live.pipeline import Component, enrich, on
+from iagent.live.pipeline import EventHandler, enrich, on
 
 CAUSE_MEANINGS = {c.name: c.doc for c in phrasing.CAUSES}
 
 
-class Debrief(Component):
+class Debrief(EventHandler):
     def start(self):
         self.results: list[list] = []  # per counted lap: the corners at pace
         self._reset(None)

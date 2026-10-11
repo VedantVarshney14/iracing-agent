@@ -12,10 +12,10 @@ from collections import deque
 import numpy as np
 
 from iagent.live.events import CoolDown, Crossing, Frame, Lap, PaceChanged, Slowing
-from iagent.live.pipeline import Component, enrich, on
+from iagent.live.pipeline import EventHandler, enrich, on
 
 
-class Pace(Component):
+class Pace(EventHandler):
     def start(self):
         ctx = self.ctx
         self.length = ctx.plan.length_m

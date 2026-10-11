@@ -1,13 +1,13 @@
 """Where the car is: on track or not, a car alongside, pit road."""
 
 from iagent.live.events import Crossing, Frame, Pit
-from iagent.live.pipeline import Component, enrich, on
+from iagent.live.pipeline import EventHandler, enrich, on
 from iagent.telemetry.frames import SURFACE_OFF_TRACK, SURFACE_ON_TRACK
 
 CAR_ALONGSIDE = 2  # iRacing's CarLeftRight: 0 off, 1 clear, 2+ a car (or cars) alongside
 
 
-class Track(Component):
+class Track(EventHandler):
     def start(self):
         self._pit: bool | None = None
 

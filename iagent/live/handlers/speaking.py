@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from iagent.live.events import FrameDone, Line
 from iagent.live.expr import Expr
-from iagent.live.pipeline import Component, on
+from iagent.live.pipeline import EventHandler, on
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,7 @@ GATES = [
     Gate("in a corner", "in_corner and pushing", cues_only=True, why="in a corner"),
 ]
 
-class Speaking(Component):
+class Speaking(EventHandler):
     def start(self):
         self._gates = [(g, Expr(g.when)) for g in GATES]
         self._active: set[str] = set()

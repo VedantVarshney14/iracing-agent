@@ -1,6 +1,6 @@
 """Everything the coach says, worded in one place.
 
-Components decide what matters; this module decides how it sounds. Templates read like an
+Event handlers decide what matters; this module decides how it sounds. Templates read like an
 engineer on the radio: the short form for a driver who's busy, the longer one (what, why, how)
 for one with time to listen.
 

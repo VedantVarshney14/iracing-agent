@@ -3,13 +3,13 @@
 from dataclasses import fields
 
 from iagent.laps.segment import LapSegmenter
-from iagent.live.events import Crossing, Frame, Lap
-from iagent.live.pipeline import Component, enrich, on
+from iagent.live.events import AtTheLine, Crossing, Frame, Lap
+from iagent.live.pipeline import EventHandler, enrich, on
 
 
-class Laps(Component):
+class Laps(EventHandler):
     """Each line crossing is a `Crossing` (handled before the rest of the frame: the frame belongs
-    to the new lap); a complete, clean one becomes a counted `Lap`."""
+    to the new lap); a complete, clean one is followed by a counted `Lap`."""
 
     def start(self):
         self._segmenter = LapSegmenter(self.ctx.session)
@@ -37,5 +37,5 @@ class Laps(Component):
         st.learning = st.lap < self.settings.learning_laps
         ref, lap_time = self.ctx.plan.ref_lap_time, e.segment.lap_time
         gap = round(lap_time - ref, 3) if lap_time and ref else None
-        carried = {f.name: getattr(e, f.name) for f in fields(Crossing) if f.name != "at"}
+        carried = {f.name: getattr(e, f.name) for f in fields(AtTheLine) if f.name != "at"}
         self.emit(Lap(**carried, lap=st.lap, lap_time=lap_time, gap_s=gap))

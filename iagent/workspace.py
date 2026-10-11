@@ -11,8 +11,9 @@ from pathlib import Path
 import pandas as pd
 
 from iagent.analysis.corners import CornerMap, derive_corner_map, load_map, save_map
+from iagent.laps.lap import Lap
 from iagent.laps.pace import group_of, representative
-from iagent.laps.store import LapRecord, ParquetLapStore
+from iagent.laps.store import ParquetLapStore
 
 logger = logging.getLogger("iagent.workspace")
 
@@ -53,7 +54,7 @@ class Workspace:
             if store is not None:
                 store.close()
 
-    def find(self, lap_id: str) -> LapRecord:
+    def find(self, lap_id: str) -> Lap:
         """A lap by id: the driver's own laps first, then reference laps."""
         for store in (self.store(), self.refs()):
             if store is not None:
@@ -74,7 +75,7 @@ class Workspace:
                 raise
             return refs.load(lap_id)
 
-    def reference(self, rec: LapRecord, ref_id: str | None) -> LapRecord:
+    def reference(self, rec: Lap, ref_id: str | None) -> Lap:
         """REF_ID's record, or the fastest other valid lap on the same track and car."""
         if ref_id is None:
             candidates = [r for r in self.store().list(track=rec.track_key, car=rec.car_key, valid_only=True)

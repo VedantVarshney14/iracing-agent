@@ -1,11 +1,7 @@
 import pytest
 
-from iagent.laps.segment import (
-    LapSegmenter,
-    REASON_DISCONTINUITY,
-    REASON_INCOMPLETE,
-    REASON_PIT_ROAD,
-)
+from iagent.laps.lap import REASON_DISCONTINUITY, REASON_INCOMPLETE, REASON_PIT_ROAD
+from iagent.laps.segment import LapSegmenter
 from iagent.telemetry.frames import Frame
 
 
@@ -22,12 +18,13 @@ def test_clean_laps_match_ground_truth_times(clean_source):
     first, *laps = segment(clean_source)
     assert len(laps) == 3
     # No start/finish crossing was observed before it, so the first lap is never timed.
-    assert first.reasons == [REASON_INCOMPLETE] and first.lap_time is None
+    assert first.reasons == (REASON_INCOMPLETE,) and first.lap_time is None
     for lap, truth in zip(laps, clean_source.truth[1:]):
         assert lap.valid, lap.reasons
         # Sub-frame accuracy: the crossing is interpolated between frames (frame = 16.7 ms).
         assert lap.lap_time == pytest.approx(truth.lap_time, abs=1e-3)
-        assert lap.start_time == pytest.approx(truth.start_time, abs=1e-3)
+        line = lap.frames["SessionTime"].iloc[0] - lap.frames["lap_time_s"].iloc[0]  # the crossing that began it
+        assert line == pytest.approx(truth.start_time, abs=1e-3)
 
 
 def test_messy_laps_are_flagged_for_the_right_reason(messy_source):

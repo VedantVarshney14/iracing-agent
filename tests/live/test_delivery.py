@@ -8,7 +8,7 @@ from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live import crewchief
 from iagent.live.coach import LiveCoach, Settings
-from iagent.live.components import History
+from iagent.live.handlers import History
 from iagent.live.events import CornerExit, Lap, PaceChanged
 from iagent.live.phrasing import longer as _longer
 from iagent.live.cues import build_plan, load_plan, plan_path, save_plan

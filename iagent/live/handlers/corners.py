@@ -14,7 +14,7 @@ import pandas as pd
 from iagent.analysis.corners import corner_metrics
 from iagent.live import phrasing
 from iagent.live.events import CornerExit, Crossing, Frame, Lap
-from iagent.live.pipeline import Component, enrich, on
+from iagent.live.pipeline import EventHandler, enrich, on
 
 ROW_CHANNELS = ("LapDist", "Speed", "Brake", "Throttle", "Gear", "PlayerTrackSurface", "SessionTime")
 
@@ -32,7 +32,7 @@ class CornerResult:
     longer: str | None = None
 
 
-class Corners(Component):
+class Corners(EventHandler):
     def start(self):
         self._ref_metrics = {m["corner"]: m for m in self.ctx.plan.ref_metrics}
         self._new_lap()

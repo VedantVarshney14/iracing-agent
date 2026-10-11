@@ -3,7 +3,7 @@ import json
 import pytest
 from click.testing import CliRunner
 
-from iagent import cli as cli_module
+from iagent.cli import references as cli_references
 from iagent.analysis.corners import corner_metrics, derive_corner_map
 from iagent.cli import cli
 from iagent.laps.recorder import record
@@ -90,7 +90,7 @@ def run(tmp_path, monkeypatch, driven):
     ref = records[2]
     csv = to_garage61_csv(store.load(ref.lap_id, grid=False), source.session.track_length_m)
     transport = mock_api(TRACK_ID, CAR_ID, {"01FASTLAP000001": (lap_meta("01FASTLAP000001", ref.lap_time, TRACK_ID, CAR_ID), csv)})
-    monkeypatch.setattr(cli_module, "_garage61_client",
+    monkeypatch.setattr(cli_references, "_garage61_client",
                         lambda: Garage61Client("test-token", "https://g61.test/api/v1", transport))
     runner = CliRunner()
 
@@ -129,7 +129,7 @@ def test_import_needs_a_recorded_track(run, monkeypatch, driven):
     source, store, records = driven
     meta = lap_meta("01ELSEWHERE00001", 60.0, 1234, CAR_ID)
     transport = mock_api(1234, CAR_ID, {"01ELSEWHERE00001": (meta, "Speed,LapDistPct\n1,0\n")})
-    monkeypatch.setattr(cli_module, "_garage61_client",
+    monkeypatch.setattr(cli_references, "_garage61_client",
                         lambda: Garage61Client("test-token", "https://g61.test/api/v1", transport))
     result = run("garage61", "import", "01ELSEWHERE00001")
     assert result.exit_code != 0 and "haven't recorded" in result.output

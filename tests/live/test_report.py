@@ -7,7 +7,7 @@ from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live import report
 from iagent.live.coach import CornerResult, LiveCoach, Settings
-from iagent.live.components import CueCaller, Focus
+from iagent.live.handlers import CueCaller, Focus
 from iagent.live.cues import build_plan, load_next_plan, save_next_plan, use_next_plan
 from iagent.live.session import LiveSessions
 from iagent.live.speech import Arbiter, CapturedVoice

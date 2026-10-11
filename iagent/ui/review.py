@@ -12,8 +12,8 @@ import pandas as pd
 from iagent.analysis.compare import MS_TO_KPH
 from iagent.analysis.corners import compare_corners, corner_metrics
 from iagent.analysis.position import has_position, line_offset, to_local_xy
+from iagent.laps.lap import Lap
 from iagent.laps.pace import best_times, group_of, representative
-from iagent.laps.store import LapRecord
 from iagent.workspace import Workspace, WorkspaceError
 
 # Grid channels sent to the UI, and how to scale them for display.
@@ -32,7 +32,7 @@ def tracks(ws: Workspace) -> list[dict]:
         return []
     records = ws.store().list()
     best = best_times(records)
-    groups: dict[tuple[str, str], list[LapRecord]] = {}
+    groups: dict[tuple[str, str], list[Lap]] = {}
     for r in records:
         groups.setdefault(group_of(r), []).append(r)
     out = []
@@ -103,7 +103,7 @@ def _references(ws: Workspace, track: str, car: str) -> list[dict]:
     return rows
 
 
-def default_ghost(ws: Workspace, rec: LapRecord) -> LapRecord | None:
+def default_ghost(ws: Workspace, rec: Lap) -> Lap | None:
     """The lap to compare against when none is chosen: the fastest valid reference lap (a
     Garage61 teammate's), otherwise the driver's fastest other valid lap."""
     store = ws.refs()
@@ -169,7 +169,7 @@ def review(ws: Workspace, lap_id: str, ref_id: str | None = None, step_m: float 
     }
 
 
-def _lap_info(ws: Workspace, rec: LapRecord) -> dict:
+def _lap_info(ws: Workspace, rec: Lap) -> dict:
     meta = ws.ref_meta(rec.lap_id)
     return {
         "lap_id": rec.lap_id,

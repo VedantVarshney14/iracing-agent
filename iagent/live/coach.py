@@ -1,6 +1,6 @@
 """The live coach: telemetry frames in, spoken coaching out, through one event pipeline.
 
-The coach is a pipeline (`iagent.live.pipeline`) of components (`iagent.live.components`), each
+The coach is a pipeline (`iagent.live.pipeline`) of event handlers (`iagent.live.handlers`), each
 of which only handles events: line crossings and laps, where the car is, pace (pushing or not),
 corner exits with their metrics, watched points on track, the corner cues, the focus, what's
 known about each corner, the lap summary, the cool-down debrief, the narrator, the rules and,
@@ -20,7 +20,7 @@ In short, per frame and with no model involved:
 - Nothing on pit road or off the racing surface, nothing new with a car alongside, and with
   CrewChief running, lap times are left to it.
 
-New behaviour is a new event, component, gate or rule: nothing in this file changes.
+New behaviour is a new event, event handler, gate or rule: nothing in this file changes.
 """
 
 from dataclasses import dataclass
@@ -30,10 +30,10 @@ import numpy as np
 import pandas as pd
 
 from iagent.analysis.corners import CornerMap
-from iagent.live.components import COMPONENTS, CornerResult, CueCaller, Focus, Speaking
+from iagent.live.handlers import HANDLERS, CornerResult, CueCaller, Focus, Speaking
 from iagent.live.cues import CuePlan
 from iagent.live.events import Event, SessionEnd
-from iagent.live.pipeline import Component, Pipeline
+from iagent.live.pipeline import EventHandler, Pipeline
 from iagent.live.rules import Rule, RuleEngine
 from iagent.live.settings import Settings
 from iagent.live.state import CoachState
@@ -46,7 +46,7 @@ __all__ = ["CornerResult", "LiveCoach", "Settings"]
 
 @dataclass
 class Context:
-    """What every component may read: the session, the plan, the corner map, the reference lap."""
+    """What every event handler may read: the session, the plan, the corner map, the reference lap."""
 
     session: SessionInfo
     plan: CuePlan
@@ -65,14 +65,14 @@ class LiveCoach:
     def __init__(self, session: SessionInfo, plan: CuePlan, cmap: CornerMap, ref_grid: pd.DataFrame,
                  arbiter: Arbiter, settings: Settings | None = None, own_best: pd.DataFrame | None = None,
                  carried_focus: int | None = None, rules: list[Rule] | None = None, engineer=None,
-                 radio_context: Callable[[], dict] | None = None, components: tuple[type[Component], ...] = ()):
-        """COMPONENTS are added to the standard ones (before the rules and speech): an extension
-        that only defines events, components and rules plugs in here."""
+                 radio_context: Callable[[], dict] | None = None, handlers: tuple[type[EventHandler], ...] = ()):
+        """`handlers` are added to the standard ones (before the rules and speech): an extension
+        that only defines events, event handlers and rules plugs in here."""
         self.ctx = Context(session, plan, cmap, ref_grid["LapDist"].to_numpy(dtype=float),
                            ref_grid["lap_time_s"].to_numpy(dtype=float), arbiter, own_best, carried_focus, rules,
                            engineer, radio_context)
         self.settings = settings or Settings()
-        self.pipeline = Pipeline(self.ctx, self.settings, [*COMPONENTS, *components, RuleEngine, Speaking])
+        self.pipeline = Pipeline(self.ctx, self.settings, [*HANDLERS, *handlers, RuleEngine, Speaking])
 
     # --- driving it ----------------------------------------------------------------------------
 

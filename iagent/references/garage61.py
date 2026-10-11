@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from iagent.analysis.position import has_position
-from iagent.laps.segment import REASON_INCOMPLETE, REASON_PIT_ROAD, Lap
+from iagent.laps.lap import REASON_INCOMPLETE, REASON_PIT_ROAD, Lap
 from iagent.telemetry.frames import SURFACE_OFF_TRACK, SURFACE_ON_TRACK
 from iagent.telemetry.session import SessionInfo
 
@@ -215,13 +215,13 @@ def csv_to_lap(text: str, session: SessionInfo, lap_time: float | None, sim_lap:
     if pct[0] > 0.01 or pct[-1] < 0.99:
         reasons.append(REASON_INCOMPLETE)
 
-    return Lap(
-        session=session,
-        seq=0,
-        frames=frames,
-        start_time=0.0,
-        end_time=end if REASON_INCOMPLETE not in reasons else None,
-        reasons=reasons,
+    return Lap.in_session(
+        session,
+        0,
+        lap_time=end if REASON_INCOMPLETE not in reasons else None,
+        reasons=tuple(reasons),
         sim_lap=sim_lap,
         off_track_s=off_track_s,
+        source="garage61",
+        frames=frames,
     )

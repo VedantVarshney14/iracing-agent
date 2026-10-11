@@ -1,23 +1,57 @@
 # Architecture
 
-How the iRacing coach works, from a telemetry frame to a word in the driver's ear, and how to
-extend it. For the goals, the data model, the analysis and the phasing, see the design notes in
-[.claude/architecture.md](.claude/architecture.md); this document is how it's built.
+What the iRacing coach is for, how it's built, from a telemetry frame to a word in the driver's
+ear, and how to extend it. The [README](README.md) covers using it.
 
 ## Contents
 
-1. [The idea: a real race team](#1-the-idea-a-real-race-team)
-2. [The system on the sim PC](#2-the-system-on-the-sim-pc)
-3. [Code map](#3-code-map)
-4. [The live pipeline](#4-the-live-pipeline)
-5. [Rules: everything said goes through them](#5-rules-everything-said-goes-through-them)
-6. [Speech](#6-speech)
-7. [The engineer: one conversation per session](#7-the-engineer-one-conversation-per-session)
-8. [Between sessions](#8-between-sessions)
-9. [Extending it](#9-extending-it)
-10. [Decisions, and what's next](#10-decisions-and-whats-next)
+1. [Goals](#1-goals)
+2. [The idea: a real race team](#2-the-idea-a-real-race-team)
+3. [The system on the sim PC](#3-the-system-on-the-sim-pc)
+4. [Code map](#4-code-map)
+5. [Data: laps, tracks and the workspace](#5-data-laps-tracks-and-the-workspace)
+6. [Analysis](#6-analysis)
+7. [The live pipeline](#7-the-live-pipeline)
+8. [Rules: everything said goes through them](#8-rules-everything-said-goes-through-them)
+9. [Speech](#9-speech)
+10. [The engineer: one conversation per session](#10-the-engineer-one-conversation-per-session)
+11. [Between sessions: skills and the CLI](#11-between-sessions-skills-and-the-cli)
+12. [Testing without the sim](#12-testing-without-the-sim)
+13. [Extending it](#13-extending-it)
+14. [Decisions, what's next, and open questions](#14-decisions-whats-next-and-open-questions)
 
-## 1. The idea: a real race team
+## 1. Goals
+
+**The problem: help the driver learn a new track.** The first test bed is Spa-Francorchamps.
+Race-craft, strategy and fuel can come later on the same foundations.
+
+Learning a track, as a coach would teach it:
+
+1. **Map**: find the corners from recorded laps, and give them their real names.
+2. **Compare**: per corner, the driver against a reference lap (brake point, minimum speed,
+   throttle pickup), and how *consistent* the driver is across recent laps.
+3. **Focus**: one thing at a time ("this session: Bus Stop brake point, 15 m later").
+4. **Cue**: say it at the right place on track, in a few words.
+5. **Debrief**: between runs, look at what happened and update the plan.
+6. **Remember**: carry progress and the driver's notes from one session to the next.
+
+Progress shows as the lap-time gap to the reference closing, the spread of each corner's brake
+point (in metres) shrinking over a session, and how long it takes until N corners are within
+tolerance.
+
+Constraints that shape everything else:
+
+- **Don't build an agent harness.** Plug into an existing one: Claude Code first, while the repo
+  stays usable from any harness that reads Agent Skills and can run a shell.
+- **Behaviour lives in skills** (markdown), **capability in a CLI** (`iagent ...`, JSON output).
+  Changing how the coach coaches between sessions means editing a `SKILL.md`, not code.
+- **No per-token API bills.** Models are Claude through a Claude subscription (which only Claude
+  Code may use) or open-weight models run locally.
+- **Fully testable without the sim** ([section 12](#12-testing-without-the-sim)).
+
+Not goals, for now: replacing CrewChief's spotter and fuel calls, VR, more than one driver.
+
+## 2. The idea: a real race team
 
 The coach is built the way a real team works with a driver, and each role has one home in the
 code:
@@ -35,17 +69,17 @@ Two rules follow from that, and the rest of the design hangs on them:
 - **No model in the 60 Hz loop.** Everything time-critical (cues, feedback, what to hold back) is
   deterministic and runs on every frame. The model is asked only where there's time for an
   answer, never waited on, and always has a fixed-text fallback.
-- **Behaviour is definitions.** Events, components, rules, speech gates, causes of lost time and
-  actions are each declared once; nothing in the core knows a particular one.
+- **Behaviour is definitions.** Events, event handlers, rules, speech gates, causes of lost time
+  and actions are each declared once; nothing in the core knows a particular one.
 
-## 2. The system on the sim PC
+## 3. The system on the sim PC
 
 ```mermaid
 flowchart LR
     iracing[iRacing<br/>telemetry 60 Hz] -- frames --> pipe
     subgraph pipe [Live coach pipeline]
         direction TB
-        comps[components] --> rules[rule engine] --> arb[speech arbiter + gates]
+        comps[event handlers] --> rules[rule engine] --> arb[speech arbiter + gates]
     end
     arb -- utterances --> tts[Pocket TTS] --> driver((Driver))
     crewchief[CrewChief<br/>spotter, lap times] -. its own audio .-> driver
@@ -59,24 +93,53 @@ flowchart LR
 
 Solid lines run every frame with no model; dotted ones involve the model and run off the
 real-time path. A live session runs inside `iagent ui` (the Coaching tab) or `iagent live run`;
-both build the same `LiveCoach` (`iagent/live/run.py`).
+both build the same `LiveCoach` (`iagent/live/run.py`). Everything runs on the sim PC except,
+optionally, the model. For development the same pieces run on a Mac against recorded `.ibt`
+files.
 
-## 3. Code map
+### The harness and the models
+
+**Claude Code** is the harness. It is the only one a Claude subscription may be used in
+(Anthropic restricted subscription sign-in to Claude Code and claude.ai in February 2026), it can
+drive open models through Ollama's Anthropic-compatible endpoint
+(`ANTHROPIC_BASE_URL=http://<host>:11434`), and it already has skills, shell access, file
+editing, headless runs (`claude -p`) and resumable conversations.
+
+Nothing depends on Claude Code beyond packaging: skills use only the open Agent Skills format and
+call tools by running `iagent ...` in a shell; memory is plain files in the workspace; and running
+the agent is one adapter, `Agent` in [`agent.py`](iagent/agent.py) ("send this message to this
+conversation"). `ClaudeCode` runs `claude -p`; Codex, OpenCode or Goose would be the same few
+lines with a different command.
+
+Claude through the subscription is the practical choice. Local open models are a supported
+fallback once they pass the skill evals: a coding-agent harness has a large prompt, and on the
+hardware at hand (an M1 with 16 GB; the RTX 3070 belongs to the sim) only 8–20B models fit, and
+those are unreliable at multi-step tool use. Usage limits are respected by asking the model per
+lap or event, never per frame.
+
+## 4. Code map
 
 ```text
 iagent/
   agent.py            the agent harness: Agent (abstract), ClaudeCode (`claude -p`, one turn at a time)
+  workspace.py        the workspace: lap stores, reference laps, corner maps (shared by the CLI and UI)
   telemetry/          frames, session info, sources (.ibt replay; synthetic in testing/)
-  laps/               segmentation, distance resampling, lap store, pace filter
+  laps/
+    lap.py            Lap: one lap, its validity, and (when loaded) its samples
+    segment.py        LapSegmenter: frames in, laps out
+    resample.py       a lap on a 1 m distance grid
+    store.py          LapStore (the interface), ParquetLapStore
+    pace.py           best times, representative laps
+    recorder.py, watch.py, tracks.py   ingesting a source, watching the telemetry folder, track info
   analysis/           corner map and metrics (shared with the live coach), comparisons, traces
   references/         Garage61, iRacing ghost files
   live/
     coach.py          LiveCoach: builds the pipeline; a small facade, no feature logic
-    pipeline.py       Pipeline, Component (abstract), @on / @enrich
+    pipeline.py       Pipeline, EventHandler (the base class), @on / @enrich
     events.py         every event, as a typed dataclass
     state.py          CoachState: the shared state, typed
     settings.py       Settings
-    components/       laps, track, clock, pace, corners, positions, cue_caller, focus, history,
+    handlers/         laps, track, clock, pace, corners, positions, cue_caller, focus, history,
                       summary, debrief, speaking (and the speech gates)
     rules/            schema (the rule format), actions (Action subclasses), engine (RuleEngine)
     builtin_rules.py  the coach's own behaviour, as rules
@@ -92,12 +155,101 @@ iagent/
     report.py         a coached session, read back from its log
     run.py, sources.py, voice.py   wiring, iRacing and replay sources, Pocket TTS
   ui/                 `iagent ui`: the local API and the lap review chat
-  cli.py              the `iagent` command
+  cli/                the `iagent` command: one module per command group (laps, corners, rules, ...)
+  testing/            synthetic laps, an .ibt writer, fakes for Garage61 and the web
 coach/skills/         the coach's skills (lap review, reference laps, live rules, ...)
 web/                  the browser UI (React)
 ```
 
-## 4. The live pipeline
+## 5. Data: laps, tracks and the workspace
+
+**Frames.** A timestamped set of channels, 60 times a second. Time is iRacing's `SessionTime`,
+never the wall clock, so replays are deterministic and can run faster than real time (a
+30-minute session replays in under a second).
+
+**Laps.** The segmenter turns frames into laps: a lap starts and ends where `LapDistPct` wraps
+past the line, timed to a fraction of a frame by interpolating between the two frames either
+side. A [`Lap`](iagent/laps/lap.py) is the same type whether it was just segmented (it carries
+its samples) or listed from the store (it doesn't; `LapStore.load` gives them).
+
+- **Identity.** Laps are grouped by `track_key` (iRacing's internal track name, e.g.
+  `spa-2024-up`, one per layout and scan) and `car_key` (iRacing's car path, e.g. `formulair04`).
+  Display names are kept for people. Laps on different keys are never compared.
+- **Valid vs representative.** `valid` is structural only: complete, no pit road, no position
+  jump (a reset or tow). Time off track is recorded but never disqualifies a lap: a brief clip of
+  the kerb is normal. A *representative* lap is a valid one within 5% (by default) of the best
+  valid lap for the same track and car. On real Okayama, Spa and Watkins Glen recordings this
+  separates normal laps from excursions and slow laps, and keeps a best lap that had a brief
+  off.
+
+**The lap store.** Each lap is one Parquet file of raw samples plus a copy resampled onto a 1 m
+distance grid, so laps compare point for point; a SQLite index holds the rest of the `Lap`.
+Callers use the `LapStore` interface; the format is a detail. Other drivers' laps live in a
+separate store, so they never count as the driver's best or move the pace filter.
+
+**The workspace** is the driver's data, and everything the agent changes is a file in it:
+
+```text
+workspace/
+  laps/<track>/<car>/<lap_id>.parquet   the driver's laps (+ .grid.parquet), indexed in index.sqlite
+  reference/                            other drivers' laps: a lap store of their own + meta/<lap_id>.json
+  tracks/<track>/corners.json           the corner map, with names (agent-editable)
+  tracks/<track>/knowledge.md           researched names, quirks, sources
+  tracks/<track>/track.json             iRacing's track and car ids, names, length (from ingest)
+  tracks/<track>/cues/<car>.json        the corner cue plan
+  rules/<track>/<id>.json               rules (draft, active or archived) and their last backtest
+  rules/_any/<id>.json                  rules for every track
+  notes/driver.md                       who the driver is, goals, preferences
+  notes/<track>.md                      the engineer's notebook for the track
+  sessions/live/<id>.jsonl              each coached session's log (every logged event)
+  cache/                                downloads (CrewChief landmarks, Garage61 catalogues, voices)
+  scratch/                              the agent's free space (scripts, plots)
+```
+
+**Track knowledge** comes in two layers. The geometry is derived: the corner map
+([section 6](#6-analysis)). The names are attached: each corner carries an optional name with its
+source (`driver`, `crewchief`, `web`, `model`) and confidence, and names survive re-mapping.
+Sources by trust: the driver's corrections; CrewChief's MIT-licensed landmarks file (about 25
+iRacing tracks, last updated 2019, names sometimes misspelled or generic, its Spa distances
+within ~50 m of ours); a web search; the model's own memory (low confidence). The
+`name-corners` skill does this.
+
+## 6. Analysis
+
+The deterministic layer that makes the agent cheap and reliable: the code computes the numbers,
+and the model chooses what matters and how to say it. The model never has to work out a brake
+point from raw samples.
+
+- **The corner map** ([`analysis/corners.py`](iagent/analysis/corners.py)). A corner is a stretch
+  of sustained lateral g in the median of representative laps (smoothed over ~30 m; on above 45%
+  and off below 20% of the car's 98th-percentile lateral g, so it adapts to the car). A change of
+  direction splits a corner (chicanes); parts in the same direction closer than 60 m merge
+  (double apexes). The apex is the slowest point, or the peak lateral g for a corner taken flat.
+  The map also cuts the lap into one segment per corner, each starting at the last top-speed
+  point before the braking zone, so per-corner time deltas add up exactly to the lap delta. On
+  real Spa laps it finds 16 corners that line up with the circuit's named ones.
+- **Per-corner metrics**: segment time, where braking starts, entry, minimum and exit speed,
+  where full throttle is reached (and held for 20 m), lowest gear, and metres off track (so an
+  incident reads as one). The live coach runs the same code at each corner exit, so the analysis,
+  the rules and their backtests agree.
+- **Comparison and consistency**: corner by corner against a reference lap, and the spread of each
+  metric across representative laps, the main measure of learning a track. Also distance splits,
+  section comparisons and channel traces.
+- **Reference laps.** The driver's own best by default, or other drivers' laps from **Garage61**.
+  Any command that takes a lap id takes a reference lap's. What we rely on from Garage61:
+  - A personal access token reaches the driver's own laps and their Garage61 **teammates'**.
+    Searching every visible lap needs an application Garage61 approves.
+  - Laps match exactly on iRacing's track and car ids, recorded per track at ingest in
+    `track.json`.
+  - The telemetry CSV is 60 Hz iRacing channels with no time column: time is rebuilt from the
+    sample index, and the trailing sample past the line pins the crossing (a real export
+    reproduces its 1:55.992 to 0.3 ms). A lap's `canViewTelemetry` flag can say no while the CSV
+    downloads fine, so the download is the authority.
+  - Ghosts: `/laps/{id}/ghost.bin` is iRacing's own `.blap` file. `iagent garage61 ghost
+    --install` copies it into `Documents/iRacing/lapfiles/<track>[/<config>]` under a `g61_`
+    name, never over the driver's own file.
+
+## 7. The live pipeline
 
 ### Events
 
@@ -118,9 +270,14 @@ class CornerExit(Event):
 
 Class attributes say how an event is treated: `name` (for rules and the log), `log` (written to
 the session log, which the review page reads) and `judged` (rules with `pushing_only` ignore it
-while the driver isn't pushing). Inheritance is used where it's true: a counted `Lap` is a
-`Crossing` that counted, and the engineer's replies (`CoachWords`, `DebriefWords`,
-`NotesWritten`) share a `Reply` base.
+while the driver isn't pushing). Only a class with a `name` is an event the pipeline carries.
+
+Inheritance means "is a kind of", and the pipeline relies on it: a method marked for a class gets
+its subclasses too. Shared fields go in a base class without a `name`, which is never emitted
+itself: `Crossing` (every time the car crosses the line) and `Lap` (a counted lap) both extend
+`AtTheLine`, so a handler of `AtTheLine` sees both, while one of `Crossing` doesn't see laps. The
+engineer's replies (`CoachWords`, `DebriefWords`, `NotesWritten`) share a `Reply` base the same
+way.
 
 | Group | Events |
 | --- | --- |
@@ -134,19 +291,19 @@ while the driver isn't pushing). Inheritance is used where it's true: a counted 
 | From the driver and the browser | `Say`, `SetFocus`, `Narrate` (a question) |
 | The engineer | `Narrate`, `NarrationAsked`, `Wake`, `CoachWords`, `DebriefWords`, `NotesWritten`, `Error` |
 
-### Components
+### Event handlers
 
-A component subclasses `Component` (abstract) and marks the methods for the events it handles.
-An enricher adds to an event before anyone acts on it; a handler acts on it:
+An event handler subclasses `EventHandler` and marks the methods for the events it acts on. An
+enricher adds to an event before anyone acts on it; a handler acts on it:
 
 ```python
-class Summary(Component):
+class Summary(EventHandler):
     @enrich(Lap)
     def words(self, e: Lap):
         e.summary_text = phrasing.summary(...)   # saying it is a rule's job
 ```
 
-| Component | Handles | Adds to events, or keeps in the state | Emits |
+| Event handler | Handles | Adds to events, or keeps in the state | Emits |
 | --- | --- | --- | --- |
 | `Laps` | `Frame`, `Crossing` | lap, laps driven, line time, learning | `Crossing` (handled at once), `Lap` |
 | `Track` | `Frame`, `Crossing` | on track, car alongside, lap clean | `Pit` |
@@ -163,9 +320,9 @@ class Summary(Component):
 | `RuleEngine` | every event | | `Watch`, `RuleFired`, `Wake`, `Narrate`; speaks through the arbiter |
 | `Speaking` | `FrameDone` | | `Line` |
 
-Components decide *what's worth saying* and put it on events (`wanted` and `text` on a cue's
+Event handlers decide *what's worth saying* and put it on events (`wanted` and `text` on a cue's
 `Approach`, `feedback` on `CornerExit`, `summary_text` and `focus_news` on `Lap`); rules decide
-*to say it*. Components share only the typed state, [`CoachState`](iagent/live/state.py), whose
+*to say it*. Event handlers share only the typed state, [`CoachState`](iagent/live/state.py), whose
 fields every rule can read, and otherwise talk only through events.
 
 ### One frame
@@ -174,7 +331,7 @@ fields every rule can read, and otherwise talk only through events.
 sequenceDiagram
     participant Src as Source
     participant P as Pipeline
-    participant C as Components
+    participant C as Event handlers
     participant R as RuleEngine
     participant S as Speaking
     Src->>P: push(frame)
@@ -191,19 +348,24 @@ sequenceDiagram
     S-->>P: Line (said, cut or dropped)
 ```
 
-- **Order.** For each event every enricher runs, then every handler, in component order
-  ([`components/__init__.py`](iagent/live/components/__init__.py)); the rule engine comes after
-  all the components, `Speaking` last. Events emitted meanwhile are queued and handled first in,
-  first out, so a replay at any speed makes the same decisions as the live session.
+- **Only defined events.** `@on` and `@enrich` take only `Event` classes, an `EventHandler` that
+  marks no methods is refused, and only named events can be emitted or posted. Anything else is a
+  `TypeError` when the coach is built, not a silent no-op on track.
+- **Order.** For each event every enricher runs, then every handler, in the order the handlers
+  were added ([`handlers/__init__.py`](iagent/live/handlers/__init__.py)), whether a method is
+  marked for the event's own class or a class above it; the rule engine comes after all the other
+  handlers, `Speaking` last. Events emitted meanwhile are queued and handled first in, first out,
+  so a replay at any speed makes the same decisions as the live session.
 - **The one nested event.** A line crossing is handled at once (`dispatch`) inside the frame that
   crossed, so the frame that starts the new lap is counted in it.
 - **Threads.** Only the coach's thread touches the pipeline. The browser and the engineer `post`
   events into a thread-safe inbox, handled at the next frame; nothing needs locks.
 
-## 5. Rules: everything said goes through them
+## 8. Rules: everything said goes through them
 
 A rule is data: an event, an optional condition, actions and limits
-([`iagent/live/rules/`](iagent/live/rules/)).
+([`iagent/live/rules/`](iagent/live/rules/)). The coach agent writes them between sessions; the
+live coach runs them.
 
 ```json
 {"id": "bus-stop-early-brake", "track": "spa-2024-up",
@@ -241,14 +403,14 @@ A rule is data: an event, an optional condition, actions and limits
   cut or dropped, and why; `activate` needs a backtest of the rule as it is now. A running coach
   reloads rules when their files change.
 
-## 6. Speech
+## 9. Speech
 
 The arbiter ([`speech.py`](iagent/live/speech.py)) owns the audio: one line at a time, the most
 important first (cue, then feedback and answers, then the summary), nothing said once it has
 expired (a corner cue is useless after the corner), and a corner cue cuts off anything less
 urgent. A line may carry a longer version, said instead when the driver has time.
 
-When not to speak is a list of gates ([`components/speaking.py`](iagent/live/components/speaking.py)),
+When not to speak is a list of gates ([`handlers/speaking.py`](iagent/live/handlers/speaking.py)),
 each a condition over the shared state:
 
 | Gate | When | Effect |
@@ -260,7 +422,26 @@ each a condition over the shared state:
 | after the line | CrewChief reads the lap time | cues only |
 | in a corner | between a cue's point and the corner's end | cues only |
 
-## 7. The engineer: one conversation per session
+**Delivery, like a coach on the radio.** A cue shortens to a reminder once the driver has heard it
+in full. Feedback has a longer version (what, why, how) for when the driver isn't pushing and
+there's room before the next cue. A cool-down lap (not pushing for 15 s) gets a debrief from the
+last laps at pace: the costliest corner, how to fix it, consistency. A repeated mistake is said
+as a repeat, and a fixed one gets a "better".
+
+**The voice: Pocket TTS** (Kyutai, ~100M parameters, CPU, 2 threads), measured on an M1 at ~55 ms
+to first audio when streaming and ~4.5× real time, so one engine serves cues, feedback and
+answers. Cue texts are rendered when the session starts, so a cue costs no CPU at the brake zone
+and its exact length sets when it starts. (Kokoro, the earlier choice, took ~3.7 s to first audio:
+too slow for anything said in reaction.) Audio goes out in blocking writes from the voice's own
+thread; a Python audio callback starved by the coach loop crackled.
+
+**Sharing the radio with CrewChief** ([`crewchief.py`](iagent/live/crewchief.py)). CrewChief does
+the spotter's and race engineer's calls (cars alongside, lap times, gaps, fuel, flags); the coach
+does technique only. With CrewChief running (or `--crewchief on`), the lap summary leaves out the
+lap time and gap, only cues are said for 5 s after the line, and `rules add` flags rules that
+would duplicate it. CrewChief has no API for arbitrary speech, so the coach keeps its own audio.
+
+## 10. The engineer: one conversation per session
 
 ```mermaid
 sequenceDiagram
@@ -304,28 +485,80 @@ sequenceDiagram
   (`iagent`, reading and editing workspace files); nothing from the driver's other sessions.
 - **Memory between sessions is the notebook**, not an ever-longer conversation: a new session
   starts a new conversation that reads the notes, which also keeps turns fast (about 5 s).
-- **The harness is one adapter.** `Agent` ([`agent.py`](iagent/agent.py)) is abstract;
-  `ClaudeCode` runs `claude -p`. Another harness is another subclass.
 
-## 8. Between sessions
+The other conversations follow the same idea:
 
-The coach agent (Claude Code with the `coach` plugin) works on the workspace through the
-`iagent` CLI: it reviews laps (`lap-review`), compares against faster laps (`reference-laps`),
-names corners (`name-corners`), writes and backtests rules (`live-rules`) and rewrites cues. The
-lap review chat in the browser is the same agent, in its own conversation. Everything it changes
-is a file in the workspace:
+| Conversation | Lives | Holds |
+| --- | --- | --- |
+| The live session's engineer (`iagent/live/engineer.py`) | one live session: radio check to wrap-up | everything said on the radio, the laps, the driver's questions, wake-ups, debriefs |
+| The lap review chat (`iagent/ui/coach.py`) | as long as the browser keeps it | the driver's questions about a lap |
+| The workspace notes (`notes/<track>.md`) | across sessions | what was worked on, what changed, what to start with |
+
+## 11. Between sessions: skills and the CLI
+
+The coach agent is Claude Code with the `coach` plugin, working on the workspace through the
+`iagent` CLI. The repo is its own plugin marketplace:
 
 ```text
-workspace/
-  laps/, index.sqlite            the driver's laps (raw 60 Hz and on a 1 m grid)
-  reference/                     other drivers' laps (Garage61)
-  tracks/<track>/corners.json    the corner map; cues/<car>.json the cue plan
-  rules/<track>/<id>.json        rules (draft, active, archived) and their last backtest
-  notes/<track>.md               the engineer's notebook
-  sessions/live/<id>.jsonl       each coached session's log (every logged event)
+.claude-plugin/marketplace.json   makes the repo a Claude Code marketplace
+coach/
+  .claude-plugin/plugin.json
+  skills/
+    telemetry/SKILL.md            find, inspect and compare laps and corners
+    lap-review/SKILL.md           review a session's laps and give one focus
+    name-corners/SKILL.md         name derived corners, record track knowledge
+    reference-laps/SKILL.md       pick, import and coach from a faster Garage61 lap
+    live-rules/SKILL.md           write, backtest and activate rules for the live coach
 ```
 
-## 9. Extending it
+The lap review chat in the browser is the same agent, in its own conversation. Other harnesses
+point their skills directory at `coach/skills/`.
+
+**The CLI is the agent's hands.** Every command an agent uses takes `--json` (or writes CSV for
+bulk traces), has a `--help` accurate enough to be the documentation, finds the workspace from
+`--workspace` or `IAGENT_WORKSPACE`, and reports errors on stderr with a non-zero exit code.
+Each command group is a module in [`iagent/cli/`](iagent/cli/).
+
+| Command | Does |
+| --- | --- |
+| `iagent ingest <file.ibt>` | segment a recording into the lap store |
+| `iagent tracks`, `iagent workspace` | tracks and cars with lap counts and best times; where the workspace is |
+| `iagent laps list/show/compare/trace` | laps with validity and pace; a lap's splits; time gained and lost against a reference; channel traces (CSV) |
+| `iagent corners map/list/name/landmarks` | derive, show and name the corner map; CrewChief's names matched to it |
+| `iagent corners report/compare/consistency` | per-corner metrics for a lap, against a reference, and their spread across laps |
+| `iagent garage61 status/find/import/ghost` | find and import teammates' (and own) Garage61 laps; download and install a lap's ghost |
+| `iagent refs list` | imported reference laps |
+| `iagent cues build/show/set` | the corner cue plan |
+| `iagent rules add/list/show/vars/schema/backtest/activate/deactivate/archive/remove` | the rules the live coach runs |
+| `iagent live run` | the live coach, on iRacing or a replayed `.ibt` |
+| `iagent ui` (`ui show`) | the browser app (and pointing it at a lap, corner or distance) |
+
+## 12. Testing without the sim
+
+Only the telemetry source and the ends of the audio touch the sim or hardware, so each has a
+stand-in:
+
+| Seam | Real | In tests |
+| --- | --- | --- |
+| `TelemetrySource` | iRacing (irsdk) | `.ibt` replay, synthetic laps with exact ground truth |
+| The agent | `claude -p` | a recorded command line (what the agent would be told) |
+| Audio out | speakers | captured (time, text, priority) |
+
+The layers:
+
+1. **Unit**: segmentation, resampling, the store, analysis, rules, the pipeline, the arbiter.
+2. **Real recordings** (`tests/real/`, skipped without the files): lap times match iRacing's own
+   `LapLastLapTime`, and the representative laps per file are pinned. The recordings live in
+   `data/telemetry/` (not committed): Okayama, Spa, Silverstone (F4) and Watkins Glen (GT3).
+3. **CLI contract**: every agent-facing command's `--json` shape.
+4. **Skill evals** (planned): scenario workspaces and a prompt, run headless with each candidate
+   model, checked programmatically (the right commands run, the numbers in the answer come from
+   the CLI, the answer's length). This is the gate for a local model.
+5. **On the rig** (by hand, with the sim running).
+
+`uv run pytest` runs everything; no sim, GPU, model or network is needed.
+
+## 13. Extending it
 
 Each of these is a definition; nothing else changes.
 
@@ -341,11 +574,11 @@ class KerbStrike(Event):
     jolt: float = doc("vertical acceleration (m/s²)", 0.0)
 ```
 
-**A new detector.** A component that emits it, added to `COMPONENTS` (or passed to
-`LiveCoach(components=...)`):
+**A new detector.** An event handler that emits it, added to `HANDLERS` (or passed to
+`LiveCoach(handlers=...)`):
 
 ```python
-class KerbDetector(Component):
+class KerbDetector(EventHandler):
     @on(Frame)
     def jolt(self, e: Frame):
         if (e.frame.get("VertAccel") or 0) > 20:
@@ -362,28 +595,47 @@ class KerbDetector(Component):
 
 **A new reason to keep quiet.** A `Gate` in `GATES`. **A new cause of lost time.** A `Cause`
 subclass in `phrasing.CAUSES`. **A new action.** An `Action` subclass in `rules.actions.ACTIONS`.
-**A new harness.** An `Agent` subclass.
+**A new harness.** An `Agent` subclass. **A new command.** A function in its group's module in
+`iagent/cli/`, or a new module registered in `iagent/cli/__init__.py`.
 
 `tests/live/test_pipeline.py` adds a detector, an event and a rule, and a gate, this way.
 
-## 10. Decisions, and what's next
+## 14. Decisions, what's next, and open questions
 
-Agreed and built: no model in the 60 Hz loop; one event pipeline with typed events, behaviour as
-definitions; everything said goes through rules; one engineer conversation per session, notes
-across sessions; CrewChief as the spotter, the coach on technique.
+**Built.** Telemetry sources, laps and the lap store; the agent-facing CLI and the coach's skills;
+corner analysis; Garage61 reference laps and ghosts; the live coach on iRacing or a replay (cues,
+feedback, focus, the pace gate, speech, sharing the radio with CrewChief); rules with backtests;
+one engineer conversation per session, with notes across sessions; the browser UI for lap review,
+the library and coached sessions.
 
-Agreed, next, and where each fits:
+**Next, and where each fits:**
 
 - **Radio control.** A radio level in the state (full, focus only, critical only, silent) and how
   often the engineer may speak up, set by the engineer, overridden by the driver ("leave me
   alone", "talk to me") until the driver lifts it; every line gets an importance. It fits as
   driver command events, one field in `CoachState`, and one gate.
-- **Push-to-talk.** Local speech-to-text posting the same `Narrate` question the Coaching tab does.
+- **Push-to-talk.** Local speech-to-text on the sim PC's CPU (faster-whisper `small`, Parakeet or
+  Moonshine) posting the same `Narrate` question the Coaching tab does.
 - **A standalone live service** on the sim PC owning the pipeline and the engineer, with the UI
   and CLI as its clients (today both build `LiveCoach` themselves through `run.py`).
 - **Saved settings** in the workspace's `settings.json`, with per-run overrides.
+- **Analysis**: a theoretical best (the best corner segments stitched together), and importing
+  other `.ibt` or CSV laps by hand.
+- **SimHub**: a small plugin exposing the current cue to dashboards and overlays, and wheel-button
+  actions (repeat the cue, mute, push-to-talk).
 
-Open: CrewChief pace notes for a "learning a new track" mode. They'd share CrewChief's audio queue,
-but they're fixed recordings at fixed points, so they'd lose thinning, hints, short forms, timing
-at the current speed, silence when not pushing, and rules' conditional cues. It needs testing on
-the rig.
+**Open questions and risks:**
+
+- **CrewChief pace notes** for a "learning a new track" mode. They'd go through CrewChief's own
+  audio queue, but they're fixed recordings at fixed points, so they'd lose thinning, short
+  forms, timing at the current speed, silence when not pushing, and rules' conditional cues. It
+  needs testing on the rig.
+- **Local models** in a coding-agent harness on this hardware; mitigated by the deterministic
+  analysis, short skills and the eval gate, with Claude through the subscription first.
+- **CPU on the sim PC** (Ryzen 5 7600X) with iRacing, SimHub, CrewChief, speech and the coach
+  running: not yet measured.
+- **Corner maps from few laps** (Silverstone has one) are noisier; re-map as laps come in. Maps
+  are derived from one car's laps, and a much faster car may take some corners flat that another
+  brakes for; geometry is shared per track for now.
+- **Garage61 reach** is limited to teammates with a personal token; a wider pool of reference
+  laps needs an approved Garage61 application or laps shared by coaches.

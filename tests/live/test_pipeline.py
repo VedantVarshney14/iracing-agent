@@ -1,4 +1,4 @@
-"""The event pipeline: new events, components, rules and speech gates plug in as definitions."""
+"""The event pipeline: new events, event handlers, rules and speech gates plug in as definitions."""
 
 import threading
 from dataclasses import dataclass
@@ -9,11 +9,11 @@ import pytest
 from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live.coach import LiveCoach, Settings
-from iagent.live.components import speaking
-from iagent.live.components.speaking import Gate
+from iagent.live.handlers import speaking
+from iagent.live.handlers.speaking import Gate
 from iagent.live.cues import build_plan
-from iagent.live.events import EVENTS, Event, Frame, Lap, doc
-from iagent.live.pipeline import Component, Pipeline, enrich, on
+from iagent.live.events import EVENTS, AtTheLine, Crossing, Event, Frame, Lap, Reply, doc
+from iagent.live.pipeline import EventHandler, Pipeline, enrich, on
 from iagent.live.rules import Rule, describe
 from iagent.live.speech import Arbiter, CapturedVoice
 from iagent.telemetry.frames import Frame as TelemetryFrame
@@ -55,7 +55,7 @@ def root(tmp_path):
     return tmp_path / "ws"
 
 
-class Recorder(Component):
+class Recorder(EventHandler):
     def start(self):
         self.seen = []
 
@@ -88,13 +88,68 @@ def test_events_are_handled_in_order_enriched_first_and_posted_from_any_thread()
 
 
 def test_events_are_typed_and_registered_by_name():
-    assert EVENTS["test_ping"] is Ping and Lap.__mro__[1].name == "crossing"  # a counted lap is a crossing
+    assert EVENTS["test_ping"] is Ping
+    assert AtTheLine not in EVENTS.values() and not issubclass(Lap, Crossing)  # both at the line; a lap isn't a crossing
     assert Ping(n=3).public() == {"n": 3}
     with pytest.raises(TypeError):
         Ping(m=3)  # a typo in a field is an error, not a silent new key
 
 
-class KerbDetector(Component):
+@dataclass(kw_only=True)
+class Ding(Ping):
+    """A kind of ping."""
+    name: ClassVar[str] = "test_ding"
+
+
+def test_a_handler_of_an_event_gets_its_subclasses_in_the_order_handlers_were_added():
+    seen = []
+
+    class Pings(EventHandler):
+        @on(Ping)
+        def ping(self, e):
+            seen.append(("pings", e.name))
+
+    class Dings(EventHandler):
+        @on(Ding)
+        def ding(self, e):
+            seen.append(("dings", e.name))
+
+    class Everything(EventHandler):
+        @on(Event)
+        def any(self, e):
+            seen.append(("all", e.name))
+
+    pipe = Pipeline(None, Settings(), [Dings, Pings, Everything])
+    pipe.on(Ping, lambda e: seen.append(("outside", e.name)))
+    pipe.emit(Ding())
+    pipe.emit(Ping())
+    pipe.run()
+    assert seen == [("dings", "test_ding"), ("pings", "test_ding"), ("all", "test_ding"), ("outside", "test_ding"),
+                    ("pings", "test_ping"), ("all", "test_ping"), ("outside", "test_ping")]
+
+
+def test_only_defined_events_go_through():
+    with pytest.raises(TypeError, match="not an event"):
+        on(dict)
+    with pytest.raises(TypeError, match="not an event"):
+        enrich("lap")
+
+    class Idle(EventHandler):
+        pass
+
+    with pytest.raises(TypeError, match="acts on no events"):
+        Pipeline(None, Settings(), [Idle])
+    pipe = Pipeline(None, Settings(), [])
+    for base in (AtTheLine(), Reply()):  # bases group fields; they're never events themselves
+        with pytest.raises(TypeError, match="not a defined event"):
+            pipe.emit(base)
+        with pytest.raises(TypeError, match="not a defined event"):
+            pipe.post(base)
+    with pytest.raises(KeyError):
+        pipe.on("no_such_event", print)
+
+
+class KerbDetector(EventHandler):
     """A new detector: defined, then passed in. Nothing else changes."""
 
     def start(self):
@@ -109,7 +164,7 @@ class KerbDetector(Component):
             self.emit(KerbStrike(jolt=25.0, count=self.kerbs))
 
 
-def test_a_new_event_component_and_rule_need_nothing_but_their_definitions(root):
+def test_a_new_event_handler_event_and_rule_need_nothing_but_their_definitions(root):
     rule = Rule.from_dict({"id": "kerbs", "when": {"event": "kerb_strike"}, "if": "jolt > 20",
                            "actions": [{"say": "Kerb, {count} so far."}], "limits": {"max_per_lap": 1}})
     assert describe()["events"]["kerb_strike"]["fields"]["jolt"].startswith("vertical")  # documented by itself
@@ -118,7 +173,7 @@ def test_a_new_event_component_and_rule_need_nothing_but_their_definitions(root)
         plan = build_plan(ws, TRACK, CAR)
         src = SyntheticSource(n_laps=3, seed=7, start_m=2900.0)
         coach = LiveCoach(src.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(CapturedVoice()),
-                          Settings(), rules=[rule], components=(KerbDetector,))
+                          Settings(), rules=[rule], handlers=(KerbDetector,))
     finally:
         ws.close()
     for f in src.frames():

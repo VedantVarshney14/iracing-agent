@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from iagent.analysis.corners import Corner, CornerMap, corner_metrics
-from iagent.laps.store import LapRecord
+from iagent.laps.lap import Lap
 from iagent.workspace import Workspace, WorkspaceError
 
 BEFORE_TURN_IN_M = 30  # a no-brake corner's cue ends this far before the corner starts
@@ -81,7 +81,7 @@ def save_plan(root: Path, plan: CuePlan) -> Path:
     return path
 
 
-def reference_lap(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> LapRecord:
+def reference_lap(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> Lap:
     """The lap cues follow: REF_ID, else the fastest valid Garage61 lap, else the driver's best."""
     if ref_id:
         rec = ws.find(ref_id)

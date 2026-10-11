@@ -6,7 +6,7 @@ import pytest
 from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live.coach import CornerResult, LiveCoach, Settings
-from iagent.live.components import CueCaller, Focus, Pace
+from iagent.live.handlers import CueCaller, Focus, Pace
 from iagent.live.events import SetFocus
 from iagent.live.cues import build_plan
 from iagent.live.engineer import Engineer

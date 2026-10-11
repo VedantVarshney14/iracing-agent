@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from iagent.laps.segment import Lap
+from iagent.laps.lap import Lap
 from iagent.telemetry.frames import DISCRETE_CHANNELS
 
 
@@ -14,8 +14,9 @@ def resample_to_distance(lap: Lap, step_m: float = 1.0) -> pd.DataFrame:
     laps are a subtraction). Continuous channels are linearly interpolated, discrete ones (gear,
     flags) take the nearest sample. For incomplete laps the grid outside the driven range is NaN.
     """
-    df = lap.frames
-    length = lap.session.track_length_m
+    df, length = lap.frames, lap.track_length_m
+    if df is None or length is None:
+        raise ValueError(f"Lap {lap.lap_id} has no samples or track length to resample.")
     grid = np.arange(0.0, length, step_m)
 
     # Distance must be non-decreasing to interpolate against it.

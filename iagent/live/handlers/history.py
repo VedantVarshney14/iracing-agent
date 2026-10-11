@@ -9,10 +9,10 @@ say about it now, or nothing. Saying it is a rule (`builtin_rules`).
 
 from iagent.live import phrasing
 from iagent.live.events import Advice, CornerExit, Crossing
-from iagent.live.pipeline import Component, enrich, on
+from iagent.live.pipeline import EventHandler, enrich, on
 
 
-class History(Component):
+class History(EventHandler):
     def start(self):
         self._told: dict[int, tuple[str, int]] = {}  # corner -> (cause, lap) of the last feedback said
         self._advised: set[int] = set()  # corners with advice this lap

@@ -1,4 +1,4 @@
-"""The live coach's settings: each component reads the ones it needs."""
+"""The live coach's settings: each event handler reads the ones it needs."""
 
 from dataclasses import dataclass
 

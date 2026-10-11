@@ -1,4 +1,4 @@
-"""The rule engine: a pipeline component that sees every event and fires the rules for it.
+"""The rule engine: an event handler that sees every event and fires the rules for it.
 
 The coach's own behaviour is the built-in rules (`iagent.live.builtin_rules`, group `coach`); the
 agent's rules come from the context (`ctx.rules`) and can be replaced mid-session. Groups set limits
@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass, field
 
 from iagent.live.events import Event, RuleFired, Unwatch, Watch
-from iagent.live.pipeline import Component, on
+from iagent.live.pipeline import EventHandler, on
 from iagent.live.rules.actions import RuleError, Say
 from iagent.live.rules.schema import Rule, check_against_map, filter_sets, resolve_at
 from iagent.live.speech import APPROACH, Utterance
@@ -60,7 +60,7 @@ class _Compiled:
     filters: dict[str, set]
 
 
-class RuleEngine(Component):
+class RuleEngine(EventHandler):
     def start(self):
         from iagent.live.builtin_rules import builtin_rules
 

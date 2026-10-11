@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from iagent.live.events import Approach, Frame, Unwatch, Watch
-from iagent.live.pipeline import Component, on
+from iagent.live.pipeline import EventHandler, on
 
 REARM_PAST_M = 100.0
 HORIZON_S = 30.0  # points further away than this aren't considered yet
@@ -24,7 +24,7 @@ class _Point:
     armed: bool = True
 
 
-class Positions(Component):
+class Positions(EventHandler):
     def start(self):
         self._points: dict[str, _Point] = {}
 

@@ -17,7 +17,7 @@ generated: they must be instant and exactly timed.
 import re
 
 from iagent.live.events import EVENTS, CoachWords, Lap, Line, Narrate, NarrationAsked, NotesWritten, SessionEnd, SessionStart
-from iagent.live.pipeline import Component, on
+from iagent.live.pipeline import EventHandler, on
 
 def chunks(text: str, max_chars: int = 140) -> list[str]:
     """Split a longer reply into radio-sized pieces at sentence ends, so a car alongside or the
@@ -32,7 +32,7 @@ def chunks(text: str, max_chars: int = 140) -> list[str]:
     return [c for c in out if c]
 
 
-class Radio(Component):
+class Radio(EventHandler):
     """Between the pipeline and the engineer (if there is one: `ctx.engineer`)."""
 
     @on(Narrate)

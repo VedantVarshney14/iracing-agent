@@ -2,10 +2,10 @@
 
 from iagent.live.events import Clock as Tick
 from iagent.live.events import Frame, SessionStart
-from iagent.live.pipeline import Component, on
+from iagent.live.pipeline import EventHandler, on
 
 
-class Clock(Component):
+class Clock(EventHandler):
     def start(self):
         self._start: float | None = None
         self._second = -1

@@ -1,6 +1,6 @@
 """The coach's own behaviour, as rules: what it says, on which event, and when.
 
-The components decide what's worth saying (the cue that's wanted, the feedback for a corner, the
+The event handlers decide what's worth saying (the cue that's wanted, the feedback for a corner, the
 summary's words) and put it on the event; these rules say it. They're ordinary rules in the
 `coach` group (no shared line budget, not reported in the log), so a new built-in behaviour is a
 new rule here, in the same format the agent uses.
