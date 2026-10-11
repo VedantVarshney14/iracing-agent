@@ -4,7 +4,7 @@ From the corners driven at pace: which the driver struggles with (cued again aft
 laps), which went badly enough to speak up even with a focus set, the hint for each corner's cue
 next lap, and what was said about it last time, so a repeat is said as a repeat and a fixed
 corner gets a "better". Sets `feedback` (and `feedback_long`) on `CornerExit`: what a coach would
-say about it now, or nothing. Saying it is a rule (`builtin_rules`).
+say about it now, or nothing. Saying it is a rule (`rules.builtin`).
 """
 
 from iagent.live import phrasing

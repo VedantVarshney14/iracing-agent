@@ -198,7 +198,7 @@ class LiveSessions:
         try:
             voice = CapturedVoice() if options.voice == "silent" else self._voice(options.voice)
             if options.source == "replay":
-                from iagent.live.sources import LIVE_CHANNELS, paced
+                from iagent.live.run import LIVE_CHANNELS, paced
                 from iagent.telemetry.ibt import IbtSource
 
                 src = IbtSource(options.file, channels=LIVE_CHANNELS)
@@ -287,13 +287,13 @@ class LiveSessions:
         return self._voices[name]
 
     def _pocket(self, name: str) -> Voice:
-        from iagent.live.voice import PocketVoice
+        from iagent.live.speech import PocketVoice
 
         return PocketVoice(self.workspace / "cache" / "voice", voice=name)
 
 
 def _irsdk():
-    from iagent.live.sources import IrsdkSource
+    from iagent.live.run import IrsdkSource
 
     return IrsdkSource()
 

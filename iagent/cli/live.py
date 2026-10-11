@@ -39,7 +39,7 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
     """
     from iagent.live.coach import Settings
     from iagent.live.run import run
-    from iagent.live.sources import LIVE_CHANNELS, IrsdkSource, paced
+    from iagent.live.run import LIVE_CHANNELS, IrsdkSource, paced
     from iagent.live.speech import PrintVoice
 
     from iagent.live import crewchief as cc
@@ -48,7 +48,7 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
     if print_only:
         out = PrintVoice()
     else:
-        from iagent.live.voice import PocketVoice
+        from iagent.live.speech import PocketVoice
 
         try:
             click.echo(f"Loading voice {voice}...")

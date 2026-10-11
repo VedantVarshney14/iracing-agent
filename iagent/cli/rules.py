@@ -67,7 +67,7 @@ def rules_add(ctx: Ctx, rule_json: str, track: str | None, car: str | None, repl
     It's checked now (fields, variables, corner names against the track's map) so mistakes show
     up here, not on track. Next: `iagent rules backtest ID`, then `iagent rules activate ID`.
     """
-    from iagent.live.rulebook import add_rule
+    from iagent.live.rules.store import add_rule
 
     raw = _read_rule(rule_json)
     if track:
@@ -95,7 +95,7 @@ def rules_add(ctx: Ctx, rule_json: str, track: str | None, car: str | None, repl
 @click.pass_obj
 def rules_list(ctx: Ctx, track: str | None, status: str | None, as_json: bool):
     """The rules, with their status and last backtest."""
-    from iagent.live.rulebook import broken_rules, load_rules
+    from iagent.live.rules.store import broken_rules, load_rules
 
     found = load_rules(ctx.workspace, track, status=status)
     broken = broken_rules(ctx.workspace)
@@ -118,7 +118,7 @@ def rules_list(ctx: Ctx, track: str | None, status: str | None, as_json: bool):
 @click.pass_obj
 def rules_show(ctx: Ctx, rule_id: str):
     """A rule as JSON."""
-    from iagent.live.rulebook import find_rule
+    from iagent.live.rules.store import find_rule
 
     emit(find_rule(ctx.workspace, rule_id).to_dict())
 
@@ -178,7 +178,8 @@ def rules_backtest(ctx: Ctx, rule_ids: tuple[str, ...], car: str | None, track: 
 
     The result is noted on each rule; `activate` needs a backtest of the rule as it is now.
     """
-    from iagent.live.rulebook import backtest, find_rule, record_backtest
+    from iagent.live.rules.backtest import backtest, record_backtest
+    from iagent.live.rules.store import find_rule
 
     found = [find_rule(ctx.workspace, i) for i in rule_ids]
     tracks = {r.track for r in found if r.track} | ({track} if track else set())
@@ -234,7 +235,7 @@ def _main_car(ctx: Ctx, track: str) -> str:
 @click.pass_obj
 def rules_activate(ctx: Ctx, rule_ids: tuple[str, ...], force: bool):
     """Make rules live (a running coach picks them up within ~10 s)."""
-    from iagent.live.rulebook import set_status
+    from iagent.live.rules.store import set_status
 
     for rule_id in rule_ids:
         rule = set_status(ctx.workspace, rule_id, "active", force)
@@ -246,7 +247,7 @@ def rules_activate(ctx: Ctx, rule_ids: tuple[str, ...], force: bool):
 @click.pass_obj
 def rules_deactivate(ctx: Ctx, rule_ids: tuple[str, ...]):
     """Take rules out of the live coach (back to draft)."""
-    from iagent.live.rulebook import set_status
+    from iagent.live.rules.store import set_status
 
     for rule_id in rule_ids:
         click.echo(f"{set_status(ctx.workspace, rule_id, 'draft').id}: draft")
@@ -257,7 +258,7 @@ def rules_deactivate(ctx: Ctx, rule_ids: tuple[str, ...]):
 @click.pass_obj
 def rules_archive(ctx: Ctx, rule_ids: tuple[str, ...]):
     """Keep rules for the record, out of use."""
-    from iagent.live.rulebook import set_status
+    from iagent.live.rules.store import set_status
 
     for rule_id in rule_ids:
         click.echo(f"{set_status(ctx.workspace, rule_id, 'archived').id}: archived")
@@ -268,7 +269,7 @@ def rules_archive(ctx: Ctx, rule_ids: tuple[str, ...]):
 @click.pass_obj
 def rules_remove(ctx: Ctx, rule_ids: tuple[str, ...]):
     """Delete rules."""
-    from iagent.live.rulebook import remove_rule
+    from iagent.live.rules.store import remove_rule
 
     for rule_id in rule_ids:
         click.echo(f"Removed {remove_rule(ctx.workspace, rule_id)}")

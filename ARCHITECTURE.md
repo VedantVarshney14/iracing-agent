@@ -134,26 +134,24 @@ iagent/
   analysis/           corner map and metrics (shared with the live coach), comparisons, traces
   references/         Garage61, iRacing ghost files
   live/
-    coach.py          LiveCoach: the pipeline with its handlers, and `load` (a coach from the workspace)
     pipeline.py       Pipeline, EventHandler (the base class), @on / @enrich
     events.py         every event, as a typed dataclass
     state.py          CoachState: the shared state, typed
     settings.py       Settings
+    coach.py          LiveCoach: the pipeline with its handlers, and `load` (a coach from the workspace)
     handlers/         laps, track, clock, pace, corners, positions, cue_caller, focus, history,
                       summary, debrief, engineer_link (to the engineer), speaking (and the gates)
-    rules/            schema (the rule format), actions (Action subclasses), engine (RuleEngine)
-    builtin_rules.py  the coach's own behaviour, as rules
+    rules/            schema (the rule format), expr (the language conditions are written in),
+                      actions (Action subclasses), engine (RuleEngine), builtin (the coach's own
+                      rules), store (rules on disk, activation), backtest
+    speech.py         the speech arbiter and the voices (Pocket TTS, printed, captured)
     phrasing.py       every template; causes of lost time (Cause subclasses)
-    expr.py           the small expression language rules are written in
-    speech.py         the speech arbiter, utterances, voices
-    engineer.py       Engineer: the session's conversation, its prompts
-    rulebook.py       rules on disk, activation, backtests
-    cues.py           cue plans (built per track and car)
     crewchief.py      sharing the radio with CrewChief
+    engineer.py       Engineer: the session's conversation, its prompts
+    cues.py           cue plans (built per track and car)
+    run.py            where frames come from (iRacing, a paced replay), and running a coach over them
     session.py        live sessions run from the browser, and their logs
     report.py         a coached session, read back from its log
-    run.py            running a coach over a stream of frames (new session: new coach; rules reload)
-    sources.py, voice.py   iRacing and replay sources, Pocket TTS
   ui/                 `iagent ui`: the local API and the lap review chat
   cli/                the `iagent` command: one module per command group (laps, corners, rules, ...)
   testing/            synthetic laps, an .ibt writer, fakes for Garage61 and the web
@@ -384,7 +382,7 @@ live coach runs them.
   any) and an optional `where` condition. `approach` takes `at` (`{"corner": 9, "point": "apex"}`
   or `{"metres": 1830}`, with `lead_s`/`offset_m`, timed so a spoken line finishes before it);
   `frame` takes `edge` (a condition, edge-triggered with `for_s`/`rearm_s`).
-- **Conditions and text** use a small expression language ([`expr.py`](iagent/live/expr.py)): a
+- **Conditions and text** use a small expression language ([`rules/expr.py`](iagent/live/rules/expr.py)): a
   Python-syntax subset compiled to closures, no attribute access or arbitrary calls. A missing
   value makes a comparison false and keeps a line with that hole unsaid.
 - **Actions** (a list) are subclasses of `Action` ([`rules/actions.py`](iagent/live/rules/actions.py)):
@@ -393,7 +391,7 @@ live coach runs them.
 - **Limits**: `cooldown_s`, `cooldown_laps`, `max_per_lap`, `max_per_session`, `once`,
   `in_a_row`, and `pushing_only` (default) for judged events.
 - **Groups.** The coach's own behaviour is the built-in rules
-  ([`builtin_rules.py`](iagent/live/builtin_rules.py), group `builtin`): the cue, the feedback,
+  ([`rules/builtin.py`](iagent/live/rules/builtin.py), group `builtin`): the cue, the feedback,
   the lap summary, the focus news, the debrief, answers and the engineer's words. The agent's rules
   are group `agent`, which share a budget of six lines a lap and four seconds between lines.
 - **Lifecycle.** `iagent rules add` checks a rule (fields, variables, corners) and saves it as a
@@ -585,7 +583,7 @@ class KerbDetector(EventHandler):
 ```
 
 **A new behaviour.** A rule: the agent's (`iagent rules add`), or a built-in one in
-`builtin_rules.py`:
+`rules/builtin.py`:
 
 ```json
 {"id": "kerbs", "when": {"event": "kerb_strike"}, "if": "jolt > 25",

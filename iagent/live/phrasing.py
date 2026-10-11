@@ -12,7 +12,7 @@ clearest).
 import re
 from abc import ABC, abstractmethod
 
-from iagent.live.expr import round5, say_gap, say_time
+from iagent.live.rules.expr import round5, say_gap, say_time
 
 __all__ = ["CAUSES", "Cause", "cause_of", "corner_name", "cue_label", "debrief_lines", "consistency",
            "summary", "again", "better", "round5", "say_gap", "say_time"]

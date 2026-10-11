@@ -30,7 +30,7 @@ import jsonschema
 
 from iagent.analysis.corners import Corner, CornerMap
 from iagent.live.events import EVENTS, Approach
-from iagent.live.expr import Expr
+from iagent.live.rules.expr import Expr
 from iagent.live.rules.actions import PRIORITIES, Action, RuleError, expression, parse_action
 from iagent.live.settings import Settings
 from iagent.live.state import CoachState
@@ -40,7 +40,7 @@ STATUSES = ("draft", "active", "archived")
 GROUPS = ("agent", "builtin")
 LIMITS = ("cooldown_s", "cooldown_laps", "max_per_lap", "max_per_session", "once")
 
-# Channels the live coach reads (`iagent.live.sources.LIVE_CHANNELS`), by their iRacing names.
+# Channels the live coach reads (`iagent.live.run.LIVE_CHANNELS`), by their iRacing names.
 CHANNELS = {
     "Speed": "m/s", "Throttle": "0-1", "Brake": "0-1", "Clutch": "0-1", "Gear": "gear (0 neutral, -1 reverse)",
     "RPM": "engine rpm", "SteeringWheelAngle": "rad", "LatAccel": "m/s²", "LongAccel": "m/s²",
@@ -123,7 +123,7 @@ def rule_schema() -> dict:
             "car": {"type": ["string", "null"], "description": "car key; none: every car"},
             "description": {"type": "string", "description": "why the rule exists"},
             "when": {"oneOf": [when_schema(name) for name in sorted(EVENTS)]},
-            "if": {"type": "string", "description": "a condition (iagent.live.expr) over the event and the state"},
+            "if": {"type": "string", "description": "a condition (iagent.live.rules.expr) over the event and the state"},
             "actions": {"type": "array", "minItems": 1, "items": {"oneOf": _action_schemas()}},
             "limits": {"type": "object", "additionalProperties": False, "properties": {
                 **{k: {"type": "number", "minimum": 0} for k in LIMITS if k != "once"}, "once": {"type": "boolean"}}},

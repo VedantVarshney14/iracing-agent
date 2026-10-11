@@ -6,10 +6,11 @@ from click.testing import CliRunner
 from iagent.cli import cli
 from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
-from iagent.live import rulebook
+from iagent.live.rules import backtest as rule_backtest
+from iagent.live.rules import store as rulebook
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan
-from iagent.live.expr import Expr, ExprError, Template
+from iagent.live.rules.expr import Expr, ExprError, Template
 from iagent.live.rules import Rule, RuleError, describe, rule_schema
 from iagent.live.session import LiveSessions
 from iagent.live.speech import Arbiter, CapturedVoice
@@ -193,7 +194,7 @@ def test_rules_for_another_track_or_unknown_corners_are_left_out(root):
     assert [r.id for r in engine.rules] == ["r"] and "ghost" in engine.errors[0]
 
 
-# --- the rulebook --------------------------------------------------------------------------------
+# --- rules on disk, and backtests ---------------------------------------------------------------
 
 def test_rules_are_drafts_until_backtested_and_activated(root):
     raw = {"id": "t1-early", "track": TRACK, "when": {"event": "corner_exit", "corner": 1}, "if": "brake_diff_m < -3",
@@ -204,10 +205,10 @@ def test_rules_are_drafts_until_backtested_and_activated(root):
         rulebook.add_rule(root, raw)
     with pytest.raises(RuleError, match="Backtest"):
         rulebook.set_status(root, "t1-early", "active")
-    report = rulebook.backtest(root, [r], TRACK, CAR)
+    report = rule_backtest.backtest(root, [r], TRACK, CAR)
     result = report["rules"]["t1-early"]
     assert report["sessions"] == ["synthetic-1"] and result["laps"] >= 3
-    rulebook.record_backtest(root, r, result)
+    rule_backtest.record_backtest(root, r, result)
     assert rulebook.set_status(root, "t1-early", "active").status == "active"
     assert [x.id for x in rulebook.load_rules(root, TRACK, CAR, "active")] == ["t1-early"]
     edited, _ = rulebook.add_rule(root, {**raw, "if": "brake_diff_m < -8"}, replace=True)

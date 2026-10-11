@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from iagent.live.events import Approach, AskEngineer, Event
-from iagent.live.expr import Expr, ExprError, Template
+from iagent.live.rules.expr import Expr, ExprError, Template
 from iagent.live.speech import APPROACH, FEEDBACK, SUMMARY, Utterance
 
 if TYPE_CHECKING:

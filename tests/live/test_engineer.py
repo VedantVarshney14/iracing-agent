@@ -8,7 +8,7 @@ from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live import engineer as eng
 from iagent.live import phrasing
-from iagent.live import rulebook
+from iagent.live.rules import store as rulebook
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan
 from iagent.live.engineer import Engineer, debrief_prompt, rule_prompt

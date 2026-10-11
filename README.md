@@ -389,9 +389,9 @@ iagent/
   analysis/    corner map and metrics, CrewChief landmarks, splits, traces, position
   references/  Garage61 client, CSV import, iRacing ghost files
   agent.py     the agent harness: Agent (abstract), ClaudeCode (`claude -p`)
-  live/        the live coach: pipeline + events + state (typed), handlers/, rules/ (schema,
-               actions, engine) + builtin_rules, phrasing, speech, engineer,
-               rulebook (backtests), cues, sources, sessions and reports
+  live/        the live coach: pipeline + events + state (typed), handlers/, rules/ (format,
+               language, engine, built-in rules, storage, backtests), speech, phrasing,
+               engineer, cues, running it, browser sessions and reports
   testing/     synthetic lap generator, .ibt writer
   ui/          `iagent ui`: the local API server and what the screens show (review.py)
   workspace.py lap stores, reference laps and corner maps, shared by the CLI and the UI

@@ -5,7 +5,7 @@ two laps at pace. Once it's within `loss_s` on two laps at pace it's done and th
 A focus carried over from the last session (the next-session plan) starts there and is re-checked
 after two pushing laps. The driver or the coach can set it (`set_focus`).
 
-Sets `focus_news` on `Lap` ("Focus now: Turn 5."); saying it is a rule (`builtin_rules`).
+Sets `focus_news` on `Lap` ("Focus now: Turn 5."); saying it is a rule (`rules.builtin`).
 """
 
 from iagent.live import phrasing

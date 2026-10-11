@@ -5,7 +5,7 @@ focus (and corners in big trouble, or with a hint), or with no focus the corners
 so the coach goes quiet as the driver learns. A cue is said in full until it's been heard
 `learning_laps` times, then as its short form; a new focus is said in full, with "Focus." first;
 last lap's hint for the corner is added. Sets `wanted` and `text` on the cue's `Approach`; saying
-it is a rule (`builtin_rules`).
+it is a rule (`rules.builtin`).
 """
 
 from iagent.live import phrasing

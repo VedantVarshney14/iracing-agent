@@ -1,6 +1,6 @@
 """The lap summary's words: lap time, gap, the corner that cost the most (or where a moment was).
 
-Sets `summary_text` on `Lap`; saying it is a rule (`builtin_rules`). With CrewChief reading lap
+Sets `summary_text` on `Lap`; saying it is a rule (`rules.builtin`). With CrewChief reading lap
 times, only the coaching part.
 """
 

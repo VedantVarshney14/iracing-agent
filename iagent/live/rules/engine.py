@@ -1,6 +1,6 @@
 """The rule engine: an event handler that sees every event and fires the rules for it.
 
-The coach's own behaviour is the built-in rules (`iagent.live.builtin_rules`, group `coach`); the
+The coach's own behaviour is the built-in rules (`iagent.live.rules.builtin`, group `coach`); the
 agent's rules come from the context (`ctx.rules`) and can be replaced mid-session. Groups set limits
 for a whole set of rules: the agent's share a budget of lines a lap, the coach's own don't.
 """
@@ -62,7 +62,7 @@ class _Compiled:
 
 class RuleEngine(EventHandler):
     def start(self):
-        from iagent.live.builtin_rules import builtin_rules
+        from iagent.live.rules.builtin import builtin_rules
 
         self.stats: dict[str, RuleStats] = {}
         self.firings: list[dict] = []

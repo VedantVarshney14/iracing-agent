@@ -9,14 +9,14 @@ is a new gate here, nothing else.
 from dataclasses import dataclass
 
 from iagent.live.events import FrameDone, Line
-from iagent.live.expr import Expr
+from iagent.live.rules.expr import Expr
 from iagent.live.pipeline import EventHandler, on
 
 
 @dataclass(frozen=True)
 class Gate:
     name: str
-    when: str  # an expression over the shared state (iagent.live.expr)
+    when: str  # an expression over the shared state (iagent.live.rules.expr)
     hold: bool = False  # nothing new is started
     cues_only: bool = False  # only corner cues (no room for anything else)
     long_ok: bool = False  # the driver can take a line's longer version
