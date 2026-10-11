@@ -16,9 +16,10 @@ import queue
 import sys
 import threading
 import wave
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Protocol
+from typing import Callable, Iterable, Iterator, Protocol
 
 import numpy as np
 
@@ -338,14 +339,39 @@ class PocketVoice:
                 if path.exists():
                     self._write_out([_read(path)])
                 else:
-                    self._write_out(
-                        chunk.numpy()
-                        for chunk in self._model.generate_audio_stream(
-                            self._voice, text
-                        )
-                    )
+                    with closing(self._stream(text)) as chunks:
+                        self._write_out(chunks)
             except Exception:  # never take the coach down over audio
                 logger.exception("Couldn't speak %r", text)
+
+    def _stream(self, text: str) -> Iterator[np.ndarray]:
+        """TEXT's audio, generated on its own thread as fast as the model goes rather than as fast
+        as it plays: the model stalls at each sentence, and pulled only when the device had room,
+        the audio ran dry there (heard as gaps in longer lines). Closing it stops the generation
+        and waits for it, so two lines never share the model."""
+        chunks: queue.Queue[np.ndarray | Exception | None] = queue.Queue()
+        stop = threading.Event()
+
+        def generate() -> None:
+            try:
+                for chunk in self._model.generate_audio_stream(self._voice, text):
+                    if stop.is_set():
+                        break
+                    chunks.put(chunk.numpy())
+            except Exception as e:
+                chunks.put(e)
+            chunks.put(None)
+
+        worker = threading.Thread(target=generate, name="voice-generate", daemon=True)
+        worker.start()
+        try:
+            while (chunk := chunks.get()) is not None:
+                if isinstance(chunk, Exception):
+                    raise chunk
+                yield chunk
+        finally:
+            stop.set()
+            worker.join()
 
     def _write_out(self, chunks: Iterable[np.ndarray]) -> None:
         """Play audio with blocking writes from this thread (no Python callback to starve)."""
