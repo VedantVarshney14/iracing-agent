@@ -1,7 +1,7 @@
 # Architecture
 
 What the iRacing coach is for, how it's built, from a telemetry frame to a word in the driver's
-ear, and how to extend it. The [README](README.md) covers using it.
+ear, and how to extend it. The [README](README.md) and [docs/](docs/) cover using it.
 
 ## Contents
 
