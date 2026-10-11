@@ -28,15 +28,36 @@ class Gate:
 
 
 GATES = [
-    Gate("off track", "not on_track", hold=True, clear=("approach", "feedback"),
-         why="you were in the pits or off the racing surface"),
+    Gate(
+        "off track",
+        "not on_track",
+        hold=True,
+        clear=("approach", "feedback"),
+        why="you were in the pits or off the racing surface",
+    ),
     Gate("car alongside", "alongside", hold=True, why="a car was alongside"),
-    Gate("not pushing", "mode == 'tranquille'", long_ok=True, clear_on_enter=("approach", "feedback", "focus"),
-         why="you weren't pushing"),
-    Gate("settling", "mode == 'tranquille' and not settled", hold=True, why="you'd just slowed down"),
-    Gate("after the line", "after_line", cues_only=True, why="CrewChief reads the lap time then"),
+    Gate(
+        "not pushing",
+        "mode == 'tranquille'",
+        long_ok=True,
+        clear_on_enter=("approach", "feedback", "focus"),
+        why="you weren't pushing",
+    ),
+    Gate(
+        "settling",
+        "mode == 'tranquille' and not settled",
+        hold=True,
+        why="you'd just slowed down",
+    ),
+    Gate(
+        "after the line",
+        "after_line",
+        cues_only=True,
+        why="CrewChief reads the lap time then",
+    ),
     Gate("in a corner", "in_corner and pushing", cues_only=True, why="in a corner"),
 ]
+
 
 class Speaking(EventHandler):
     """Last in the pipeline: applies the gates and lets the arbiter speak, and reports every line
@@ -48,14 +69,22 @@ class Speaking(EventHandler):
         self._gates = [(g, Expr(g.when)) for g in GATES]
         self._active: set[str] = set()
         arbiter = self.ctx.arbiter
-        arbiter.on_event = lambda what, u, now: self.emit(Line(
-            status=what, kind=u.kind, text=u.text, corner=u.corner, rule=u.rule,
-            note=u.note if what == "dropped" else None))
+        arbiter.on_event = lambda what, u, now: self.emit(
+            Line(
+                status=what,
+                kind=u.kind,
+                text=u.text,
+                corner=u.corner,
+                rule=u.rule,
+                note=u.note if what == "dropped" else None,
+            )
+        )
 
     @on(FrameDone)
     def speak(self, e: FrameDone):
         """After each frame: work out which gates hold (clearing lines they drop), then let the
-        arbiter start the next line if it may, with the time free before the next cue."""
+        arbiter start the next line if it may, with the time free before the next cue.
+        """
         arbiter, now = self.ctx.arbiter, e.at
         hold = cues_only = long_ok = False
         why = ""

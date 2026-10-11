@@ -22,10 +22,22 @@ class CueCaller(EventHandler):
         """Watch every cue's point; the cue's spoken length is asked for as the car gets near, so
         it's timed at the current speed."""
         for cue in self.ctx.plan.cues:
-            self.emit(Watch(id=f"cue:{cue.corner}", target_m=cue.target_m, lead_s=self.settings.lead_s,
-                            speak=lambda cue=cue: self._speak(cue),
-                            tags={"source": "cue", "corner": cue.corner, "corners": cue.corners,
-                                  "corner_name": phrasing.corner_name(self.ctx.cmap.get(cue.corner))}))
+            self.emit(
+                Watch(
+                    id=f"cue:{cue.corner}",
+                    target_m=cue.target_m,
+                    lead_s=self.settings.lead_s,
+                    speak=lambda cue=cue: self._speak(cue),
+                    tags={
+                        "source": "cue",
+                        "corner": cue.corner,
+                        "corners": cue.corners,
+                        "corner_name": phrasing.corner_name(
+                            self.ctx.cmap.get(cue.corner)
+                        ),
+                    },
+                )
+            )
 
     def wanted(self, cue) -> bool:
         """Whether the cue is worth saying now: only while pushing; every cue on the learning laps;
@@ -37,7 +49,9 @@ class CueCaller(EventHandler):
         if st.learning:
             return True
         if st.focus is not None:
-            return cue.corner == st.focus or any(c in st.big_trouble or c in st.hints for c in cue.corners)
+            return cue.corner == st.focus or any(
+                c in st.big_trouble or c in st.hints for c in cue.corners
+            )
         return any(c in st.struggling or c in st.hints for c in cue.corners)
 
     def full(self, cue) -> bool:
@@ -55,16 +69,27 @@ class CueCaller(EventHandler):
         first for a new focus."""
         st = self.state
         corner = next((c for c in cue.corners if c in st.hints), None)
-        second = phrasing.corner_name(self.ctx.cmap.get(corner)) if corner not in (None, cue.corner) else None
-        text = phrasing.with_hint(cue.text if self.full(cue) else cue.short, st.hints.get(corner), second)
-        return f"Focus. {text}" if cue.corner == st.focus and not st.focus_heard else text
+        second = (
+            phrasing.corner_name(self.ctx.cmap.get(corner))
+            if corner not in (None, cue.corner)
+            else None
+        )
+        text = phrasing.with_hint(
+            cue.text if self.full(cue) else cue.short, st.hints.get(corner), second
+        )
+        return (
+            f"Focus. {text}" if cue.corner == st.focus and not st.focus_heard else text
+        )
 
     def _speak(self, cue) -> float | None:
         """How long the cue takes to say if it's wanted now (for timing its start), else None."""
         if not self.wanted(cue):
             return None
         text = self.text(cue)
-        return self.ctx.arbiter.voice.duration(text) or Utterance(text, 0, "", 0, 0).length_s
+        return (
+            self.ctx.arbiter.voice.duration(text)
+            or Utterance(text, 0, "", 0, 0).length_s
+        )
 
     @enrich(Approach)
     def words(self, e: Approach):
@@ -98,4 +123,5 @@ class CueCaller(EventHandler):
         self.state.in_corner = any(
             (cue.target_m - 100.0 <= d <= self.ctx.cmap.get(cue.corners[-1]).exit_m)
             or (cue.target_m - 100.0 < 0 and d >= (cue.target_m - 100.0) % length)
-            for cue in self.ctx.plan.cues)
+            for cue in self.ctx.plan.cues
+        )

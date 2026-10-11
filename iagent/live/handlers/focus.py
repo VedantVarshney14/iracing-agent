@@ -20,7 +20,9 @@ class Focus(EventHandler):
     def start(self):
         """Start with a focus carried over from last session, if there is one."""
         self.manual = False
-        self.cue_losses: list[dict[int, float]] = []  # per lap at pace: cue -> time lost (s)
+        self.cue_losses: list[dict[int, float]] = (
+            []
+        )  # per lap at pace: cue -> time lost (s)
         self._carried = False
         carried = self.ctx.carried_focus
         cue = self.ctx.plan.cue_for(carried) if carried is not None else None
@@ -34,7 +36,9 @@ class Focus(EventHandler):
             self.emit(FocusChanged(focus=self.state.focus_entry(), by="coach"))
 
     def label(self, cue) -> str:
-        return phrasing.cue_label([self.ctx.cmap.get(c).name for c in cue.corners], cue.corners)
+        return phrasing.cue_label(
+            [self.ctx.cmap.get(c).name for c in cue.corners], cue.corners
+        )
 
     def _set(self, cue, manual: bool, extra: dict | None = None) -> dict | None:
         """Make CUE the focus (None: no focus), noting it in `focus_log`; returns its entry."""
@@ -43,10 +47,22 @@ class Focus(EventHandler):
             st.focus, st.focus_corners, st.focus_label = None, [], None
             self.manual = False
             return None
-        entry = {"cue": cue.corner, "corners": cue.corners, "label": self.label(cue), "set_lap": st.lap,
-                 "done_lap": None, "manual": manual, **(extra or {})}
+        entry = {
+            "cue": cue.corner,
+            "corners": cue.corners,
+            "label": self.label(cue),
+            "set_lap": st.lap,
+            "done_lap": None,
+            "manual": manual,
+            **(extra or {}),
+        }
         st.focus_log = [*st.focus_log, entry]
-        st.focus, st.focus_corners, st.focus_label, st.focus_heard = cue.corner, list(cue.corners), entry["label"], False
+        st.focus, st.focus_corners, st.focus_label, st.focus_heard = (
+            cue.corner,
+            list(cue.corners),
+            entry["label"],
+            False,
+        )
         self.manual = manual
         return entry
 
@@ -66,7 +82,9 @@ class Focus(EventHandler):
         """After a lap at pace through most corners, update the focus and put any news to say on the
         lap (`focus_news`)."""
         before = self.state.focus_entry()
-        enough = len(e.results) >= max(1, len(self.ctx.cmap.corners) // 2)  # most corners at pace
+        enough = len(e.results) >= max(
+            1, len(self.ctx.cmap.corners) // 2
+        )  # most corners at pace
         e.focus_news = self.update(e.results) if enough else None
         e.focus = self.state.focus
         after = self.state.focus_entry()
@@ -84,7 +102,9 @@ class Focus(EventHandler):
                 losses[cue.corner] = losses.get(cue.corner, 0.0) + r.delta_s
                 judged[cue.corner] = judged.get(cue.corner, 0) + 1
         # A cue counts only when all its corners were judged (pushing through all of them).
-        losses = {k: v for k, v in losses.items() if judged[k] == len(plan.cue_for(k).corners)}
+        losses = {
+            k: v for k, v in losses.items() if judged[k] == len(plan.cue_for(k).corners)
+        }
         self.cue_losses.append(losses)
         if not s.focus or st.lap < s.learning_laps:
             return None
@@ -96,7 +116,11 @@ class Focus(EventHandler):
         if st.focus is not None:
             recent = [lap[st.focus] for lap in self.cue_losses if st.focus in lap][-2:]
             entry = self.state.focus_entry()
-            if len(recent) == 2 and all(x < s.loss_s for x in recent) and st.lap > entry["set_lap"]:
+            if (
+                len(recent) == 2
+                and all(x < s.loss_s for x in recent)
+                and st.lap > entry["set_lap"]
+            ):
                 entry["done_lap"] = st.lap
                 news.append(f"{entry['label']} sorted.")
                 self._set(None, False)
@@ -106,7 +130,9 @@ class Focus(EventHandler):
                 cue = plan.cue_for(pick)
                 entry = self._set(cue, manual=False)
                 hint = next((st.hints[c] for c in cue.corners if c in st.hints), None)
-                news.append(f"Focus now: {entry['label']}." + (f" {hint}" if hint else ""))
+                news.append(
+                    f"Focus now: {entry['label']}." + (f" {hint}" if hint else "")
+                )
         return " ".join(news) or None
 
     def _recheck_carried(self) -> str | None:
@@ -140,8 +166,12 @@ class Focus(EventHandler):
         done = {f["cue"] for f in self.state.focus_log if f["done_lap"] is not None}
         mean = {}
         for cue in self.ctx.plan.cues:
-            values = [lap[cue.corner] for lap in recent if cue.corner in lap]  # pushing laps only
+            values = [
+                lap[cue.corner] for lap in recent if cue.corner in lap
+            ]  # pushing laps only
             if values:
                 mean[cue.corner] = sum(values) / len(values)
-        candidates = {k: v for k, v in mean.items() if v >= s.focus_min_s and k not in done}
+        candidates = {
+            k: v for k, v in mean.items() if v >= s.focus_min_s and k not in done
+        }
         return max(candidates, key=candidates.get) if candidates else None

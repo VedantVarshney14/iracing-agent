@@ -14,18 +14,46 @@ from iagent.live.events import EVENTS
 from iagent.live.rules.expr import FUNCTIONS
 from iagent.live.rules.actions import ACTIONS, PRIORITIES, Action, RuleError
 from iagent.live.rules.engine import GROUPS, RuleEngine, RuleStats
-from iagent.live.rules.schema import CHANNELS, EXTRAS, LIMITS, Rule, check_against_map, rule_schema, variables
+from iagent.live.rules.schema import (
+    CHANNELS,
+    EXTRAS,
+    LIMITS,
+    Rule,
+    check_against_map,
+    rule_schema,
+    variables,
+)
 from iagent.live.state import CoachState
 
-__all__ = ["ACTIONS", "Action", "CHANNELS", "GROUPS", "PRIORITIES", "Rule", "RuleEngine", "RuleError", "RuleStats",
-           "check_against_map", "describe", "rule_schema", "variables"]
+__all__ = [
+    "ACTIONS",
+    "Action",
+    "CHANNELS",
+    "GROUPS",
+    "PRIORITIES",
+    "Rule",
+    "RuleEngine",
+    "RuleError",
+    "RuleStats",
+    "check_against_map",
+    "describe",
+    "rule_schema",
+    "variables",
+]
 
 
 def describe() -> dict:
     """Everything a rule can use, for `iagent rules vars` (and the agent): from the definitions."""
     return {
-        "events": {name: {"doc": (cls.__doc__ or "").strip(), "fields": cls.variable_docs(), "judged": cls.judged,
-                          "extras": sorted(EXTRAS.get(name, {}))} for name, cls in sorted(EVENTS.items())},
+        "events": {
+            name: {
+                "doc": (cls.__doc__ or "").strip(),
+                "fields": cls.variable_docs(),
+                "judged": cls.judged,
+                "extras": sorted(EXTRAS.get(name, {})),
+            }
+            for name, cls in sorted(EVENTS.items())
+        },
         "state": CoachState.docs(),
         "channels": dict(CHANNELS),
         "functions": {k: v[1] for k, v in FUNCTIONS.items()},

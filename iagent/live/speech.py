@@ -50,11 +50,17 @@ class Utterance:
     duration_s: float | None = None  # known for pre-rendered audio; estimated otherwise
     note: str | None = None  # why it's still waiting (reported if it's dropped)
     rule: str | None = None  # the rule that said it, if one did
-    longer: str | None = None  # a fuller version, for when the driver has the time to listen
+    longer: str | None = (
+        None  # a fuller version, for when the driver has the time to listen
+    )
 
     @property
     def length_s(self) -> float:
-        return self.duration_s if self.duration_s is not None else estimate_duration(self.text)
+        return (
+            self.duration_s
+            if self.duration_s is not None
+            else estimate_duration(self.text)
+        )
 
 
 class Voice(Protocol):
@@ -92,7 +98,9 @@ class CapturedVoice:
         return None
 
     def play(self, utterance: Utterance, now: float) -> None:
-        self.spoken.append(Spoken(now, utterance.text, utterance.kind, utterance.corner))
+        self.spoken.append(
+            Spoken(now, utterance.text, utterance.kind, utterance.corner)
+        )
 
     def stop(self) -> None:
         if self.spoken:
@@ -106,7 +114,11 @@ class PrintVoice(CapturedVoice):
         """Print the line with its session time and kind."""
         super().play(utterance, now)
         minutes, seconds = divmod(round(now, 2), 60)
-        print(f"[{int(minutes):02d}:{seconds:05.2f}] {utterance.kind:<8} {utterance.text}", file=sys.stdout, flush=True)
+        print(
+            f"[{int(minutes):02d}:{seconds:05.2f}] {utterance.kind:<8} {utterance.text}",
+            file=sys.stdout,
+            flush=True,
+        )
 
 
 # What happened to a line: said, cut (interrupted), dropped (expired unsaid), cleared.
@@ -118,7 +130,9 @@ class Arbiter:
     nothing said once expired, and a corner cue cuts off anything less urgent. `on_event` hears
     what happens to each line."""
 
-    def __init__(self, voice: Voice, quiet_gap_s: float = 0.6, on_event: Event | None = None):
+    def __init__(
+        self, voice: Voice, quiet_gap_s: float = 0.6, on_event: Event | None = None
+    ):
         self.voice = voice
         self.quiet_gap_s = quiet_gap_s
         self.on_event = on_event
@@ -140,8 +154,14 @@ class Arbiter:
     def speaking(self, now: float) -> bool:
         return now < self._busy_until
 
-    def tick(self, now: float, hold: bool = False, free_for_s: float = float("inf"),
-             long_ok: bool = False, hold_why: str = "a car was alongside") -> Utterance | None:
+    def tick(
+        self,
+        now: float,
+        hold: bool = False,
+        free_for_s: float = float("inf"),
+        long_ok: bool = False,
+        hold_why: str = "a car was alongside",
+    ) -> Utterance | None:
         """Start the next utterance if the channel is free.
 
         Args:
@@ -162,7 +182,11 @@ class Arbiter:
             return None
         if self.speaking(now):
             urgent = any(u.priority == APPROACH for u in self._queue)
-            if not (urgent and self._current is not None and self._current.priority > APPROACH):
+            if not (
+                urgent
+                and self._current is not None
+                and self._current.priority > APPROACH
+            ):
                 self._note("something else was being said")
                 return None
             self.voice.stop()  # a corner cue cuts off feedback or a summary
@@ -170,7 +194,11 @@ class Arbiter:
             self._busy_until = now
         for u in sorted(self._queue, key=lambda u: (u.priority, u.created_s)):
             if u.priority > APPROACH and u.length_s > free_for_s:
-                u.note = "in a corner" if free_for_s <= 0 else "no straight long enough before the next corner"
+                u.note = (
+                    "in a corner"
+                    if free_for_s <= 0
+                    else "no straight long enough before the next corner"
+                )
                 continue
             self._queue.remove(u)
             if long_ok and u.longer and u.priority > APPROACH:
@@ -184,7 +212,12 @@ class Arbiter:
             return u
         return None
 
-    def clear(self, kinds: tuple[str, ...] | None = None, now: float = 0.0, why: str | None = None) -> None:
+    def clear(
+        self,
+        kinds: tuple[str, ...] | None = None,
+        now: float = 0.0,
+        why: str | None = None,
+    ) -> None:
         """Drop queued lines of KINDS (all of them if None), noting WHY for the log."""
         keep = [u for u in self._queue if kinds is not None and u.kind not in kinds]
         for u in self._queue:
@@ -223,13 +256,21 @@ class PocketVoice:
     """Pocket TTS on the CPU: known lines rendered to cached WAVs up front, anything else streamed;
     audio is written from its own thread so the coach loop never waits."""
 
-    def __init__(self, cache_dir: Path, voice: str = DEFAULT_VOICE, threads: int = 2, device: int | str | None = None):
+    def __init__(
+        self,
+        cache_dir: Path,
+        voice: str = DEFAULT_VOICE,
+        threads: int = 2,
+        device: int | str | None = None,
+    ):
         try:
             import sounddevice
             import torch
             from pocket_tts import TTSModel
         except ImportError as e:
-            raise RuntimeError("Speech needs the voice extra: `uv sync --extra voice`.") from e
+            raise RuntimeError(
+                "Speech needs the voice extra: `uv sync --extra voice`."
+            ) from e
         torch.set_num_threads(threads)  # leave the rest of the CPU to the sim
         self._sd = sounddevice
         self._device = device
@@ -283,7 +324,9 @@ class PocketVoice:
         self._jobs.put(None)
         self._worker.join(timeout=10)
         if self.underruns:
-            logger.warning("%d audio underrun(s): speech may have crackled", self.underruns)
+            logger.warning(
+                "%d audio underrun(s): speech may have crackled", self.underruns
+            )
 
     def _run(self) -> None:
         """The audio thread: speak each line, from its cached WAV or streamed from the model; an
@@ -295,7 +338,12 @@ class PocketVoice:
                 if path.exists():
                     self._write_out([_read(path)])
                 else:
-                    self._write_out(chunk.numpy() for chunk in self._model.generate_audio_stream(self._voice, text))
+                    self._write_out(
+                        chunk.numpy()
+                        for chunk in self._model.generate_audio_stream(
+                            self._voice, text
+                        )
+                    )
             except Exception:  # never take the coach down over audio
                 logger.exception("Couldn't speak %r", text)
 
@@ -304,12 +352,20 @@ class PocketVoice:
         pending = np.zeros(0, dtype=np.float32)
         prime = int(PRIME_S * self.sample_rate)
         started = False
-        with self._sd.OutputStream(samplerate=self.sample_rate, channels=1, dtype="float32", device=self._device,
-                                   blocksize=BLOCK, latency="high") as out:
+        with self._sd.OutputStream(
+            samplerate=self.sample_rate,
+            channels=1,
+            dtype="float32",
+            device=self._device,
+            blocksize=BLOCK,
+            latency="high",
+        ) as out:
             for chunk in chunks:
                 if self._cut.is_set():
                     return
-                pending = np.concatenate([pending, np.asarray(chunk, dtype=np.float32).reshape(-1)])
+                pending = np.concatenate(
+                    [pending, np.asarray(chunk, dtype=np.float32).reshape(-1)]
+                )
                 if not started and len(pending) < prime:
                     continue
                 started = True
@@ -318,12 +374,16 @@ class PocketVoice:
                         return
                     self._block(out, pending[:BLOCK])
                     pending = pending[BLOCK:]
-            pending = np.concatenate([pending, np.zeros(BLOCK - len(pending) % BLOCK, dtype=np.float32)])
+            pending = np.concatenate(
+                [pending, np.zeros(BLOCK - len(pending) % BLOCK, dtype=np.float32)]
+            )
             for i in range(0, len(pending), BLOCK):
                 if self._cut.is_set():
                     return
                 self._block(out, pending[i : i + BLOCK])
-            out.write(np.zeros((BLOCK * 2, 1), dtype=np.float32))  # let the last block drain before closing
+            out.write(
+                np.zeros((BLOCK * 2, 1), dtype=np.float32)
+            )  # let the last block drain before closing
 
     def _block(self, out, block: np.ndarray) -> None:
         if out.write(block.reshape(-1, 1)):
@@ -344,7 +404,12 @@ class PocketVoice:
 
 def _read(path: Path) -> np.ndarray:
     with wave.open(str(path)) as w:
-        return np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32767
+        return (
+            np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(
+                np.float32
+            )
+            / 32767
+        )
 
 
 def _safe(name: str) -> str:

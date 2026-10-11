@@ -32,7 +32,10 @@ LAT_PEAK = 18.0  # m/s^2 of lateral acceleration at each apex
 CORNER_WIDTH_M = 60.0  # how quickly curvature fades either side of an apex
 SLOW_FACTOR = 1.15
 LINE_WIDENING_M = 2.0  # metres wider at an apex per m/s of extra apex speed
-ORIGIN = (46.0, 8.0)  # lat/lon the circuit is placed at; arbitrary, nothing depends on it
+ORIGIN = (
+    46.0,
+    8.0,
+)  # lat/lon the circuit is placed at; arbitrary, nothing depends on it
 
 
 @dataclass(frozen=True)
@@ -44,7 +47,9 @@ class SyntheticCorner:
     apex_m: float
     brake_m: float  # nominal distance at which braking starts
     min_speed: float  # m/s at the apex
-    direction: int = 1  # +1 right, -1 left (channels follow iRacing: left turns are positive)
+    direction: int = (
+        1  # +1 right, -1 left (channels follow iRacing: left turns are positive)
+    )
 
 
 @dataclass(frozen=True)
@@ -136,7 +141,9 @@ def build_profile(
         truth_min[c.name] = v_min
         decel = (V_MAX**2 - v_min**2) / (2.0 * (c.apex_m - brake_d))
         if decel > A_BRAKE_MAX:
-            raise ValueError(f"{c.name}: required decel {decel:.1f} m/s^2 exceeds the car's limit.")
+            raise ValueError(
+                f"{c.name}: required decel {decel:.1f} m/s^2 exceeds the car's limit."
+            )
 
         pre = (d >= brake_d) & (d <= c.apex_m)
         v_pre = np.sqrt(np.maximum(V_MAX**2 - 2.0 * decel * (d - brake_d), v_min**2))
@@ -148,7 +155,9 @@ def build_profile(
         v = np.where(post, np.minimum(v, v_post), v)
 
         shape = np.exp(-(((d - c.apex_m) / CORNER_WIDTH_M) ** 2))
-        steer -= c.direction * 2.0 * shape  # iRacing: steering and lateral g are negative to the right
+        steer -= (
+            c.direction * 2.0 * shape
+        )  # iRacing: steering and lateral g are negative to the right
         curvature -= c.direction * (LAT_PEAK / v_min**2) * shape
 
     dt = GRID_M / np.maximum((v[:-1] + v[1:]) / 2.0, 1e-3)
@@ -157,24 +166,47 @@ def build_profile(
     # Throttle: off while braking and until the pick-up point after each apex, full otherwise.
     throttle = np.where(brake > 0.0, 0.0, 1.0)
     for c in track.corners:
-        throttle = np.where((d > c.apex_m - 30) & (d < c.apex_m + PICKUP_M), 0.0, throttle)
+        throttle = np.where(
+            (d > c.apex_m - 30) & (d < c.apex_m + PICKUP_M), 0.0, throttle
+        )
 
     long_accel = np.gradient(v, t) if len(t) > 1 else np.zeros_like(v)
     lat_accel = v**2 * curvature
     lat, lon = _position(track, d, speed_offsets)
-    return _Profile(d, v, brake, throttle, steer, lat_accel, long_accel, t, lat, lon, truth_brake, truth_min)
+    return _Profile(
+        d,
+        v,
+        brake,
+        throttle,
+        steer,
+        lat_accel,
+        long_accel,
+        t,
+        lat,
+        lon,
+        truth_brake,
+        truth_min,
+    )
 
 
-def _position(track: SyntheticTrack, d: np.ndarray, speed_offsets: dict[str, float]) -> tuple[np.ndarray, np.ndarray]:
+def _position(
+    track: SyntheticTrack, d: np.ndarray, speed_offsets: dict[str, float]
+) -> tuple[np.ndarray, np.ndarray]:
     """Lat/lon along the lap: a circle as long as the lap (not the corners' real geometry), so
     laps join up at the line. At each corner the line moves outward by `LINE_WIDENING_M` per m/s
     of extra apex speed, which gives line differences an exact ground truth."""
     radius = track.length_m / (2.0 * np.pi)
     offset = np.zeros_like(d)
     for c in track.corners:
-        offset += LINE_WIDENING_M * speed_offsets.get(c.name, 0.0) * np.exp(-(((d - c.apex_m) / CORNER_WIDTH_M) ** 2))
+        offset += (
+            LINE_WIDENING_M
+            * speed_offsets.get(c.name, 0.0)
+            * np.exp(-(((d - c.apex_m) / CORNER_WIDTH_M) ** 2))
+        )
     angle = 2.0 * np.pi * d / track.length_m
-    return from_local_xy((radius + offset) * np.cos(angle), (radius + offset) * np.sin(angle), ORIGIN)
+    return from_local_xy(
+        (radius + offset) * np.cos(angle), (radius + offset) * np.sin(angle), ORIGIN
+    )
 
 
 class SyntheticSource:
@@ -233,8 +265,14 @@ class SyntheticSource:
         for i, kind in enumerate(self._kinds):
             profile = build_profile(
                 self._track,
-                {c.name: rng.gauss(0.0, self._brake_jitter) for c in self._track.corners},
-                {c.name: rng.gauss(0.0, self._speed_jitter) for c in self._track.corners},
+                {
+                    c.name: rng.gauss(0.0, self._brake_jitter)
+                    for c in self._track.corners
+                },
+                {
+                    c.name: rng.gauss(0.0, self._speed_jitter)
+                    for c in self._track.corners
+                },
             )
             if kind is LapKind.SLOW:
                 profile.v /= SLOW_FACTOR
@@ -246,7 +284,9 @@ class SyntheticSource:
             # Later laps start exactly where the previous one ended, so the crossing falls
             # between frames like it does in real telemetry.
             t_start = (
-                clock - float(np.interp(first_d, profile.d, profile.t)) if i == 0 else lap_end
+                clock - float(np.interp(first_d, profile.d, profile.t))
+                if i == 0
+                else lap_end
             )
             self.truth.append(
                 LapTruth(
@@ -259,7 +299,9 @@ class SyntheticSource:
                     # Structural validity: off-track and slow laps are still usable laps. The
                     # first lap of a session never has an observed start/finish crossing, so it
                     # can't be a timed lap whatever `start_m` is.
-                    expect_valid=kind in (LapKind.CLEAN, LapKind.SLOW, LapKind.OFF_TRACK) and i > 0,
+                    expect_valid=kind
+                    in (LapKind.CLEAN, LapKind.SLOW, LapKind.OFF_TRACK)
+                    and i > 0,
                 )
             )
 
@@ -281,9 +323,13 @@ class SyntheticSource:
 
         # One frame just past the line so the final lap gets its closing crossing.
         t_next = clock - lap_end
-        yield self._frame(len(self._kinds), LapKind.CLEAN, profile, t_next * V_MAX, clock)
+        yield self._frame(
+            len(self._kinds), LapKind.CLEAN, profile, t_next * V_MAX, clock
+        )
 
-    def _frame(self, lap_idx: int, kind: LapKind, p: _Profile, d: float, clock: float) -> Frame:
+    def _frame(
+        self, lap_idx: int, kind: LapKind, p: _Profile, d: float, clock: float
+    ) -> Frame:
         """One frame at distance D of lap LAP_IDX, with the channels its kind calls for (off track,
         pit road, a reset)."""
         length = self._track.length_m

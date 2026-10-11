@@ -49,13 +49,32 @@ and only run `iagent` commands when you really need more, because the driver is 
 there's nothing worth saying, `say` is null."""
 
 # Replies are structured (`claude -p --json-schema`): no parsing of free text.
-SAY = {"type": "object", "additionalProperties": False, "required": ["say"], "properties": {
-    "say": {"type": ["string", "null"],
-            "description": "the words spoken to the driver (plain spoken English), or null to say nothing"}}}
-NOTES = {"type": "object", "additionalProperties": False, "required": ["changed"], "properties": {
-    "changed": {"type": "string", "description": "one line: what you changed in the notes"}}}
+SAY = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["say"],
+    "properties": {
+        "say": {
+            "type": ["string", "null"],
+            "description": "the words spoken to the driver (plain spoken English), or null to say nothing",
+        }
+    },
+}
+NOTES = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["changed"],
+    "properties": {
+        "changed": {
+            "type": "string",
+            "description": "one line: what you changed in the notes",
+        }
+    },
+}
 
-Turn = Callable[[str, str, bool, dict], tuple[dict | None, bool]]  # (prompt, session id, resume, schema) -> (reply, exists)
+Turn = Callable[
+    [str, str, bool, dict], tuple[dict | None, bool]
+]  # (prompt, session id, resume, schema) -> (reply, exists)
 
 
 @dataclass(order=True)
@@ -93,12 +112,20 @@ class Engineer:
     @classmethod
     def over(cls, runner: ClaudeCode, session_id: str | None = None) -> "Engineer":
         """An engineer whose turns are the driver's Claude Code (`claude -p`)."""
-        def turn(prompt: str, sid: str, resume: bool, schema: dict) -> tuple[dict | None, bool]:
-            events = list(runner.turn(prompt, SYSTEM, sid, new_session=not resume, schema=schema))
+
+        def turn(
+            prompt: str, sid: str, resume: bool, schema: dict
+        ) -> tuple[dict | None, bool]:
+            events = list(
+                runner.turn(prompt, SYSTEM, sid, new_session=not resume, schema=schema)
+            )
             for e in events:
                 if e["type"] == "error":
                     logger.warning("The engineer's turn failed: %s", e["message"])
-            return structured(events), any(e["type"] in ("session", "done") for e in events)
+            return structured(events), any(
+                e["type"] in ("session", "done") for e in events
+            )
+
         return cls(turn, session_id)
 
     # --- what it hears -------------------------------------------------------------------------
@@ -111,8 +138,14 @@ class Engineer:
 
     # --- what it's asked -----------------------------------------------------------------------
 
-    def request(self, kind: str, payload: dict, context: dict, on_reply: Callable[[str | None], None],
-                min_gap_s: float = 0.0) -> bool:
+    def request(
+        self,
+        kind: str,
+        payload: dict,
+        context: dict,
+        on_reply: Callable[[str | None], None],
+        min_gap_s: float = 0.0,
+    ) -> bool:
         """Queue a turn of KIND (a key of TURNS) made from PAYLOAD; ON_REPLY gets the words (None:
         nothing to say, too late, or it failed). False if one of this kind is already waiting or
         running (questions always queue), or the last was under MIN_GAP_S ago."""
@@ -121,14 +154,29 @@ class Engineer:
         with self._cv:
             if self._closed:
                 return False
-            if kind != "question" and (kind in self._busy or now - self._last.get(kind, -1e9) < min_gap_s):
+            if kind != "question" and (
+                kind in self._busy or now - self._last.get(kind, -1e9) < min_gap_s
+            ):
                 return False
             self._busy.add(kind)
             self._last[kind] = now
-            heapq.heappush(self._queue, _Request(spec.priority, next(self._seq), kind, spec.prompt(payload), spec.schema,
-                                                 context, on_reply, now + spec.wait_s))
+            heapq.heappush(
+                self._queue,
+                _Request(
+                    spec.priority,
+                    next(self._seq),
+                    kind,
+                    spec.prompt(payload),
+                    spec.schema,
+                    context,
+                    on_reply,
+                    now + spec.wait_s,
+                ),
+            )
             if self._thread is None:
-                self._thread = threading.Thread(target=self._work, name="engineer", daemon=True)
+                self._thread = threading.Thread(
+                    target=self._work, name="engineer", daemon=True
+                )
                 self._thread.start()
             self._cv.notify()
         return True
@@ -149,7 +197,8 @@ class Engineer:
 
     def _work(self) -> None:
         """The engineer's thread: take the most important request; if it's still worth answering,
-        take the turn with what was heard since the last one; hand back the words (or None)."""
+        take the turn with what was heard since the last one; hand back the words (or None).
+        """
         while True:
             with self._cv:
                 while not self._queue and not self._closed:
@@ -162,7 +211,9 @@ class Engineer:
             if time.monotonic() <= req.deadline:
                 reply = self._take_turn(req, heard)
             else:
-                logger.info("Engineer: dropped a %s request, too late to be useful", req.kind)
+                logger.info(
+                    "Engineer: dropped a %s request, too late to be useful", req.kind
+                )
                 with self._cv:
                     self._heard = heard + self._heard  # still news next turn
             with self._cv:
@@ -177,12 +228,16 @@ class Engineer:
         from the structured reply, or None if the turn failed."""
         parts = []
         if heard:
-            parts.append("<radio since your last turn>\n" + "\n".join(heard) + "\n</radio>")
+            parts.append(
+                "<radio since your last turn>\n" + "\n".join(heard) + "\n</radio>"
+            )
         if req.context:
             parts.append("<session>\n" + _context(req.context) + "\n</session>")
         parts.append(req.prompt)
         try:
-            reply, exists = self._turn("\n\n".join(parts), self.session_id, self._exists, req.schema)
+            reply, exists = self._turn(
+                "\n\n".join(parts), self.session_id, self._exists, req.schema
+            )
         except Exception:
             logger.exception("Engineer: the turn failed")
             return None
@@ -204,29 +259,48 @@ def _context(ctx: dict) -> str:
 
 # --- what each kind of turn asks ------------------------------------------------------------------
 
+
 def briefing_prompt(f: dict) -> str:
     """The briefing: read the notes and the plan, and give a radio check for the out lap."""
-    lines = ["The session is starting: the driver is heading out. Before you say anything, read your notes for "
-             f"this track if there are any (`{f['notes']}` in the workspace) and the plan below.",
-             "", "<plan>", json.dumps(f, indent=1), "</plan>", "",
-             "Give a radio check for the out lap: one or two short sentences, hello and the plan for this run "
-             "(what to focus on, from the plan or your notes). If the plan is empty and there are no notes, just "
-             "a short radio check."]
+    lines = [
+        "The session is starting: the driver is heading out. Before you say anything, read your notes for "
+        f"this track if there are any (`{f['notes']}` in the workspace) and the plan below.",
+        "",
+        "<plan>",
+        json.dumps(f, indent=1),
+        "</plan>",
+        "",
+        "Give a radio check for the out lap: one or two short sentences, hello and the plan for this run "
+        "(what to focus on, from the plan or your notes). If the plan is empty and there are no notes, just "
+        "a short radio check.",
+    ]
     if f.get("crewchief"):
-        lines.append("CrewChief is running: it does the spotter, lap times and gaps. Don't do those.")
+        lines.append(
+            "CrewChief is running: it does the spotter, lap times and gaps. Don't do those."
+        )
     return "\n".join(lines)
 
 
 def debrief_prompt(f: dict) -> str:
     """The cool-down debrief: the facts, the coach's own phrasing to fall back on, and how long it
     may be."""
-    lines = ["The driver is on a cool-down lap and can listen for about twenty seconds. Give them the debrief: what "
-             "to work on next run and how, from the facts and what you've said before. Two to four short sentences, "
-             "under 60 words. Mention at most two corners."]
+    lines = [
+        "The driver is on a cool-down lap and can listen for about twenty seconds. Give them the debrief: what "
+        "to work on next run and how, from the facts and what you've said before. Two to four short sentences, "
+        "under 60 words. Mention at most two corners."
+    ]
     if f.get("crewchief"):
-        lines.append("CrewChief is running and reads lap times and gaps: don't repeat those.")
-    lines += ["", "<facts>", json.dumps(f, indent=1), "</facts>", "",
-              "The live coach's own phrasing, if you have nothing better:"]
+        lines.append(
+            "CrewChief is running and reads lap times and gaps: don't repeat those."
+        )
+    lines += [
+        "",
+        "<facts>",
+        json.dumps(f, indent=1),
+        "</facts>",
+        "",
+        "The live coach's own phrasing, if you have nothing better:",
+    ]
     lines += [f"- {t}" for t in f.get("fallback", [])]
     return "\n".join(lines)
 
@@ -235,29 +309,44 @@ def rule_prompt(rule: dict, state: dict) -> str:
     """A rule asked the engineer: its message and the values it saw, how much the driver can take
     now, and that it may change rules only if asked or clearly wrong."""
     pushing = state.get("mode") == "pushing"
-    lines = [f"A rule you set has fired: {rule['id']}" + (f" ({rule['description']})" if rule.get("description") else "")
-             + ".", f"Its message: {rule['message']}", f"Values it saw: {json.dumps(rule.get('values') or {})}",
-             f"The driver is {'pushing: at most one short sentence, under 12 words' if pushing else 'not pushing (out lap, cool-down or after a moment): up to two short sentences'}.",
-             f"Lap {state.get('lap')}, focus: {state.get('focus_label') or 'none'}."]
+    lines = [
+        f"A rule you set has fired: {rule['id']}"
+        + (f" ({rule['description']})" if rule.get("description") else "")
+        + ".",
+        f"Its message: {rule['message']}",
+        f"Values it saw: {json.dumps(rule.get('values') or {})}",
+        f"The driver is {'pushing: at most one short sentence, under 12 words' if pushing else 'not pushing (out lap, cool-down or after a moment): up to two short sentences'}.",
+        f"Lap {state.get('lap')}, focus: {state.get('focus_label') or 'none'}.",
+    ]
     if state.get("crewchief"):
-        lines.append("CrewChief is running and reads lap times, gaps and personal bests: don't repeat those.")
-    lines += ["", "If something is worth saying to the driver now, put it in `say`; if not, `say` is null. You may also "
-              "change rules for later with `iagent rules` (they reload within ten seconds), but only if the driver asked "
-              "for it or a rule is clearly wrong."]
+        lines.append(
+            "CrewChief is running and reads lap times, gaps and personal bests: don't repeat those."
+        )
+    lines += [
+        "",
+        "If something is worth saying to the driver now, put it in `say`; if not, `say` is null. You may also "
+        "change rules for later with `iagent rules` (they reload within ten seconds), but only if the driver asked "
+        "for it or a rule is clearly wrong.",
+    ]
     return "\n".join(lines)
 
 
 def question_prompt(text: str) -> str:
-    return (f"The driver asks, on the radio: {text}\n\nThey're on track and hear your reply spoken: answer in at most "
-            "two short sentences.")
+    return (
+        f"The driver asks, on the radio: {text}\n\nThey're on track and hear your reply spoken: answer in at most "
+        "two short sentences."
+    )
 
 
 def wrap_up_prompt(f: dict) -> str:
-    return ("The session is over; the driver is back in the pits. Nothing is spoken now. Update your notes for this "
-            f"track (`{f['notes']}` in the workspace; create it if there isn't one): what the driver worked on, what "
-            "changed, what still costs the most, and what to start with next session. Keep it short and keep what's "
-            "still true from before. In `changed`, one line saying what you changed.\n\n<facts>\n"
-            + json.dumps(f, indent=1) + "\n</facts>")
+    return (
+        "The session is over; the driver is back in the pits. Nothing is spoken now. Update your notes for this "
+        f"track (`{f['notes']}` in the workspace; create it if there isn't one): what the driver worked on, what "
+        "changed, what still costs the most, and what to start with next session. Keep it short and keep what's "
+        "still true from before. In `changed`, one line saying what you changed.\n\n<facts>\n"
+        + json.dumps(f, indent=1)
+        + "\n</facts>"
+    )
 
 
 @dataclass(frozen=True)
@@ -277,5 +366,11 @@ TURNS: dict[str, TurnKind] = {
     "debrief": TurnKind(1, 20.0, lambda p: debrief_prompt(p["facts"])),
     "rule": TurnKind(2, 20.0, lambda p: rule_prompt(p["rule"], p["state"])),
     "briefing": TurnKind(3, 90.0, lambda p: briefing_prompt(p["facts"])),
-    "wrap_up": TurnKind(4, 600.0, lambda p: wrap_up_prompt(p["facts"]), NOTES, lambda r: r.get("changed")),
+    "wrap_up": TurnKind(
+        4,
+        600.0,
+        lambda p: wrap_up_prompt(p["facts"]),
+        NOTES,
+        lambda r: r.get("changed"),
+    ),
 }

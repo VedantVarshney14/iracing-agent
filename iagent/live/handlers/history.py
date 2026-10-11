@@ -14,10 +14,13 @@ from iagent.live.pipeline import EventHandler, enrich, on
 
 class History(EventHandler):
     """What's known about each corner across laps: which ones keep costing time, hints for their
-    cues next lap, and the feedback line after a corner (aware of what was said last time)."""
+    cues next lap, and the feedback line after a corner (aware of what was said last time).
+    """
 
     def start(self):
-        self._told: dict[int, tuple[str, int]] = {}  # corner -> (cause, lap) of the last feedback said
+        self._told: dict[int, tuple[str, int]] = (
+            {}
+        )  # corner -> (cause, lap) of the last feedback said
         self._advised: set[int] = set()  # corners with advice this lap
 
     @enrich(CornerExit)
@@ -41,7 +44,15 @@ class History(EventHandler):
         if e.hint:
             st.hints[e.corner] = e.hint
         if e.advice or e.hint:
-            self.emit(Advice(corner=e.corner, lap=st.lap + 1, delta_s=e.delta_s, advice=e.advice, hint=e.hint))
+            self.emit(
+                Advice(
+                    corner=e.corner,
+                    lap=st.lap + 1,
+                    delta_s=e.delta_s,
+                    advice=e.advice,
+                    hint=e.hint,
+                )
+            )
         said = cue is not None and any(c in self._advised for c in cue.corners)
         if e.advice:
             self._advised.add(e.corner)

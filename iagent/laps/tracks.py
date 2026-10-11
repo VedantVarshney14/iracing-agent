@@ -24,14 +24,16 @@ def update_track_info(workspace: Path, session: SessionInfo) -> dict:
     """Record the session's track (ids, names, length) and car in `track.json`, keeping cars seen
     before; returns the info."""
     info = load_track_info(workspace, session.track_key) or {"cars": {}}
-    info.update({
-        "track_key": session.track_key,
-        "track_id": session.track_id,
-        "track_code": session.track_code,
-        "name": session.track_name,
-        "config": session.track_config,
-        "length_m": session.track_length_m,
-    })
+    info.update(
+        {
+            "track_key": session.track_key,
+            "track_id": session.track_id,
+            "track_code": session.track_code,
+            "name": session.track_name,
+            "config": session.track_config,
+            "length_m": session.track_length_m,
+        }
+    )
     info["cars"][session.car_key] = {"car_id": session.car_id, "name": session.car_name}
     path = info_path(workspace, session.track_key)
     path.parent.mkdir(parents=True, exist_ok=True)

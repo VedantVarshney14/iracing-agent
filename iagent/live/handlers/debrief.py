@@ -7,8 +7,18 @@ the template's. Each piece is a `Say` (kind debrief); saying it is a rule.
 """
 
 from iagent.live import phrasing
-from iagent.live.events import (AskEngineer, CoolDown, DebriefGiven, EngineerAsked, EngineerReply, Frame,
-                                Lap, PaceChanged, Say, Slowing)
+from iagent.live.events import (
+    AskEngineer,
+    CoolDown,
+    DebriefGiven,
+    EngineerAsked,
+    EngineerReply,
+    Frame,
+    Lap,
+    PaceChanged,
+    Say,
+    Slowing,
+)
 from iagent.live.pipeline import EventHandler, enrich, on
 
 CAUSE_MEANINGS = {c.name: c.doc for c in phrasing.CAUSES}
@@ -23,7 +33,13 @@ class Debrief(EventHandler):
         self._reset(None)
 
     def _reset(self, stretch):
-        self._stretch, self._words, self._waiting, self._due_at, self._done = stretch, None, False, None, False
+        self._stretch, self._words, self._waiting, self._due_at, self._done = (
+            stretch,
+            None,
+            False,
+            None,
+            False,
+        )
 
     @on(Lap)
     def lap(self, e: Lap):
@@ -40,7 +56,9 @@ class Debrief(EventHandler):
             return
         facts = self.facts()
         if facts["topics"] or facts["lap_times"]:
-            self.emit(AskEngineer(kind="debrief", stretch=e.stretch, payload={"facts": facts}))
+            self.emit(
+                AskEngineer(kind="debrief", stretch=e.stretch, payload={"facts": facts})
+            )
 
     @on(EngineerAsked)
     def asked(self, e: EngineerAsked):
@@ -53,7 +71,11 @@ class Debrief(EventHandler):
         else too late."""
         if e.kind != "debrief":
             return
-        fits = e.stretch == self._stretch and self.state.mode == "tranquille" and not self._done
+        fits = (
+            e.stretch == self._stretch
+            and self.state.mode == "tranquille"
+            and not self._done
+        )
         e.status = "none" if not e.text else "used" if fits else "too late"
         if e.text and fits:
             self._words = e.text
@@ -71,7 +93,11 @@ class Debrief(EventHandler):
         for), say it a piece at a time and note it as given."""
         if self._due_at is None or self._done:
             return
-        waiting = self._waiting and self._words is None and e.at < self._due_at + self.settings.engineer_wait_s
+        waiting = (
+            self._waiting
+            and self._words is None
+            and e.at < self._due_at + self.settings.engineer_wait_s
+        )
         if waiting:
             return
         self._done = True
@@ -79,7 +105,11 @@ class Debrief(EventHandler):
         for text in lines:
             self.emit(Say(text=text, kind="debrief"))
         if lines:
-            self.emit(DebriefGiven(by="engineer" if self._words else "template", text=" ".join(lines)))
+            self.emit(
+                DebriefGiven(
+                    by="engineer" if self._words else "template", text=" ".join(lines)
+                )
+            )
         self.state.debriefs += 1
 
     def topics(self) -> list[dict]:
@@ -98,25 +128,51 @@ class Debrief(EventHandler):
         for corner in [c for c in order if mean[c] >= s.loss_s][: s.debrief_topics]:
             rs = by_corner[corner]
             latest = next((r for r in reversed(rs) if r.cause), None)
-            out.append({"corner": corner, "name": phrasing.corner_name(self.ctx.cmap.get(corner)),
-                        "in_focus": corner in focus, "loss_per_lap_s": round(mean[corner], 2), "laps": len(rs),
-                        "cause": latest.cause if latest else None,
-                        "amount": round(latest.amount, 1) if latest and latest.amount is not None else None,
-                        "advice": latest.longer if latest else None,
-                        "ref": ref.get(corner) or {}, "mine": (latest.metrics or {}) if latest else {}})
+            out.append(
+                {
+                    "corner": corner,
+                    "name": phrasing.corner_name(self.ctx.cmap.get(corner)),
+                    "in_focus": corner in focus,
+                    "loss_per_lap_s": round(mean[corner], 2),
+                    "laps": len(rs),
+                    "cause": latest.cause if latest else None,
+                    "amount": (
+                        round(latest.amount, 1)
+                        if latest and latest.amount is not None
+                        else None
+                    ),
+                    "advice": latest.longer if latest else None,
+                    "ref": ref.get(corner) or {},
+                    "mine": (latest.metrics or {}) if latest else {},
+                }
+            )
         return out
 
     def lines(self) -> list[str]:
         """The template debrief: the topics, consistency and lap times, in the coach's own phrasing."""
         if not self.settings.debrief or not [lap for lap in self.results if lap]:
             return []
-        return phrasing.debrief_lines(self.topics(), self.state.lap_times, self.state.debriefs)
+        return phrasing.debrief_lines(
+            self.topics(), self.state.lap_times, self.state.debriefs
+        )
 
     def facts(self) -> dict:
         """What the debrief is about, for the engineer."""
         times = self.state.lap_times[-3:]
-        topics = [{k: v for k, v in t.items() if k not in ("ref", "mine")} for t in self.topics()]
-        return {"track": self.ctx.session.track_name, "laps_done": self.state.lap, "focus": self.state.focus_label,
-                "topics": topics, "lap_times": [round(t, 2) for t in times],
-                "lap_spread_s": round(max(times) - min(times), 2) if len(times) >= 2 else None,
-                "cause_meanings": CAUSE_MEANINGS, "crewchief": self.settings.crewchief, "fallback": self.lines()}
+        topics = [
+            {k: v for k, v in t.items() if k not in ("ref", "mine")}
+            for t in self.topics()
+        ]
+        return {
+            "track": self.ctx.session.track_name,
+            "laps_done": self.state.lap,
+            "focus": self.state.focus_label,
+            "topics": topics,
+            "lap_times": [round(t, 2) for t in times],
+            "lap_spread_s": (
+                round(max(times) - min(times), 2) if len(times) >= 2 else None
+            ),
+            "cause_meanings": CAUSE_MEANINGS,
+            "crewchief": self.settings.crewchief,
+            "fallback": self.lines(),
+        }

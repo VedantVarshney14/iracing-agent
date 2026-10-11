@@ -31,7 +31,9 @@ class Lap:
     lap_time: float | None  # exact (interpolated across the line); None unless complete
     reasons: tuple[str, ...] = ()
     sim_lap: int | None = None  # iRacing's own `Lap` counter, when the channel exists
-    off_track_s: float = 0.0  # time with the car off the track surface (information only)
+    off_track_s: float = (
+        0.0  # time with the car off the track surface (information only)
+    )
     source: str = "unknown"  # e.g. "ibt", "garage61"
     # Raw samples, including `lap_time_s` and `LapDist` columns.
     frames: pd.DataFrame | None = field(default=None, repr=False, compare=False)

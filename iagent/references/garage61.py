@@ -46,7 +46,7 @@ def _from_dotenv(path: Path) -> str | None:
     for line in path.read_text().splitlines():
         line = line.strip()
         if line.startswith("export "):
-            line = line[len("export "):]
+            line = line[len("export ") :]
         key, sep, value = line.partition("=")
         if sep and key.strip() in TOKEN_ENV:
             values[key.strip()] = value.strip().strip("'\"")
@@ -81,7 +81,12 @@ class Garage61Client:
     """Garage61's API with a personal token: the account, teams, tracks and cars, lap search,
     telemetry CSVs and ghost files."""
 
-    def __init__(self, token: str, base_url: str = BASE_URL, transport: httpx.BaseTransport | None = None):
+    def __init__(
+        self,
+        token: str,
+        base_url: str = BASE_URL,
+        transport: httpx.BaseTransport | None = None,
+    ):
         self._http = httpx.Client(
             base_url=base_url,
             headers={"Authorization": f"Bearer {token}"},
@@ -95,9 +100,13 @@ class Garage61Client:
     def _get(self, path: str, params: dict | None = None) -> httpx.Response:
         """GET PATH with PARAMS (leaving out None); Garage61Error with a helpful message for a
         rejected token, the rate limit or any other error."""
-        resp = self._http.get(path, params={k: v for k, v in (params or {}).items() if v is not None})
+        resp = self._http.get(
+            path, params={k: v for k, v in (params or {}).items() if v is not None}
+        )
         if resp.status_code == 401:
-            raise Garage61Error("Garage61 rejected the token (401). Check GARAGE61_TOKEN.")
+            raise Garage61Error(
+                "Garage61 rejected the token (401). Check GARAGE61_TOKEN."
+            )
         if resp.status_code == 429:
             raise Garage61Error("Garage61 rate limit hit (429). Try again in a minute.")
         if resp.status_code >= 400:
@@ -105,7 +114,9 @@ class Garage61Client:
                 message = resp.json().get("message", resp.text)
             except ValueError:
                 message = resp.text
-            raise Garage61Error(f"Garage61 {path} failed ({resp.status_code}): {message}")
+            raise Garage61Error(
+                f"Garage61 {path} failed ({resp.status_code}): {message}"
+            )
         return resp
 
     def me(self) -> dict:
@@ -120,8 +131,14 @@ class Garage61Client:
     def cars(self) -> list[dict]:
         return self._get("/cars").json().get("items", [])
 
-    def find_laps(self, track_id: int, car_id: int | None, teams: list[str], limit: int = 20,
-                  everyone: bool = False) -> list[dict]:
+    def find_laps(
+        self,
+        track_id: int,
+        car_id: int | None,
+        teams: list[str],
+        limit: int = 20,
+        everyone: bool = False,
+    ) -> list[dict]:
         """Best lap per driver on a track (and car), fastest first.
 
         `teams` are team slugs whose members to include, along with your own laps. `everyone`
@@ -157,12 +174,16 @@ def g61_id_for(items: list[dict], platform_id: int | None) -> int | None:
     if platform_id is None:
         return None
     for item in items:
-        if item.get("platform") == "iracing" and str(item.get("platform_id")) == str(platform_id):
+        if item.get("platform") == "iracing" and str(item.get("platform_id")) == str(
+            platform_id
+        ):
             return int(item["id"])
     return None
 
 
-def csv_to_lap(text: str, session: SessionInfo, lap_time: float | None, sim_lap: int | None = None) -> Lap:
+def csv_to_lap(
+    text: str, session: SessionInfo, lap_time: float | None, sim_lap: int | None = None
+) -> Lap:
     """One Garage61 CSV lap as a `Lap` on `session`'s track (its length sets the distance scale).
 
     Rows are 60 Hz samples starting just after the line. Time zero is placed on the line by
@@ -171,7 +192,9 @@ def csv_to_lap(text: str, session: SessionInfo, lap_time: float | None, sim_lap:
     """
     df = pd.read_csv(io.StringIO(text))
     if "LapDistPct" not in df or "Speed" not in df:
-        raise ValueError(f"Not a Garage61 lap CSV: needs LapDistPct and Speed, got {list(df.columns)[:8]}")
+        raise ValueError(
+            f"Not a Garage61 lap CSV: needs LapDistPct and Speed, got {list(df.columns)[:8]}"
+        )
     for col in df.columns:
         if df[col].dtype == object:  # "true"/"false" flags
             df[col] = df[col].astype(str).str.lower().map({"true": 1.0, "false": 0.0})
@@ -184,7 +207,11 @@ def csv_to_lap(text: str, session: SessionInfo, lap_time: float | None, sim_lap:
     # which pins down the crossing time.
     pct_all = df["LapDistPct"].to_numpy()
     first = 0
-    while first < len(df) - 1 and pct_all[first] > 0.5 and pct_all[first + 1] < pct_all[first]:
+    while (
+        first < len(df) - 1
+        and pct_all[first] > 0.5
+        and pct_all[first + 1] < pct_all[first]
+    ):
         first += 1
     wraps = np.where(np.diff(pct_all[first:]) < -0.5)[0]
     stop = first + int(wraps[0]) + 1 if len(wraps) else len(df)
@@ -195,7 +222,9 @@ def csv_to_lap(text: str, session: SessionInfo, lap_time: float | None, sim_lap:
     pct = df["LapDistPct"].to_numpy()
     t0 = pct[0] * length / speed[0]  # time from the line to the first sample
     t = t_all[first:stop] + t0
-    if stop < len(pct_all):  # crossed the line: interpolate where between the two samples
+    if stop < len(
+        pct_all
+    ):  # crossed the line: interpolate where between the two samples
         to_line = 1.0 - pct_all[stop - 1]
         frac = to_line / (to_line + pct_all[stop])
         measured_end = float(t_all[stop - 1] + t0 + frac / CSV_HZ)
@@ -204,7 +233,11 @@ def csv_to_lap(text: str, session: SessionInfo, lap_time: float | None, sim_lap:
     end = lap_time if lap_time else measured_end
 
     # Keep the car's position when the export has it (otherwise the columns are all zeros).
-    frames = df.copy() if has_position(df) else df.drop(columns=[c for c in ("Lat", "Lon") if c in df])
+    frames = (
+        df.copy()
+        if has_position(df)
+        else df.drop(columns=[c for c in ("Lat", "Lon") if c in df])
+    )
     frames["SessionTime"] = t
     frames["lap_time_s"] = t
     frames["LapDist"] = pct * length
@@ -213,7 +246,9 @@ def csv_to_lap(text: str, session: SessionInfo, lap_time: float | None, sim_lap:
     off_track_s = 0.0
     if "PositionType" in df:
         position = df["PositionType"].round()
-        frames["PlayerTrackSurface"] = np.where(position == _POSITION_OFF_TRACK, SURFACE_OFF_TRACK, SURFACE_ON_TRACK)
+        frames["PlayerTrackSurface"] = np.where(
+            position == _POSITION_OFF_TRACK, SURFACE_OFF_TRACK, SURFACE_ON_TRACK
+        )
         frames["OnPitRoad"] = position.isin(_POSITION_PIT).astype(float)
         off_track_s = float((position == _POSITION_OFF_TRACK).sum()) / CSV_HZ
         if frames["OnPitRoad"].any():

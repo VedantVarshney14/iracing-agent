@@ -57,36 +57,75 @@ class Context:
     ref_d: np.ndarray  # the reference lap: distance (m) ...
     ref_t: np.ndarray  # ... and elapsed time (s) at each point
     arbiter: Arbiter
-    own_best: pd.DataFrame | None = None  # the driver's best lap here: the pace that counts as pushing
+    own_best: pd.DataFrame | None = (
+        None  # the driver's best lap here: the pace that counts as pushing
+    )
     carried_focus: int | None = None  # a focus planned in an earlier session
     rules: list[Rule] | None = None  # the agent's
-    engineer: object | None = None  # iagent.live.engineer.Engineer: the session's conversation
-    radio_context: Callable[[], dict] | None = None  # what the engineer is told about the session
+    engineer: object | None = (
+        None  # iagent.live.engineer.Engineer: the session's conversation
+    )
+    radio_context: Callable[[], dict] | None = (
+        None  # what the engineer is told about the session
+    )
 
 
 class LiveCoach:
     """The pipeline with the coach's event handlers, the rules and speech. `state` is what it
     knows, `ctx` what it was given, `rules` its rule engine."""
 
-    def __init__(self, session: SessionInfo, plan: CuePlan, cmap: CornerMap, ref_grid: pd.DataFrame,
-                 arbiter: Arbiter, settings: Settings | None = None, own_best: pd.DataFrame | None = None,
-                 carried_focus: int | None = None, rules: list[Rule] | None = None, engineer=None,
-                 radio_context: Callable[[], dict] | None = None, handlers: tuple[type[EventHandler], ...] = ()):
+    def __init__(
+        self,
+        session: SessionInfo,
+        plan: CuePlan,
+        cmap: CornerMap,
+        ref_grid: pd.DataFrame,
+        arbiter: Arbiter,
+        settings: Settings | None = None,
+        own_best: pd.DataFrame | None = None,
+        carried_focus: int | None = None,
+        rules: list[Rule] | None = None,
+        engineer=None,
+        radio_context: Callable[[], dict] | None = None,
+        handlers: tuple[type[EventHandler], ...] = (),
+    ):
         """`handlers` are added to the standard ones (before the rules and speech): an extension
         that only defines events, event handlers and rules plugs in here."""
-        self.ctx = Context(session, plan, cmap, ref_grid["LapDist"].to_numpy(dtype=float),
-                           ref_grid["lap_time_s"].to_numpy(dtype=float), arbiter, own_best, carried_focus, rules,
-                           engineer, radio_context)
+        self.ctx = Context(
+            session,
+            plan,
+            cmap,
+            ref_grid["LapDist"].to_numpy(dtype=float),
+            ref_grid["lap_time_s"].to_numpy(dtype=float),
+            arbiter,
+            own_best,
+            carried_focus,
+            rules,
+            engineer,
+            radio_context,
+        )
         self.settings = settings or Settings()
-        self.pipeline = Pipeline(self.ctx, self.settings, [*HANDLERS, *handlers, RuleEngine, Speaking])
+        self.pipeline = Pipeline(
+            self.ctx, self.settings, [*HANDLERS, *handlers, RuleEngine, Speaking]
+        )
 
     @classmethod
-    def load(cls, root: Path, session: SessionInfo, voice: Voice, settings: Settings | None = None,
-             rules: list[Rule] | None = None, ref_id: str | None = None, carried_focus: int | None = None,
-             engineer=None, radio_context: Callable[[], dict] | None = None,
-             exclude_session: str | None = None) -> "LiveCoach":
+    def load(
+        cls,
+        root: Path,
+        session: SessionInfo,
+        voice: Voice,
+        settings: Settings | None = None,
+        rules: list[Rule] | None = None,
+        ref_id: str | None = None,
+        carried_focus: int | None = None,
+        engineer=None,
+        radio_context: Callable[[], dict] | None = None,
+        exclude_session: str | None = None,
+    ) -> "LiveCoach":
         """A coach for SESSION from the workspace at ROOT: its cue plan (built on first use), corner
-        map, reference lap and the driver's best lap (leaving out EXCLUDE_SESSION, for backtests)."""
+        map, reference lap and the driver's best lap (leaving out EXCLUDE_SESSION, for backtests).
+        """
         track, car = session.track_key, session.car_key
         ws = Workspace(root)
         try:
@@ -96,8 +135,19 @@ class LiveCoach:
             own_best = ws.best_lap(track, car, exclude_session)
         finally:
             ws.close()
-        return cls(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own_best,
-                   carried_focus=carried_focus, rules=rules, engineer=engineer, radio_context=radio_context)
+        return cls(
+            session,
+            plan,
+            cmap,
+            ref_grid,
+            Arbiter(voice),
+            settings,
+            own_best=own_best,
+            carried_focus=carried_focus,
+            rules=rules,
+            engineer=engineer,
+            radio_context=radio_context,
+        )
 
     @property
     def state(self) -> CoachState:
@@ -109,7 +159,11 @@ class LiveCoach:
 
     def wanted(self, cue) -> bool:
         """Would this cue be said on its next approach (if the driver is pushing)?"""
-        return self.pipeline.get(CueCaller).wanted(cue) if self.state.pushing else self.state.learning
+        return (
+            self.pipeline.get(CueCaller).wanted(cue)
+            if self.state.pushing
+            else self.state.learning
+        )
 
     # --- driving it ----------------------------------------------------------------------------
 

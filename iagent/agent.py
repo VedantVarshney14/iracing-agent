@@ -43,11 +43,18 @@ class Agent(ABC):
     lines with a different command."""
 
     @abstractmethod
-    def turn(self, prompt: str, system_prompt: str, session_id: str | None = None,
-             new_session: bool = False, schema: dict | None = None) -> Iterator[dict]:
+    def turn(
+        self,
+        prompt: str,
+        system_prompt: str,
+        session_id: str | None = None,
+        new_session: bool = False,
+        schema: dict | None = None,
+    ) -> Iterator[dict]:
         """One turn, as events (see the module docstring), starting with {"type": "run", "run_id"}.
         SESSION_ID continues that conversation, or starts it with that id when NEW_SESSION.
-        SCHEMA (a JSON Schema) makes the reply structured: a {"type": "structured"} event."""
+        SCHEMA (a JSON Schema) makes the reply structured: a {"type": "structured"} event.
+        """
 
     @abstractmethod
     def stop(self, run_id: str) -> bool:
@@ -56,7 +63,8 @@ class Agent(ABC):
 
 class ClaudeCode(Agent):
     """The driver's own Claude Code, run headless (`claude -p`) with the coach plugin, on the
-    workspace. `--session-id` starts a conversation with a given id, `--resume` continues it."""
+    workspace. `--session-id` starts a conversation with a given id, `--resume` continues it.
+    """
 
     def __init__(self, workspace: Path, claude: str | None = None):
         self.workspace = workspace.resolve()
@@ -74,14 +82,30 @@ class ClaudeCode(Agent):
         proc.kill()
         return True
 
-    def command(self, system_prompt: str, session_id: str | None = None, new_session: bool = False,
-                schema: dict | None = None) -> list[str]:
+    def command(
+        self,
+        system_prompt: str,
+        session_id: str | None = None,
+        new_session: bool = False,
+        schema: dict | None = None,
+    ) -> list[str]:
         """The `claude -p` command line for a turn: streamed JSON, the system prompt, the coach
         plugin and its allowed tools, the conversation (new or resumed), and a JSON Schema for a
         structured reply."""
-        cmd = [self.claude, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-               "--append-system-prompt", system_prompt, "--permission-mode", "acceptEdits",
-               "--allowedTools", *ALLOWED_TOOLS]
+        cmd = [
+            self.claude,
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+            "--append-system-prompt",
+            system_prompt,
+            "--permission-mode",
+            "acceptEdits",
+            "--allowedTools",
+            *ALLOWED_TOOLS,
+        ]
         if COACH_PLUGIN.is_dir():
             cmd += ["--plugin-dir", str(COACH_PLUGIN)]
         if model := os.environ.get("IAGENT_COACH_MODEL"):
@@ -96,22 +120,42 @@ class ClaudeCode(Agent):
         """The coach's shell finds this install's `iagent` and works on the UI's workspace."""
         env = dict(os.environ)
         env["IAGENT_WORKSPACE"] = str(self.workspace)
-        env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
+        env["PATH"] = (
+            str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
+        )
         return env
 
-    def turn(self, prompt: str, system_prompt: str, session_id: str | None = None,
-             new_session: bool = False, schema: dict | None = None) -> Iterator[dict]:
+    def turn(
+        self,
+        prompt: str,
+        system_prompt: str,
+        session_id: str | None = None,
+        new_session: bool = False,
+        schema: dict | None = None,
+    ) -> Iterator[dict]:
         run_id = uuid.uuid4().hex
         yield {"type": "run", "run_id": run_id}
         if shutil.which(self.claude) is None:
-            yield {"type": "error", "message": f"Couldn't find `{self.claude}`. Install Claude Code, or set "
-                   "IAGENT_CLAUDE to its path."}
+            yield {
+                "type": "error",
+                "message": f"Couldn't find `{self.claude}`. Install Claude Code, or set "
+                "IAGENT_CLAUDE to its path.",
+            }
             return
-        errors = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")  # never blocks the run
+        errors = tempfile.TemporaryFile(
+            mode="w+", encoding="utf-8", errors="replace"
+        )  # never blocks the run
         try:
             proc = subprocess.Popen(
-                self.command(system_prompt, session_id, new_session, schema), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors,
-                text=True, encoding="utf-8", errors="replace", env=self.env(), cwd=self.workspace.parent,
+                self.command(system_prompt, session_id, new_session, schema),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=errors,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=self.env(),
+                cwd=self.workspace.parent,
             )
         except OSError as e:
             errors.close()
@@ -132,7 +176,14 @@ class ClaudeCode(Agent):
                 errors.seek(0)
                 err = errors.read().strip()
                 stopped = run_id in self._stopped
-                yield {"type": "error", "message": "Stopped." if stopped else (err[-500:] or "The coach exited early.")}
+                yield {
+                    "type": "error",
+                    "message": (
+                        "Stopped."
+                        if stopped
+                        else (err[-500:] or "The coach exited early.")
+                    ),
+                }
         finally:
             timer.cancel()
             with self._lock:
@@ -165,10 +216,16 @@ class StreamParser:
             return [{"type": "session", "session_id": msg.get("session_id")}]
         if kind == "stream_event":
             event = msg.get("event") or {}
-            if event.get("type") == "content_block_start" and (event.get("content_block") or {}).get("type") == "text":
+            if (
+                event.get("type") == "content_block_start"
+                and (event.get("content_block") or {}).get("type") == "text"
+            ):
                 return [{"type": "text_start"}]
             delta = event.get("delta") or {}
-            if event.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
+            if (
+                event.get("type") == "content_block_delta"
+                and delta.get("type") == "text_delta"
+            ):
                 return [{"type": "text", "text": delta.get("text", "")}]
             return []
         if kind == "assistant":
@@ -177,16 +234,29 @@ class StreamParser:
                 if block.get("type") == "tool_use":
                     args = block.get("input") or {}
                     command = args.get("command") or " ".join(
-                        str(v) for v in (block.get("name"), args.get("skill") or args.get("file_path") or args.get("pattern")) if v
+                        str(v)
+                        for v in (
+                            block.get("name"),
+                            args.get("skill")
+                            or args.get("file_path")
+                            or args.get("pattern"),
+                        )
+                        if v
                     )
                     if "iagent ui show" in command:
                         self._ui_calls.add(block.get("id"))
-                    out.append({"type": "tool", "id": block.get("id"), "command": command})
+                    out.append(
+                        {"type": "tool", "id": block.get("id"), "command": command}
+                    )
             return out
         if kind == "user":
             out = []
             for block in (msg.get("message") or {}).get("content") or []:
-                if block.get("type") == "tool_result" and block.get("tool_use_id") in self._ui_calls and not block.get("is_error"):
+                if (
+                    block.get("type") == "tool_result"
+                    and block.get("tool_use_id") in self._ui_calls
+                    and not block.get("is_error")
+                ):
                     action = _ui_action(block.get("content"))
                     if action is not None:
                         out.append({"type": "ui", "action": action})
@@ -196,7 +266,14 @@ class StreamParser:
             out = []
             if msg.get("structured_output") is not None:
                 out.append({"type": "structured", "data": msg["structured_output"]})
-            return [*out, {"type": "done", "session_id": msg.get("session_id"), "is_error": bool(msg.get("is_error"))}]
+            return [
+                *out,
+                {
+                    "type": "done",
+                    "session_id": msg.get("session_id"),
+                    "is_error": bool(msg.get("is_error")),
+                },
+            ]
         return []
 
 
@@ -205,7 +282,10 @@ def _ui_action(content) -> dict | None:
     if isinstance(content, list):
         content = "\n".join(c.get("text", "") for c in content if isinstance(c, dict))
     text = str(content or "")
-    for chunk in (text, *text.splitlines()):  # the whole output (pretty-printed), else line by line
+    for chunk in (
+        text,
+        *text.splitlines(),
+    ):  # the whole output (pretty-printed), else line by line
         try:
             data = json.loads(chunk)
         except json.JSONDecodeError:

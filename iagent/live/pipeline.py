@@ -45,16 +45,20 @@ def _event_classes(types: tuple) -> tuple[type[Event], ...]:
     """TYPES, if every one is an `Event` class; a TypeError otherwise."""
     for t in types:
         if not (isinstance(t, type) and issubclass(t, Event)):
-            raise TypeError(f"{t!r} is not an event: mark methods for Event classes (iagent.live.events).")
+            raise TypeError(
+                f"{t!r} is not an event: mark methods for Event classes (iagent.live.events)."
+            )
     return types
 
 
 def on(*types: type[Event]):
     """Mark an event handler's method as acting on these events (and their subclasses)."""
     _event_classes(types)
+
     def mark(fn):
         fn._handles = (*getattr(fn, "_handles", ()), *types)
         return fn
+
     return mark
 
 
@@ -62,9 +66,11 @@ def enrich(*types: type[Event]):
     """Mark an event handler's method as adding to these events (and their subclasses) before
     they're acted on."""
     _event_classes(types)
+
     def mark(fn):
         fn._enriches = (*getattr(fn, "_enriches", ()), *types)
         return fn
+
     return mark
 
 
@@ -111,7 +117,9 @@ class Pipeline:
         # Per event class: (order added, callback). `_routes` caches what each emitted class gets.
         self._enrichers: dict[type, list[tuple[int, Callback]]] = defaultdict(list)
         self._handlers: dict[type, list[tuple[int, Callback]]] = defaultdict(list)
-        self._listeners: dict[type, list[tuple[int, Callback]]] = defaultdict(list)  # outside subscribers
+        self._listeners: dict[type, list[tuple[int, Callback]]] = defaultdict(
+            list
+        )  # outside subscribers
         self._routes: dict[type, tuple[list[Callback], ...]] = {}
         self._added = 0
         self.handlers: list[EventHandler] = []
@@ -128,12 +136,17 @@ class Pipeline:
         marked = 0
         for attr in dir(type(handler)):
             fn = getattr(type(handler), attr, None)
-            for kind, table in (("_enriches", self._enrichers), ("_handles", self._handlers)):
+            for kind, table in (
+                ("_enriches", self._enrichers),
+                ("_handles", self._handlers),
+            ):
                 for t in getattr(fn, kind, ()):
                     table[t].append(self._in_order(getattr(handler, attr)))
                     marked += 1
         if not marked:
-            raise TypeError(f"{type(handler).__name__} acts on no events: mark its methods with @on or @enrich.")
+            raise TypeError(
+                f"{type(handler).__name__} acts on no events: mark its methods with @on or @enrich."
+            )
         self.handlers.append(handler)
         return handler
 
@@ -164,9 +177,17 @@ class Pipeline:
         """(enrichers, handlers, listeners) for an event of class T: everything marked for T or a
         class above it, in the order it was added."""
         if t not in self._routes:
-            classes = [c for c in t.__mro__ if isinstance(c, type) and issubclass(c, Event)]
+            classes = [
+                c for c in t.__mro__ if isinstance(c, type) and issubclass(c, Event)
+            ]
             self._routes[t] = tuple(
-                [fn for _, fn in sorted((entry for c in classes for entry in table.get(c, ())), key=lambda x: x[0])]
+                [
+                    fn
+                    for _, fn in sorted(
+                        (entry for c in classes for entry in table.get(c, ())),
+                        key=lambda x: x[0],
+                    )
+                ]
                 for table in (self._enrichers, self._handlers, self._listeners)
             )
         return self._routes[t]
@@ -236,5 +257,9 @@ class Pipeline:
 
 def _check_defined(event: Event) -> None:
     """Only named events (registered in `EVENTS`) go through, never a base like `AtTheLine`."""
-    if not isinstance(event, Event) or EVENTS.get(type(event).__dict__.get("name", "")) is not type(event):
-        raise TypeError(f"{event!r} is not a defined event: its class needs a `name` (iagent.live.events).")
+    if not isinstance(event, Event) or EVENTS.get(
+        type(event).__dict__.get("name", "")
+    ) is not type(event):
+        raise TypeError(
+            f"{event!r} is not a defined event: its class needs a `name` (iagent.live.events)."
+        )

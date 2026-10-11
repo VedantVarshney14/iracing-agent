@@ -13,8 +13,23 @@ from iagent.laps.resample import resample_to_distance
 
 SCHEMA_VERSION = 3  # v3 added track_length_m
 _COLUMNS = (
-    "lap_id", "session_id", "track_key", "car_key", "track", "car", "track_length_m", "seq", "sim_lap",
-    "lap_time", "complete", "valid", "reasons", "source", "off_track_s", "path", "created_at",
+    "lap_id",
+    "session_id",
+    "track_key",
+    "car_key",
+    "track",
+    "car",
+    "track_length_m",
+    "seq",
+    "sim_lap",
+    "lap_time",
+    "complete",
+    "valid",
+    "reasons",
+    "source",
+    "off_track_s",
+    "path",
+    "created_at",
 )
 _LAP_COLUMNS = _COLUMNS[:15]  # the ones that make a `Lap`
 
@@ -94,10 +109,23 @@ class ParquetLapStore:
             f"INSERT OR REPLACE INTO laps ({', '.join(_COLUMNS)}) "
             f"VALUES ({', '.join('?' * len(_COLUMNS))})",
             (
-                lap.lap_id, lap.session_id, lap.track_key, lap.car_key, lap.track, lap.car,
-                lap.track_length_m, lap.seq, lap.sim_lap, lap.lap_time, int(lap.complete),
-                int(lap.valid), ",".join(lap.reasons), lap.source, lap.off_track_s,
-                str(raw_path.relative_to(self._root)), datetime.now(timezone.utc).isoformat(),
+                lap.lap_id,
+                lap.session_id,
+                lap.track_key,
+                lap.car_key,
+                lap.track,
+                lap.car,
+                lap.track_length_m,
+                lap.seq,
+                lap.sim_lap,
+                lap.lap_time,
+                int(lap.complete),
+                int(lap.valid),
+                ",".join(lap.reasons),
+                lap.source,
+                lap.off_track_s,
+                str(raw_path.relative_to(self._root)),
+                datetime.now(timezone.utc).isoformat(),
             ),
         )
         self._db.commit()
@@ -113,7 +141,11 @@ class ParquetLapStore:
     ) -> list[Lap]:
         """Laps from the index, filtered, in track, car, session and lap order."""
         where, args = [], []
-        for column, value in (("track_key", track), ("car_key", car), ("session_id", session_id)):
+        for column, value in (
+            ("track_key", track),
+            ("car_key", car),
+            ("session_id", session_id),
+        ):
             if value is not None:
                 where.append(f"{column} = ?")
                 args.append(value)
@@ -123,14 +155,18 @@ class ParquetLapStore:
         if where:
             query += " WHERE " + " AND ".join(where)
         query += " ORDER BY track_key, car_key, session_id, seq"
-        laps = [_lap(dict(zip(_LAP_COLUMNS, row))) for row in self._db.execute(query, args)]
+        laps = [
+            _lap(dict(zip(_LAP_COLUMNS, row))) for row in self._db.execute(query, args)
+        ]
         if within_best is not None:
             laps = representative(laps, within_best)
         return laps
 
     def load(self, lap_id: str, grid: bool = True) -> pd.DataFrame:
         """A lap's samples: on the 1 m grid, or raw. KeyError for an unknown lap."""
-        row = self._db.execute("SELECT path FROM laps WHERE lap_id = ?", (lap_id,)).fetchone()
+        row = self._db.execute(
+            "SELECT path FROM laps WHERE lap_id = ?", (lap_id,)
+        ).fetchone()
         if row is None:
             raise KeyError(f"Unknown lap {lap_id!r}")
         path = self._root / row[0]

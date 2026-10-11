@@ -38,17 +38,19 @@ def tracks(ws: Workspace) -> list[dict]:
     out = []
     for (track, car), recs in groups.items():
         refs = ws.refs()
-        out.append({
-            "track": track,
-            "car": car,
-            "track_name": recs[0].track,
-            "car_name": recs[0].car,
-            "laps": len(recs),
-            "valid_laps": sum(r.valid for r in recs),
-            "best_lap_time": best.get((track, car)),
-            "last_session": max(r.session_id for r in recs),
-            "reference_laps": len(refs.list(track=track, car=car)) if refs else 0,
-        })
+        out.append(
+            {
+                "track": track,
+                "car": car,
+                "track_name": recs[0].track,
+                "car_name": recs[0].car,
+                "laps": len(recs),
+                "valid_laps": sum(r.valid for r in recs),
+                "best_lap_time": best.get((track, car)),
+                "last_session": max(r.session_id for r in recs),
+                "reference_laps": len(refs.list(track=track, car=car)) if refs else 0,
+            }
+        )
     return sorted(out, key=lambda row: row["last_session"], reverse=True)
 
 
@@ -69,17 +71,24 @@ def laps(ws: Workspace, track: str, car: str) -> dict:
         "car": car,
         "track_name": own[0].track,
         "car_name": own[0].car,
-        "laps": [{
-            "lap_id": r.lap_id,
-            "session_id": r.session_id,
-            "seq": r.seq,
-            "lap_time": r.lap_time,
-            "valid": r.valid,
-            "representative": r.lap_id in rep_ids,
-            "reasons": list(r.reasons),
-            "off_track_s": r.off_track_s,
-            "vs_best_pct": round((r.lap_time / best - 1) * 100, 2) if best and r.valid and r.lap_time else None,
-        } for r in own],
+        "laps": [
+            {
+                "lap_id": r.lap_id,
+                "session_id": r.session_id,
+                "seq": r.seq,
+                "lap_time": r.lap_time,
+                "valid": r.valid,
+                "representative": r.lap_id in rep_ids,
+                "reasons": list(r.reasons),
+                "off_track_s": r.off_track_s,
+                "vs_best_pct": (
+                    round((r.lap_time / best - 1) * 100, 2)
+                    if best and r.valid and r.lap_time
+                    else None
+                ),
+            }
+            for r in own
+        ],
         "references": refs,
         "default_lap": default_lap.lap_id if default_lap else None,
         "default_ghost": ghost.lap_id if ghost else None,
@@ -93,14 +102,16 @@ def _references(ws: Workspace, track: str, car: str) -> list[dict]:
     rows = []
     for r in sorted(records, key=lambda r: r.lap_time or math.inf):
         meta = ws.ref_meta(r.lap_id)
-        rows.append({
-            "lap_id": r.lap_id,
-            "lap_time": r.lap_time,
-            "valid": r.valid,
-            "driver": meta.get("driver"),
-            "date": meta.get("date"),
-            "source": r.source,
-        })
+        rows.append(
+            {
+                "lap_id": r.lap_id,
+                "lap_time": r.lap_time,
+                "valid": r.valid,
+                "driver": meta.get("driver"),
+                "date": meta.get("date"),
+                "source": r.source,
+            }
+        )
     return rows
 
 
@@ -108,8 +119,11 @@ def default_ghost(ws: Workspace, rec: Lap) -> Lap | None:
     """The lap to compare against when none is chosen: the fastest valid reference lap (a
     Garage61 teammate's), otherwise the driver's fastest other valid lap."""
     store = ws.refs()
-    refs = [r for r in (store.list(track=rec.track_key, car=rec.car_key) if store else [])
-            if r.valid and r.lap_time is not None]
+    refs = [
+        r
+        for r in (store.list(track=rec.track_key, car=rec.car_key) if store else [])
+        if r.valid and r.lap_time is not None
+    ]
     if refs:
         return min(refs, key=lambda r: r.lap_time)
     try:
@@ -118,13 +132,18 @@ def default_ghost(ws: Workspace, rec: Lap) -> Lap | None:
         return None
 
 
-def review(ws: Workspace, lap_id: str, ref_id: str | None = None, step_m: float = 2.0) -> dict:
+def review(
+    ws: Workspace, lap_id: str, ref_id: str | None = None, step_m: float = 2.0
+) -> dict:
     """Everything the lap review screen draws: both laps' traces on a shared distance grid, the
-    time gap along the lap, the corner comparison and (when recorded) both racing lines."""
+    time gap along the lap, the corner comparison and (when recorded) both racing lines.
+    """
     rec = ws.find(lap_id)
     ref = ws.reference(rec, ref_id) if ref_id else default_ghost(ws, rec)
     if ref is None:
-        raise WorkspaceError(f"No lap to compare {lap_id} against: drive another valid lap or import a reference lap.")
+        raise WorkspaceError(
+            f"No lap to compare {lap_id} against: drive another valid lap or import a reference lap."
+        )
     cmap = ws.corner_map(rec.track_key)
     lap_grid, ref_grid = ws.load(rec.lap_id), ws.load(ref.lap_id)
 
@@ -133,7 +152,10 @@ def review(ws: Workspace, lap_id: str, ref_id: str | None = None, step_m: float 
         corner_metrics(ref_grid, ref.lap_time, cmap),
     )
     by_id = {row["corner"]: row for row in rows}
-    corners = [{**dataclasses.asdict(c), "label": c.label, **by_id.get(c.id, {})} for c in cmap.corners]
+    corners = [
+        {**dataclasses.asdict(c), "label": c.label, **by_id.get(c.id, {})}
+        for c in cmap.corners
+    ]
 
     dist = np.arange(0.0, cmap.length_m, step_m)
     a, b = _on(lap_grid, dist), _on(ref_grid, dist)
@@ -148,15 +170,26 @@ def review(ws: Workspace, lap_id: str, ref_id: str | None = None, step_m: float 
         position = {
             "lap": {"x": _list(lx, 2), "y": _list(ly, 2)},
             "ref": {"x": _list(rx, 2), "y": _list(ry, 2)},
-            "ref_index": [int(i) for i in nearest],  # the ghost's point nearest each of yours
+            "ref_index": [
+                int(i) for i in nearest
+            ],  # the ghost's point nearest each of yours
         }
 
     return {
-        "track": {"key": rec.track_key, "name": rec.track, "car": rec.car_key, "car_name": rec.car,
-                  "length_m": cmap.length_m},
+        "track": {
+            "key": rec.track_key,
+            "name": rec.track,
+            "car": rec.car_key,
+            "car_name": rec.car,
+            "length_m": cmap.length_m,
+        },
         "lap": _lap_info(ws, rec),
         "ref": _lap_info(ws, ref),
-        "total_delta_s": round(rec.lap_time - ref.lap_time, 3) if rec.lap_time and ref.lap_time else None,
+        "total_delta_s": (
+            round(rec.lap_time - ref.lap_time, 3)
+            if rec.lap_time and ref.lap_time
+            else None
+        ),
         "corners": _clean(corners),
         "trace": {
             "distance_m": _list(dist, 1),
@@ -190,17 +223,26 @@ def _on(grid: pd.DataFrame, dist: np.ndarray) -> dict[str, np.ndarray]:
     out = {}
     for col in ("lap_time_s", "Lat", "Lon", *TRACE_CHANNELS):
         if col in grid:
-            out[col] = np.interp(dist, d, grid[col].to_numpy(dtype=float), left=np.nan, right=np.nan)
+            out[col] = np.interp(
+                dist, d, grid[col].to_numpy(dtype=float), left=np.nan, right=np.nan
+            )
     return out
 
 
 def _channels(sampled: dict[str, np.ndarray]) -> dict[str, list]:
-    return {name: _list(sampled[name] * scale, 2) for name, scale in TRACE_CHANNELS.items() if name in sampled}
+    return {
+        name: _list(sampled[name] * scale, 2)
+        for name, scale in TRACE_CHANNELS.items()
+        if name in sampled
+    }
 
 
 def _list(values, places: int) -> list:
     """JSON-safe: rounded floats, NaN as null."""
-    return [None if not np.isfinite(v) else round(float(v), places) for v in np.asarray(values, dtype=float)]
+    return [
+        None if not np.isfinite(v) else round(float(v), places)
+        for v in np.asarray(values, dtype=float)
+    ]
 
 
 def _clean(obj):

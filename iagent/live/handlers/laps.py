@@ -23,12 +23,15 @@ class Laps(EventHandler):
     @enrich(Frame)
     def segment(self, e: Frame):
         """Feed the frame to the segmenter; a line crossing is dispatched at once, so this frame
-        counts in the new lap. Also keeps `after_line` (CrewChief's quiet time after the line)."""
+        counts in the new lap. Also keeps `after_line` (CrewChief's quiet time after the line).
+        """
         segment = self._segmenter.push(e.frame)
         if segment is not None:
             self.pipe.dispatch(Crossing(segment=segment, complete=segment.complete))
         s = self.settings
-        self.state.after_line = s.crewchief and self.pipe.now - self.state.line_at < s.crewchief_quiet_s
+        self.state.after_line = (
+            s.crewchief and self.pipe.now - self.state.line_at < s.crewchief_quiet_s
+        )
 
     @on(Crossing)
     def crossed(self, e: Crossing):
@@ -43,5 +46,7 @@ class Laps(EventHandler):
         st.learning = st.lap < self.settings.learning_laps
         ref, lap_time = self.ctx.plan.ref_lap_time, e.segment.lap_time
         gap = round(lap_time - ref, 3) if lap_time and ref else None
-        carried = {f.name: getattr(e, f.name) for f in fields(AtTheLine) if f.name != "at"}
+        carried = {
+            f.name: getattr(e, f.name) for f in fields(AtTheLine) if f.name != "at"
+        }
         self.emit(Lap(**carried, lap=st.lap, lap_time=lap_time, gap_s=gap))

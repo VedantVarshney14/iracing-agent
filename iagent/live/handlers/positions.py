@@ -44,7 +44,8 @@ class Positions(EventHandler):
     @on(Frame)
     def approach(self, e: Frame):
         """Emit `Approach` for each point whose line must start now (at the current speed), and keep
-        `next_cue_s`, how long until the next one must start, so other speech can fit around it."""
+        `next_cue_s`, how long until the next one must start, so other speech can fit around it.
+        """
         st, due = self.state, float("inf")
         if not st.on_track:
             st.next_cue_s = due
@@ -72,8 +73,17 @@ class Positions(EventHandler):
             if not p.armed or eta > HORIZON_S:
                 continue
             p.armed = False
-            self.emit(Approach(**w.tags, watch=w.id, target_m=round(target, 1), to_target_m=round(to_target, 1),
-                               eta_s=round(eta, 2), lead_s=w.lead_s, expires_at=e.at + max(0.0, eta - speak)))
+            self.emit(
+                Approach(
+                    **w.tags,
+                    watch=w.id,
+                    target_m=round(target, 1),
+                    to_target_m=round(to_target, 1),
+                    eta_s=round(eta, 2),
+                    lead_s=w.lead_s,
+                    expires_at=e.at + max(0.0, eta - speak),
+                )
+            )
         st.next_cue_s = due
 
     def _ref_time(self, a: float, b: float) -> float:

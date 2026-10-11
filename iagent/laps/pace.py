@@ -40,6 +40,9 @@ def representative(records: Sequence[Lap], within: float = DEFAULT_WITHIN) -> li
     """
     best = best_times(records)
     return [
-        r for r in records
-        if r.valid and r.lap_time is not None and r.lap_time <= best[group_of(r)] * (1.0 + within)
+        r
+        for r in records
+        if r.valid
+        and r.lap_time is not None
+        and r.lap_time <= best[group_of(r)] * (1.0 + within)
     ]

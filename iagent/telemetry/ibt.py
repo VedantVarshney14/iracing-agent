@@ -66,7 +66,9 @@ class IbtSource:
             ibt = irsdk.IBT()
             ibt.open(str(self._path))
             try:
-                self._session = parse_session_yaml(_read_session_text(ibt), self._session_id)
+                self._session = parse_session_yaml(
+                    _read_session_text(ibt), self._session_id
+                )
             finally:
                 ibt.close()
         return self._session
@@ -80,7 +82,9 @@ class IbtSource:
             available = set(ibt.var_headers_names or [])
             missing = [c for c in _REQUIRED if c not in available]
             if missing:
-                raise ValueError(f"{self._path.name} lacks required channels: {missing}")
+                raise ValueError(
+                    f"{self._path.name} lacks required channels: {missing}"
+                )
             names = [c for c in self._channels if c in available]
             columns = {n: np.asarray(ibt.get_all(n), dtype=float) for n in names}
         finally:

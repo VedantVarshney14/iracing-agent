@@ -24,7 +24,9 @@ def recording(folder, name=NAME, laps=3):
     """A finished .ibt recording of LAPS synthetic laps in FOLDER."""
     source = SyntheticSource(n_laps=laps, seed=4)
     path = write_ibt(folder / name, source.session, source.frames())
-    os.utime(path, (1000.0, 1000.0))  # finished long ago, as far as the watcher's clock goes
+    os.utime(
+        path, (1000.0, 1000.0)
+    )  # finished long ago, as far as the watcher's clock goes
     return path
 
 
@@ -103,6 +105,8 @@ def test_the_folder_can_be_changed_and_is_remembered(tmp_path, folder):
     watcher = TelemetryWatcher(ws, tmp_path / "elsewhere")
     recording(folder)
     watcher.set_folder(folder)
-    assert saved_telemetry_dir(ws) == folder and watcher.status()["folder"] == str(folder)
+    assert saved_telemetry_dir(ws) == folder and watcher.status()["folder"] == str(
+        folder
+    )
     watcher.scan(now=2000)
     assert watcher.scan(now=2010) == [NAME]

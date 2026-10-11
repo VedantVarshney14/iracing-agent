@@ -24,5 +24,7 @@ def record(source: TelemetrySource, store: LapStore, source_label: str) -> list[
     if tail is not None:
         laps.append(store.save(tail))
 
-    logger.info("Recorded %d laps (%d valid)", len(laps), sum(lap.valid for lap in laps))
+    logger.info(
+        "Recorded %d laps (%d valid)", len(laps), sum(lap.valid for lap in laps)
+    )
     return laps

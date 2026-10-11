@@ -33,8 +33,12 @@ def _files(root: Path) -> Iterator[Path]:
         yield from sorted(base.glob("*/*.json"))
 
 
-def load_rules(root: Path, track: str | None = None, car: str | None = None,
-               status: str | tuple[str, ...] | None = None) -> list[Rule]:
+def load_rules(
+    root: Path,
+    track: str | None = None,
+    car: str | None = None,
+    status: str | tuple[str, ...] | None = None,
+) -> list[Rule]:
     """Rules for TRACK (and those for every track), optionally only with STATUS. Files that
     don't parse are skipped (`broken_rules` lists them)."""
     statuses = (status,) if isinstance(status, str) else status
@@ -89,7 +93,9 @@ def save_rule(root: Path, rule: Rule) -> Path:
     return path
 
 
-def add_rule(root: Path, raw: dict, replace: bool = False, by: str = "coach") -> tuple[Rule, Path]:
+def add_rule(
+    root: Path, raw: dict, replace: bool = False, by: str = "coach"
+) -> tuple[Rule, Path]:
     """Validate and save a rule as a draft. Corners are checked against the track's map."""
     raw = {k: v for k, v in raw.items() if k not in ("status", "meta")}
     rule = Rule.from_dict(raw)
@@ -98,7 +104,9 @@ def add_rule(root: Path, raw: dict, replace: bool = False, by: str = "coach") ->
     except RuleError:
         existing = None
     if existing is not None and not replace:
-        raise RuleError(f"A rule {rule.id!r} exists already: pass --replace to change it, or pick another id.")
+        raise RuleError(
+            f"A rule {rule.id!r} exists already: pass --replace to change it, or pick another id."
+        )
     if rule.track is None and rule.corners():
         raise RuleError(f"{rule.id}: a rule about a corner needs a track.")
     if rule.track is not None and rule.corners():
@@ -111,8 +119,10 @@ def add_rule(root: Path, raw: dict, replace: bool = False, by: str = "coach") ->
             ws.close()
         check_against_map(rule, cmap)
     now = datetime.now(timezone.utc).isoformat()
-    rule.meta = {"created_by": (existing.meta.get("created_by") if existing else None) or by,
-                 "created_at": (existing.meta.get("created_at") if existing else None) or now}
+    rule.meta = {
+        "created_by": (existing.meta.get("created_by") if existing else None) or by,
+        "created_at": (existing.meta.get("created_at") if existing else None) or now,
+    }
     if existing is not None:
         rule.meta["edited_at"] = now
     rule.status = "draft"
@@ -126,8 +136,10 @@ def set_status(root: Path, rule_id: str, status: str, force: bool = False) -> Ru
     if status == "active" and not force:
         bt = rule.meta.get("backtest")
         if not bt or bt.get("fingerprint") != rule.fingerprint:
-            raise RuleError(f"Backtest {rule_id} first (`iagent rules backtest {rule_id}`): rules go live only once "
-                            "they've been seen against real laps. (--force skips this.)")
+            raise RuleError(
+                f"Backtest {rule_id} first (`iagent rules backtest {rule_id}`): rules go live only once "
+                "they've been seen against real laps. (--force skips this.)"
+            )
     rule.status = status
     rule.meta[f"{status}_at"] = datetime.now(timezone.utc).isoformat()
     save_rule(root, rule)

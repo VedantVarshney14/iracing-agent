@@ -30,11 +30,19 @@ FULL_THROTTLE = 0.98
 SMOOTH_M = 31  # lateral g is noisy (kerbs, bumps): smooth over ~30 m
 ON_FRACTION = 0.45  # a corner peaks above this fraction of the car's peak lateral g ...
 OFF_FRACTION = 0.2  # ... and extends while above this fraction
-MERGE_GAP_M = 60  # same-direction parts closer than this are one corner (e.g. a double apex)
+MERGE_GAP_M = (
+    60  # same-direction parts closer than this are one corner (e.g. a double apex)
+)
 MIN_LENGTH_M = 40
-FLAT_SPEED_DROP = 0.05  # a corner losing <5% of its entry speed is taken flat: apex = peak lateral g
-FULL_THROTTLE_HOLD_M = 20  # throttle must stay full this long to count as "back on full throttle"
-BRAKE_LOOKBACK_M = 50  # braking often starts a few metres before the speed peak at a segment start
+FLAT_SPEED_DROP = (
+    0.05  # a corner losing <5% of its entry speed is taken flat: apex = peak lateral g
+)
+FULL_THROTTLE_HOLD_M = (
+    20  # throttle must stay full this long to count as "back on full throttle"
+)
+BRAKE_LOOKBACK_M = (
+    50  # braking often starts a few metres before the speed peak at a segment start
+)
 
 
 @dataclass
@@ -69,7 +77,9 @@ class CornerMap:
     length_m: float
     derived_from: list[str]
     corners: list[Corner]
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -113,7 +123,9 @@ def _smooth(x: np.ndarray, n: int) -> np.ndarray:
     return pd.Series(x).rolling(n, center=True, min_periods=1).mean().to_numpy()
 
 
-def _median_profile(grids: Sequence[pd.DataFrame], column: str, smooth: int = 1) -> np.ndarray:
+def _median_profile(
+    grids: Sequence[pd.DataFrame], column: str, smooth: int = 1
+) -> np.ndarray:
     """COLUMN's median across the gridded laps, point by point (each lap smoothed over SMOOTH metres
     first)."""
     n = min(len(g) for g in grids)
@@ -162,7 +174,9 @@ def _regions(lat: np.ndarray) -> list[tuple[int, int]]:
     for part in parts:
         if merged:
             prev = merged[-1]
-            same_dir = np.sign(lat[prev[0] : prev[1] + 1].mean()) == np.sign(lat[part[0] : part[1] + 1].mean())
+            same_dir = np.sign(lat[prev[0] : prev[1] + 1].mean()) == np.sign(
+                lat[part[0] : part[1] + 1].mean()
+            )
             if same_dir and part[0] - prev[1] < MERGE_GAP_M:
                 prev[1] = part[1]
                 continue
@@ -216,17 +230,21 @@ def derive_corner_map(
 
     corners = []
     for k, ((start, end), apex, flat) in enumerate(zip(spans, apexes, flats)):
-        corners.append(Corner(
-            id=k + 1,
-            direction="L" if lat[start : end + 1].mean() > 0 else "R",  # iRacing: left is positive
-            entry_m=float(dist[start]),
-            apex_m=float(dist[apex]),
-            exit_m=float(dist[end]),
-            segment_start_m=bounds[k],
-            segment_end_m=bounds[k + 1],
-            ref_min_speed_kph=round(float(np.nanmin(speed[start : end + 1])), 1),
-            flat=bool(flat),
-        ))
+        corners.append(
+            Corner(
+                id=k + 1,
+                direction=(
+                    "L" if lat[start : end + 1].mean() > 0 else "R"
+                ),  # iRacing: left is positive
+                entry_m=float(dist[start]),
+                apex_m=float(dist[apex]),
+                exit_m=float(dist[end]),
+                segment_start_m=bounds[k],
+                segment_end_m=bounds[k + 1],
+                ref_min_speed_kph=round(float(np.nanmin(speed[start : end + 1])), 1),
+                flat=bool(flat),
+            )
+        )
     return CornerMap(track_key, car_key, length, list(lap_ids), corners)
 
 
@@ -234,8 +252,16 @@ def carry_names(old: CornerMap, new: CornerMap) -> CornerMap:
     """Keep names from a previous map for corners whose apex still falls inside the old corner."""
     for c in new.corners:
         for o in old.corners:
-            if o.name and o.entry_m <= c.apex_m <= o.exit_m and o.direction == c.direction:
-                c.name, c.name_source, c.name_confidence = o.name, o.name_source, o.name_confidence
+            if (
+                o.name
+                and o.entry_m <= c.apex_m <= o.exit_m
+                and o.direction == c.direction
+            ):
+                c.name, c.name_source, c.name_confidence = (
+                    o.name,
+                    o.name_source,
+                    o.name_confidence,
+                )
                 break
     return new
 
@@ -247,7 +273,9 @@ def _at(grid: pd.DataFrame, lo: float, hi: float) -> pd.DataFrame:
     return grid[(grid["LapDist"] >= lo) & (grid["LapDist"] <= hi)]
 
 
-def _time_at(grid: pd.DataFrame, d: float, lap_time: float | None, length: float) -> float:
+def _time_at(
+    grid: pd.DataFrame, d: float, lap_time: float | None, length: float
+) -> float:
     """Elapsed time at distance `d`. For a complete lap the line itself is exactly 0 and
     `lap_time` (the grid's first and last points sit just inside the line)."""
     if lap_time is not None and d <= 0.0:
@@ -258,10 +286,16 @@ def _time_at(grid: pd.DataFrame, d: float, lap_time: float | None, length: float
 
 
 def _r(x, nd: int = 1):
-    return None if x is None or (isinstance(x, float) and np.isnan(x)) else round(float(x), nd)
+    return (
+        None
+        if x is None or (isinstance(x, float) and np.isnan(x))
+        else round(float(x), nd)
+    )
 
 
-def corner_metrics(grid: pd.DataFrame, lap_time: float | None, cmap: CornerMap) -> list[dict]:
+def corner_metrics(
+    grid: pd.DataFrame, lap_time: float | None, cmap: CornerMap
+) -> list[dict]:
     """Per-corner numbers for one lap.
 
     - `time_s`: time through the corner's segment (segments tile the lap).
@@ -276,7 +310,11 @@ def corner_metrics(grid: pd.DataFrame, lap_time: float | None, cmap: CornerMap) 
     - `off_track_m`: metres of the segment driven off the track surface (an incident: the other
       numbers for this corner then describe the incident, not the driver's normal technique).
     """
-    on = grid["Brake"] > BRAKE_ON if "Brake" in grid else pd.Series(False, index=grid.index)
+    on = (
+        grid["Brake"] > BRAKE_ON
+        if "Brake" in grid
+        else pd.Series(False, index=grid.index)
+    )
     onset = on & ~on.shift(1, fill_value=False)
     full = grid["Throttle"] >= FULL_THROTTLE if "Throttle" in grid else None
     step = float(grid["LapDist"].diff().median())
@@ -285,7 +323,9 @@ def corner_metrics(grid: pd.DataFrame, lap_time: float | None, cmap: CornerMap) 
     out = []
     prev_exit = 0.0
     for c in cmap.corners:
-        approach = _at(grid, max(prev_exit, c.segment_start_m - BRAKE_LOOKBACK_M), c.apex_m)
+        approach = _at(
+            grid, max(prev_exit, c.segment_start_m - BRAKE_LOOKBACK_M), c.apex_m
+        )
         prev_exit = c.exit_m
         corner = _at(grid, c.entry_m, c.exit_m)
         if corner["Speed"].isna().all():
@@ -302,29 +342,44 @@ def corner_metrics(grid: pd.DataFrame, lap_time: float | None, cmap: CornerMap) 
             after = full.loc[imin : grid.index[grid["LapDist"] <= c.segment_end_m][-1]]
             run = after.astype(int).rolling(hold, min_periods=hold).sum() >= hold
             if run.any():
-                full_throttle_m = float(grid.loc[run.idxmax(), "LapDist"]) - (hold - 1) * step
+                full_throttle_m = (
+                    float(grid.loc[run.idxmax(), "LapDist"]) - (hold - 1) * step
+                )
 
         exit_row = grid.iloc[(grid["LapDist"] - c.exit_m).abs().argmin()]
         segment = _at(grid, c.segment_start_m, c.segment_end_m)
         off_m = None
         if "PlayerTrackSurface" in segment:
-            off_m = round(float((segment["PlayerTrackSurface"] == SURFACE_OFF_TRACK).sum()) * step)
-        out.append({
-            "corner": c.id,
-            "name": c.name,
-            "time_s": _r(_time_at(grid, c.segment_end_m, lap_time, cmap.length_m)
-                         - _time_at(grid, c.segment_start_m, lap_time, cmap.length_m), 3),
-            "brake_m": _r(brake_m, 0),
-            "brake_peak": _r(approach["Brake"].max(), 2) if "Brake" in approach else None,
-            "min_throttle": _r(approach["Throttle"].min(), 2) if "Throttle" in approach else None,
-            "entry_speed_kph": _r(approach["Speed"].max() * MS_TO_KPH),
-            "min_speed_kph": _r(corner["Speed"].min() * MS_TO_KPH),
-            "min_speed_m": _r(min_speed_m, 0),
-            "full_throttle_m": _r(full_throttle_m, 0),
-            "exit_speed_kph": _r(exit_row["Speed"] * MS_TO_KPH),
-            "min_gear": _min_gear(corner),
-            "off_track_m": off_m,
-        })
+            off_m = round(
+                float((segment["PlayerTrackSurface"] == SURFACE_OFF_TRACK).sum()) * step
+            )
+        out.append(
+            {
+                "corner": c.id,
+                "name": c.name,
+                "time_s": _r(
+                    _time_at(grid, c.segment_end_m, lap_time, cmap.length_m)
+                    - _time_at(grid, c.segment_start_m, lap_time, cmap.length_m),
+                    3,
+                ),
+                "brake_m": _r(brake_m, 0),
+                "brake_peak": (
+                    _r(approach["Brake"].max(), 2) if "Brake" in approach else None
+                ),
+                "min_throttle": (
+                    _r(approach["Throttle"].min(), 2)
+                    if "Throttle" in approach
+                    else None
+                ),
+                "entry_speed_kph": _r(approach["Speed"].max() * MS_TO_KPH),
+                "min_speed_kph": _r(corner["Speed"].min() * MS_TO_KPH),
+                "min_speed_m": _r(min_speed_m, 0),
+                "full_throttle_m": _r(full_throttle_m, 0),
+                "exit_speed_kph": _r(exit_row["Speed"] * MS_TO_KPH),
+                "min_gear": _min_gear(corner),
+                "off_track_m": off_m,
+            }
+        )
     return out
 
 
@@ -354,23 +409,27 @@ def compare_corners(lap: list[dict], ref: list[dict]) -> list[dict]:
         if a.get("missing") or b.get("missing"):
             rows.append({"corner": a["corner"], "name": a["name"], "missing": True})
             continue
-        rows.append({
-            "corner": a["corner"],
-            "name": a["name"],
-            "delta_s": _diff(a["time_s"], b["time_s"], 3),
-            "brake_m": a["brake_m"],
-            "ref_brake_m": b["brake_m"],
-            "brake_diff_m": _diff(a["brake_m"], b["brake_m"], 0),
-            "min_speed_kph": a["min_speed_kph"],
-            "ref_min_speed_kph": b["min_speed_kph"],
-            "min_speed_diff_kph": _diff(a["min_speed_kph"], b["min_speed_kph"]),
-            "full_throttle_m": a["full_throttle_m"],
-            "ref_full_throttle_m": b["full_throttle_m"],
-            "full_throttle_diff_m": _diff(a["full_throttle_m"], b["full_throttle_m"], 0),
-            "exit_speed_diff_kph": _diff(a["exit_speed_kph"], b["exit_speed_kph"]),
-            "off_track_m": a["off_track_m"],
-            "ref_off_track_m": b["off_track_m"],
-        })
+        rows.append(
+            {
+                "corner": a["corner"],
+                "name": a["name"],
+                "delta_s": _diff(a["time_s"], b["time_s"], 3),
+                "brake_m": a["brake_m"],
+                "ref_brake_m": b["brake_m"],
+                "brake_diff_m": _diff(a["brake_m"], b["brake_m"], 0),
+                "min_speed_kph": a["min_speed_kph"],
+                "ref_min_speed_kph": b["min_speed_kph"],
+                "min_speed_diff_kph": _diff(a["min_speed_kph"], b["min_speed_kph"]),
+                "full_throttle_m": a["full_throttle_m"],
+                "ref_full_throttle_m": b["full_throttle_m"],
+                "full_throttle_diff_m": _diff(
+                    a["full_throttle_m"], b["full_throttle_m"], 0
+                ),
+                "exit_speed_diff_kph": _diff(a["exit_speed_kph"], b["exit_speed_kph"]),
+                "off_track_m": a["off_track_m"],
+                "ref_off_track_m": b["off_track_m"],
+            }
+        )
     return rows
 
 
@@ -395,18 +454,20 @@ def consistency(per_lap: Sequence[list[dict]]) -> list[dict]:
         thr_mean, thr_spread = stats("full_throttle_m", 0)
         time_mean, time_spread = stats("time_s", 3)
         times = [lap["time_s"] for lap in laps if lap.get("time_s") is not None]
-        rows.append({
-            "corner": first["corner"],
-            "name": first["name"],
-            "laps": len(laps),
-            "time_mean_s": time_mean,
-            "time_spread_s": time_spread,
-            "best_time_s": round(min(times), 3) if times else None,
-            "brake_mean_m": brake_mean,
-            "brake_spread_m": brake_spread,
-            "min_speed_mean_kph": speed_mean,
-            "min_speed_spread_kph": speed_spread,
-            "full_throttle_mean_m": thr_mean,
-            "full_throttle_spread_m": thr_spread,
-        })
+        rows.append(
+            {
+                "corner": first["corner"],
+                "name": first["name"],
+                "laps": len(laps),
+                "time_mean_s": time_mean,
+                "time_spread_s": time_spread,
+                "best_time_s": round(min(times), 3) if times else None,
+                "brake_mean_m": brake_mean,
+                "brake_spread_m": brake_spread,
+                "min_speed_mean_kph": speed_mean,
+                "min_speed_spread_kph": speed_spread,
+                "full_throttle_mean_m": thr_mean,
+                "full_throttle_spread_m": thr_spread,
+            }
+        )
     return rows

@@ -24,7 +24,9 @@ def test_clean_laps_match_ground_truth_times(clean_source):
         assert lap.valid, lap.reasons
         # Sub-frame accuracy: the crossing is interpolated between frames (frame = 16.7 ms).
         assert lap.lap_time == pytest.approx(truth.lap_time, abs=1e-3)
-        line = lap.frames["SessionTime"].iloc[0] - lap.frames["lap_time_s"].iloc[0]  # the crossing that began it
+        line = (
+            lap.frames["SessionTime"].iloc[0] - lap.frames["lap_time_s"].iloc[0]
+        )  # the crossing that began it
         assert line == pytest.approx(truth.start_time, abs=1e-3)
 
 
@@ -59,7 +61,9 @@ def test_partial_first_lap_has_no_lap_time(messy_source):
 def test_flagged_laps_keep_their_time_when_complete(messy_source):
     laps = segment(messy_source)
     # Pit laps are complete laps with a time, just not valid ones.
-    assert laps[2].complete and laps[2].lap_time == pytest.approx(messy_source.truth[2].lap_time, abs=1e-3)
+    assert laps[2].complete and laps[2].lap_time == pytest.approx(
+        messy_source.truth[2].lap_time, abs=1e-3
+    )
 
 
 def test_tiny_tail_is_dropped(clean_source):

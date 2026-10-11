@@ -15,7 +15,13 @@ from iagent.analysis.corners import (
 from iagent.laps.pace import representative
 from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
-from iagent.testing.synthetic import DEFAULT_TRACK, PICKUP_M, SyntheticCorner, SyntheticSource, SyntheticTrack
+from iagent.testing.synthetic import (
+    DEFAULT_TRACK,
+    PICKUP_M,
+    SyntheticCorner,
+    SyntheticSource,
+    SyntheticTrack,
+)
 
 
 def _laps(tmp_path, track=DEFAULT_TRACK, n_laps=5, **kw):
@@ -65,20 +71,32 @@ def test_metrics_match_ground_truth(laps, cmap):
         lap_truth = truth[rec.seq]
         assert sum(r["time_s"] for r in rows) == pytest.approx(rec.lap_time, abs=0.005)
         for row, corner in zip(rows, DEFAULT_TRACK.corners):
-            assert row["brake_m"] == pytest.approx(lap_truth.brake_m[corner.name], abs=2)
-            assert row["min_speed_kph"] == pytest.approx(lap_truth.min_speed[corner.name] * MS_TO_KPH, abs=1.5)
+            assert row["brake_m"] == pytest.approx(
+                lap_truth.brake_m[corner.name], abs=2
+            )
+            assert row["min_speed_kph"] == pytest.approx(
+                lap_truth.min_speed[corner.name] * MS_TO_KPH, abs=1.5
+            )
             assert row["min_speed_m"] == pytest.approx(corner.apex_m, abs=3)
-            assert row["full_throttle_m"] == pytest.approx(corner.apex_m + PICKUP_M, abs=3)
+            assert row["full_throttle_m"] == pytest.approx(
+                corner.apex_m + PICKUP_M, abs=3
+            )
 
 
 def test_compare_reports_brake_and_speed_differences(laps, cmap):
     recs, grids, truth = laps
     (a, ga), (b, gb) = (recs[0], grids[0]), (recs[1], grids[1])
-    rows = compare_corners(corner_metrics(ga, a.lap_time, cmap), corner_metrics(gb, b.lap_time, cmap))
-    assert sum(r["delta_s"] for r in rows) == pytest.approx(a.lap_time - b.lap_time, abs=0.01)
+    rows = compare_corners(
+        corner_metrics(ga, a.lap_time, cmap), corner_metrics(gb, b.lap_time, cmap)
+    )
+    assert sum(r["delta_s"] for r in rows) == pytest.approx(
+        a.lap_time - b.lap_time, abs=0.01
+    )
     for row, corner in zip(rows, DEFAULT_TRACK.corners):
         expected = truth[a.seq].brake_m[corner.name] - truth[b.seq].brake_m[corner.name]
-        assert row["brake_diff_m"] == pytest.approx(expected, abs=2)  # > 0 means braked later
+        assert row["brake_diff_m"] == pytest.approx(
+            expected, abs=2
+        )  # > 0 means braked later
 
 
 def test_consistency_reflects_brake_jitter(tmp_path):
@@ -92,18 +110,34 @@ def consistency_of(path, **kw):
     """Per-corner consistency across eight synthetic laps made with KW (e.g. more brake jitter)."""
     recs, grids, _ = _laps(path, n_laps=8, **kw)
     cmap = derive_corner_map(grids, "synthetic", "synthcar", [r.lap_id for r in recs])
-    return consistency([corner_metrics(g, r.lap_time, cmap) for r, g in zip(recs, grids)])
+    return consistency(
+        [corner_metrics(g, r.lap_time, cmap) for r, g in zip(recs, grids)]
+    )
 
 
 def test_chicane_splits_and_double_apex_merges(tmp_path):
     # The generator brakes from top speed into every corner, so braking zones need >= ~100 m.
-    track = SyntheticTrack("Shapes", 3000.0, (
-        SyntheticCorner("chicane-R", apex_m=600, brake_m=480, min_speed=25.0, direction=1),
-        SyntheticCorner("chicane-L", apex_m=720, brake_m=600, min_speed=25.0, direction=-1),
-        SyntheticCorner("double-1", apex_m=1600, brake_m=1480, min_speed=30.0, direction=1),
-        SyntheticCorner("double-2", apex_m=1700, brake_m=1580, min_speed=30.0, direction=1),
-        SyntheticCorner("flat", apex_m=2400, brake_m=2380, min_speed=58.0, direction=-1),
-    ))
+    track = SyntheticTrack(
+        "Shapes",
+        3000.0,
+        (
+            SyntheticCorner(
+                "chicane-R", apex_m=600, brake_m=480, min_speed=25.0, direction=1
+            ),
+            SyntheticCorner(
+                "chicane-L", apex_m=720, brake_m=600, min_speed=25.0, direction=-1
+            ),
+            SyntheticCorner(
+                "double-1", apex_m=1600, brake_m=1480, min_speed=30.0, direction=1
+            ),
+            SyntheticCorner(
+                "double-2", apex_m=1700, brake_m=1580, min_speed=30.0, direction=1
+            ),
+            SyntheticCorner(
+                "flat", apex_m=2400, brake_m=2380, min_speed=58.0, direction=-1
+            ),
+        ),
+    )
     recs, grids, _ = _laps(tmp_path, track=track, n_laps=4)
     cmap = derive_corner_map(grids, "shapes", "synthcar", [r.lap_id for r in recs])
     assert [c.direction for c in cmap.corners] == ["R", "L", "R", "L"]
@@ -114,7 +148,11 @@ def test_chicane_splits_and_double_apex_merges(tmp_path):
 
 
 def test_map_round_trips_and_names_survive_remapping(tmp_path, cmap):
-    cmap.corners[0].name, cmap.corners[0].name_source, cmap.corners[0].name_confidence = "Turn One", "driver", "high"
+    (
+        cmap.corners[0].name,
+        cmap.corners[0].name_source,
+        cmap.corners[0].name_confidence,
+    ) = ("Turn One", "driver", "high")
     save_map(tmp_path, cmap)
     loaded = load_map(tmp_path, "synthetic")
     assert loaded == cmap
@@ -134,7 +172,11 @@ def test_off_track_is_located_in_its_corner(tmp_path):
     from iagent.testing.synthetic import LapKind
 
     # OFF_TRACK laps leave the track at 1500-1560 m: in T2's segment (T2 exits ~1285 m, T3 brakes at 1770 m).
-    recs, grids, _ = _laps(tmp_path, n_laps=4, kinds=[LapKind.CLEAN, LapKind.CLEAN, LapKind.OFF_TRACK, LapKind.CLEAN])
+    recs, grids, _ = _laps(
+        tmp_path,
+        n_laps=4,
+        kinds=[LapKind.CLEAN, LapKind.CLEAN, LapKind.OFF_TRACK, LapKind.CLEAN],
+    )
     cmap = derive_corner_map(grids, "synthetic", "synthcar", [r.lap_id for r in recs])
     by_seq = {r.seq: corner_metrics(g, r.lap_time, cmap) for r, g in zip(recs, grids)}
     assert [row["off_track_m"] for row in by_seq[2]] == [0, 60, 0, 0]

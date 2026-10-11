@@ -24,6 +24,7 @@ TRACK, CAR = "synthetic", "synthcar"
 @dataclass(kw_only=True)
 class Ping(Event):
     """A test event."""
+
     name: ClassVar[str] = "test_ping"
     n: int = doc("a number", 0)
 
@@ -31,6 +32,7 @@ class Ping(Event):
 @dataclass(kw_only=True)
 class Pong(Event):
     """Another."""
+
     name: ClassVar[str] = "test_pong"
     n: int = doc("a number", 0)
     seen: bool = doc("set by an enricher", False)
@@ -39,6 +41,7 @@ class Pong(Event):
 @dataclass(kw_only=True)
 class KerbStrike(Event):
     """The car hit a kerb hard: a new event, defined here, used by a rule below."""
+
     name: ClassVar[str] = "kerb_strike"
     judged: ClassVar[bool] = True
     jolt: float = doc("vertical acceleration (m/s²)", 0.0)
@@ -71,7 +74,12 @@ def test_events_are_handled_in_order_enriched_first_and_posted_from_any_thread()
     pipe.emit(Ping(n=1))
     pipe.emit(Ping(n=10))
     pipe.run()
-    assert rec.seen == [("ping", 1), ("ping", 10), ("pong", 2, True), ("pong", 11, True)]  # first in, first out
+    assert rec.seen == [
+        ("ping", 1),
+        ("ping", 10),
+        ("pong", 2, True),
+        ("pong", 11, True),
+    ]  # first in, first out
     t = threading.Thread(target=lambda: pipe.post(Ping(n=100)))
     t.start()
     t.join()
@@ -81,7 +89,9 @@ def test_events_are_handled_in_order_enriched_first_and_posted_from_any_thread()
 
 def test_events_are_typed_and_registered_by_name():
     assert EVENTS["test_ping"] is Ping
-    assert AtTheLine not in EVENTS.values() and not issubclass(Lap, Crossing)  # both at the line; a lap isn't a crossing
+    assert AtTheLine not in EVENTS.values() and not issubclass(
+        Lap, Crossing
+    )  # both at the line; a lap isn't a crossing
     assert Ping(n=3).public() == {"n": 3}
     with pytest.raises(TypeError):
         Ping(m=3)  # a typo in a field is an error, not a silent new key
@@ -90,6 +100,7 @@ def test_events_are_typed_and_registered_by_name():
 @dataclass(kw_only=True)
 class Ding(Ping):
     """A kind of ping."""
+
     name: ClassVar[str] = "test_ding"
 
 
@@ -116,8 +127,15 @@ def test_a_handler_of_an_event_gets_its_subclasses_in_the_order_handlers_were_ad
     pipe.emit(Ding())
     pipe.emit(Ping())
     pipe.run()
-    assert seen == [("dings", "test_ding"), ("pings", "test_ding"), ("all", "test_ding"), ("outside", "test_ding"),
-                    ("pings", "test_ping"), ("all", "test_ping"), ("outside", "test_ping")]
+    assert seen == [
+        ("dings", "test_ding"),
+        ("pings", "test_ding"),
+        ("all", "test_ding"),
+        ("outside", "test_ding"),
+        ("pings", "test_ping"),
+        ("all", "test_ping"),
+        ("outside", "test_ping"),
+    ]
 
 
 def test_only_defined_events_go_through():
@@ -132,7 +150,10 @@ def test_only_defined_events_go_through():
     with pytest.raises(TypeError, match="acts on no events"):
         Pipeline(None, Settings(), [Idle])
     pipe = Pipeline(None, Settings(), [])
-    for base in (AtTheLine(), Event()):  # bases group fields; they're never events themselves
+    for base in (
+        AtTheLine(),
+        Event(),
+    ):  # bases group fields; they're never events themselves
         with pytest.raises(TypeError, match="not a defined event"):
             pipe.emit(base)
         with pytest.raises(TypeError, match="not a defined event"):
@@ -151,22 +172,43 @@ class KerbDetector(EventHandler):
     @on(Frame)
     def jolt(self, e: Frame):
         """Every 20 s at speed on track, pretend the car hit a kerb."""
-        if self.state.on_track and (e.frame.get("Speed") or 0) > 40 and e.at - self._t > 20:  # stands in for a jolt
+        if (
+            self.state.on_track
+            and (e.frame.get("Speed") or 0) > 40
+            and e.at - self._t > 20
+        ):  # stands in for a jolt
             self._t = e.at
             self.kerbs += 1
             self.emit(KerbStrike(jolt=25.0, count=self.kerbs))
 
 
 def test_a_new_event_handler_event_and_rule_need_nothing_but_their_definitions(root):
-    rule = Rule.from_dict({"id": "kerbs", "when": {"event": "kerb_strike"}, "if": "jolt > 20",
-                           "actions": [{"say": "Kerb, {count} so far."}], "limits": {"max_per_lap": 1}})
-    assert describe()["events"]["kerb_strike"]["fields"]["jolt"].startswith("vertical")  # documented by itself
+    rule = Rule.from_dict(
+        {
+            "id": "kerbs",
+            "when": {"event": "kerb_strike"},
+            "if": "jolt > 20",
+            "actions": [{"say": "Kerb, {count} so far."}],
+            "limits": {"max_per_lap": 1},
+        }
+    )
+    assert describe()["events"]["kerb_strike"]["fields"]["jolt"].startswith(
+        "vertical"
+    )  # documented by itself
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)
         src = SyntheticSource(n_laps=3, seed=7, start_m=2900.0)
-        coach = LiveCoach(src.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(CapturedVoice()),
-                          Settings(), rules=[rule], handlers=(KerbDetector,))
+        coach = LiveCoach(
+            src.session,
+            plan,
+            ws.corner_map(TRACK),
+            ws.load(plan.ref_lap_id),
+            Arbiter(CapturedVoice()),
+            Settings(),
+            rules=[rule],
+            handlers=(KerbDetector,),
+        )
     finally:
         ws.close()
     for f in src.frames():
@@ -177,17 +219,29 @@ def test_a_new_event_handler_event_and_rule_need_nothing_but_their_definitions(r
 
 
 def test_a_new_reason_to_keep_quiet_is_a_gate(root, monkeypatch):
-    monkeypatch.setattr(speaking, "GATES", [*speaking.GATES, Gate("test hush", "lap >= 1", hold=True, why="hush")])
+    monkeypatch.setattr(
+        speaking,
+        "GATES",
+        [*speaking.GATES, Gate("test hush", "lap >= 1", hold=True, why="hush")],
+    )
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)
         src = SyntheticSource(n_laps=3, seed=7, start_m=2900.0)
-        coach = LiveCoach(src.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(CapturedVoice()),
-                          Settings())
+        coach = LiveCoach(
+            src.session,
+            plan,
+            ws.corner_map(TRACK),
+            ws.load(plan.ref_lap_id),
+            Arbiter(CapturedVoice()),
+            Settings(),
+        )
     finally:
         ws.close()
     first_lap = []
     coach.on(Lap, lambda e: first_lap.append(e.at))
     for f in src.frames():
         coach.push(f)
-    assert all(s.at_s <= first_lap[0] for s in coach.ctx.arbiter.voice.spoken)  # nothing after the first counted lap
+    assert all(
+        s.at_s <= first_lap[0] for s in coach.ctx.arbiter.voice.spoken
+    )  # nothing after the first counted lap

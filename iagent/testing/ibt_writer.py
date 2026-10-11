@@ -79,27 +79,61 @@ def write_ibt(
     out = bytearray(data_offset)
     # Main header.
     struct.pack_into(
-        "9i", out, 0,
-        2, 1, tick_rate, 1, len(yaml_bytes), session_offset, len(names), var_header_offset, 1,
+        "9i",
+        out,
+        0,
+        2,
+        1,
+        tick_rate,
+        1,
+        len(yaml_bytes),
+        session_offset,
+        len(names),
+        var_header_offset,
+        1,
     )
     struct.pack_into("i", out, 36, buf_len)
-    struct.pack_into("2i", out, 48, 0, data_offset)  # var_buf[0]: tick_count, buf_offset
+    struct.pack_into(
+        "2i", out, 48, 0, data_offset
+    )  # var_buf[0]: tick_count, buf_offset
     # Disk sub-header at 112.
-    struct.pack_into("Qddii", out, 112, 0, frames[0].session_time, frames[-1].session_time, 0, len(frames))
+    struct.pack_into(
+        "Qddii",
+        out,
+        112,
+        0,
+        frames[0].session_time,
+        frames[-1].session_time,
+        0,
+        len(frames),
+    )
     # Variable headers.
     for i, (name, code) in enumerate(zip(names, codes)):
         struct.pack_into(
-            "iii?x", out, var_header_offset + i * _VAR_HEADER_LEN,
-            _TYPES[code][0], offsets[i], 1, False,
+            "iii?x",
+            out,
+            var_header_offset + i * _VAR_HEADER_LEN,
+            _TYPES[code][0],
+            offsets[i],
+            1,
+            False,
         )
-        struct.pack_into("32s", out, var_header_offset + i * _VAR_HEADER_LEN + 16, name.encode())
+        struct.pack_into(
+            "32s", out, var_header_offset + i * _VAR_HEADER_LEN + 16, name.encode()
+        )
     out[session_offset:data_offset] = yaml_bytes
 
     body = bytearray()
     fmt = "<" + "".join(codes)
     for f in frames:
-        row = [bool(f.values[n]) if c == "?" else int(f.values[n]) if c == "i" else float(f.values[n])
-               for n, c in zip(names, codes)]
+        row = [
+            (
+                bool(f.values[n])
+                if c == "?"
+                else int(f.values[n]) if c == "i" else float(f.values[n])
+            )
+            for n, c in zip(names, codes)
+        ]
         body += struct.pack(fmt, *row)
     Path(path).write_bytes(bytes(out) + bytes(body))
     return Path(path)

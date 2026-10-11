@@ -17,8 +17,12 @@ def setup_logger(name, level: int = logging.INFO):
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    if not logger.handlers:  # idempotent: the CLI may be invoked repeatedly in one process
-        handler = logging.StreamHandler()  # stderr, so stdout stays clean for --json output
+    if (
+        not logger.handlers
+    ):  # idempotent: the CLI may be invoked repeatedly in one process
+        handler = (
+            logging.StreamHandler()
+        )  # stderr, so stdout stays clean for --json output
         handler.setFormatter(LoggingFormatter())
         logger.addHandler(handler)
     return logger
