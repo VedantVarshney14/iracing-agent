@@ -9,6 +9,7 @@ new cause is a new subclass in `CAUSES` (they're tried in order; the first that 
 clearest).
 """
 
+import re
 from abc import ABC, abstractmethod
 
 from iagent.live.expr import round5, say_gap, say_time
@@ -279,3 +280,16 @@ def consistency(lap_times: list[float]) -> str | None:
         return f"Last three laps within {say_gap(spread)}. Fairly consistent, a bit more to tidy up."
     return (f"Last three laps varied by {say_gap(spread)}. Get the same lap every time first, "
             "then go looking for more.")
+
+
+def chunks(text: str, max_chars: int = 140) -> list[str]:
+    """Split a longer reply into radio-sized pieces at sentence ends, so a car alongside or the
+    next corner can come between them."""
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    out: list[str] = []
+    for s in sentences:
+        if out and len(out[-1]) + 1 + len(s) <= max_chars:
+            out[-1] = f"{out[-1]} {s}"
+        else:
+            out.append(s)
+    return [c for c in out if c]

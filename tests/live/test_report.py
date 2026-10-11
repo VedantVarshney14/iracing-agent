@@ -15,10 +15,10 @@ from iagent.telemetry.ibt import IbtSource
 from iagent.testing.ibt_writer import write_ibt
 from iagent.testing.synthetic import SyntheticSource
 from iagent.testing.web import ui_client
-from iagent.ui.coach import CoachRuns
+from iagent.agent import ClaudeCode
 from iagent.ui.server import create_app
 from iagent.workspace import Workspace
-from tests.ui.test_coach import TURN
+from tests.ui.test_chat import TURN
 
 TRACK, CAR = "synthetic", "synthcar"
 
@@ -112,7 +112,7 @@ def test_coaching_api(coached, tmp_path):
     claude = tmp_path / "claude"
     claude.write_text(f"#!{sys.executable}\nimport sys\nsys.stdin.read()\nsys.stdout.write({''.join(TURN)!r})\n")
     claude.chmod(0o755)
-    web = ui_client(create_app(root, static_dir=tmp_path / "no-build", coach=CoachRuns(root, claude=str(claude))))
+    web = ui_client(create_app(root, static_dir=tmp_path / "no-build", agent=ClaudeCode(root, claude=str(claude))))
 
     assert web.get("/api/coaching/sessions").json()[0]["id"] == sid
     out = web.get("/api/coaching/session", params={"id": sid}).json()

@@ -10,7 +10,7 @@ from iagent.cli.base import Ctx, emit
 
 @click.group()
 def rules():
-    """Rules the coach sets for the live service: when to say what (or wake the engineer).
+    """Rules the coach sets for the live service: when to say what (or ask the engineer).
 
     A rule is JSON, validated against `iagent rules schema`: an event (`when`), an optional
     condition (`if`), actions and limits. Corners are the corner map's numbers (`iagent corners
@@ -208,7 +208,7 @@ def rules_backtest(ctx: Ctx, rule_ids: tuple[str, ...], car: str | None, track: 
         for f in r["firings"][:40]:
             where = f"{f['lap_dist']:>5} m" if f.get("lap_dist") is not None else ""
             values = " ".join(f"{k}={v}" for k, v in f["values"].items())
-            what = "; ".join(f"{k}: {v}" for a in f.get("actions", []) for k, v in a.items() if k in ("say", "wake", "log"))
+            what = "; ".join(f"{k}: {v}" for a in f.get("actions", []) for k, v in a.items() if k in ("say", "ask_engineer", "log"))
             status = f["result"] if f["result"] == "fired" else f"limited ({f['why']})"
             click.echo(f"  {f['session']}  lap {f['lap_no'] + 1:>2}  {where}  {status}  {values}" + (f"\n      {what}" if what else ""))
         if len(r["firings"]) > 40:

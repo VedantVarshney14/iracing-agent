@@ -8,8 +8,8 @@ them from these classes. A new event is a new class here (or anywhere: subclassi
 Fields are declared with `doc(...)`: a description, and whether it's a corner (a corner number
 from the corner map) or internal (objects for handlers only: not logged, not for rules).
 
-Only named classes are events the pipeline carries; a class without a `name` (`AtTheLine`,
-`Reply`) is a base that groups the fields its events share, and a handler of it sees them all.
+Only named classes are events the pipeline carries; a class without a `name` (`AtTheLine`) is a
+base that groups the fields its events share, and a handler of it sees them all.
 """
 
 from dataclasses import dataclass, field, fields
@@ -130,7 +130,7 @@ class PaceChanged(Event):
 
 @dataclass(kw_only=True)
 class Slowing(Event):
-    """A slow stretch has lasted `narrate_after_s` (probably not just a moment)."""
+    """A slow stretch has lasted `slowing_after_s` (probably not just a moment)."""
     name: ClassVar[str] = "slowing"
     stretch: int = doc("which slow stretch (counts up)", 0)
 
@@ -325,7 +325,7 @@ class DebriefGiven(Event):
     """The debrief was given."""
     name: ClassVar[str] = "debrief"
     log: ClassVar[bool] = True
-    by: str = doc('"coach" (the engineer\'s words) or "template"', "template")
+    by: str = doc('"engineer" (its words) or "template"', "template")
     text: str = doc("all of it", "")
 
 
@@ -396,64 +396,34 @@ class Error(Event):
 # --- the engineer -------------------------------------------------------------------------------
 
 @dataclass(kw_only=True)
-class Narrate(Event):
-    """Ask the engineer (the model) for its words; they come back as the `reply` event."""
-    name: ClassVar[str] = "narrate"
-    kind: str = doc("what it's for: briefing, question, wake, debrief, wrap_up", "")
-    reply: str = doc("the event the words come back as", "coach_words")
-    stretch: int | None = doc("passed back with the reply")
-    rule: str | None = doc("passed back with the reply")
-    min_gap_s: float = doc("skip it if one of this kind was asked for less than this long ago", 0.0)
+class AskEngineer(Event):
+    """Ask the engineer (the model) for a turn; the answer comes back as an `EngineerReply`."""
+    name: ClassVar[str] = "ask_engineer"
+    log: ClassVar[bool] = True
+    kind: str = doc("what for: briefing, question, rule, debrief, wrap_up", "")
+    rule: str | None = doc("the rule that asked, for kind rule")
+    stretch: int | None = doc("the slow stretch, for kind debrief")
+    min_gap_s: float = doc("skip it if one of this kind was asked for less than this long ago", 0.0, internal=True)
     payload: dict = doc("what the prompt is made from (facts, the question, ...)", internal=True, factory=dict)
 
 
 @dataclass(kw_only=True)
-class NarrationAsked(Event):
-    """The engineer is working on its words."""
-    name: ClassVar[str] = "narration_asked"
+class EngineerAsked(Event):
+    """The engineer took the request on (it may refuse one: busy with the same kind, or too soon)."""
+    name: ClassVar[str] = "engineer_asked"
     kind: str = doc("what for", "")
-    reply: str = doc("the event they'll come back as", "")
     stretch: int | None = doc("as asked")
 
 
 @dataclass(kw_only=True)
-class Reply(Event):
-    """Base of the engineer's replies (posted back from its thread)."""
-    text: str | None = doc("the words, or none")
-    asked_at: float | None = doc("when they were asked for")
-    stretch: int | None = doc("as asked")
+class EngineerReply(Event):
+    """The engineer's answer, posted back from its thread: words to say, or a note of what it wrote
+    up (kind wrap_up)."""
+    name: ClassVar[str] = "engineer_reply"
+    log: ClassVar[bool] = True
+    kind: str = doc("what it answers: briefing, question, rule, debrief, wrap_up", "")
+    text: str | None = doc("the words, or none (nothing to say, too late, or the turn failed)")
+    asked_at: float | None = doc("when it was asked")
     rule: str | None = doc("as asked")
-    kind: str | None = doc("what they answer")
-
-
-@dataclass(kw_only=True)
-class CoachWords(Reply):
-    """The engineer's words to say: a radio check, a reply to a wake-up or to a question."""
-    name: ClassVar[str] = "coach_words"
-    log: ClassVar[bool] = True
-
-
-@dataclass(kw_only=True)
-class DebriefWords(Reply):
-    """The engineer's words for a debrief arrived."""
-    name: ClassVar[str] = "debrief_words"
-    log: ClassVar[bool] = True
-    status: str = doc('"used", "too late" or "none"', "none")
-
-
-@dataclass(kw_only=True)
-class NotesWritten(Reply):
-    """The engineer wrote up its notes after the session."""
-    name: ClassVar[str] = "notes_written"
-    log: ClassVar[bool] = True
-
-
-@dataclass(kw_only=True)
-class Wake(Event):
-    """A rule woke the engineer."""
-    name: ClassVar[str] = "wake"
-    log: ClassVar[bool] = True
-    rule: str = doc("the rule", "")
-    message: str = doc("its message", "")
-    values: dict = doc("what it saw", factory=dict)
-    description: str = doc("the rule's description", "")
+    stretch: int | None = doc("as asked")
+    status: str | None = doc('for a debrief: "used", "too late" or "none"')

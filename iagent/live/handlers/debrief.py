@@ -1,15 +1,14 @@
 """The cool-down debrief: what an engineer says when the driver slows down.
 
 Where the time is over the last laps at pace (a habit, not one mistake), what to change and how,
-and how consistent the laps were. As the driver slows (`slowing`) the coach's own words are asked
-for (`narrate`); at `cool_down` they're said if they've come, else after up to `narrate_wait_s`
-more, else the template's. Each piece is a `DebriefLine`; saying it is a rule.
+and how consistent the laps were. As the driver slows (`slowing`) the engineer is asked for its
+words; at `cool_down` they're said if they've come, else after up to `engineer_wait_s` more, else
+the template's. Each piece is a `DebriefLine`; saying it is a rule.
 """
 
 from iagent.live import phrasing
-from iagent.live.events import (CoolDown, DebriefGiven, DebriefLine, DebriefWords, Frame, Lap, Narrate, NarrationAsked,
-                                PaceChanged, Slowing)
-from iagent.live.narrator import chunks
+from iagent.live.events import (AskEngineer, CoolDown, DebriefGiven, DebriefLine, EngineerAsked, EngineerReply, Frame,
+                                Lap, PaceChanged, Slowing)
 from iagent.live.pipeline import EventHandler, enrich, on
 
 CAUSE_MEANINGS = {c.name: c.doc for c in phrasing.CAUSES}
@@ -37,15 +36,17 @@ class Debrief(EventHandler):
             return
         facts = self.facts()
         if facts["topics"] or facts["lap_times"]:
-            self.emit(Narrate(kind="debrief", reply=DebriefWords.name, stretch=e.stretch, payload={"facts": facts}))
+            self.emit(AskEngineer(kind="debrief", stretch=e.stretch, payload={"facts": facts}))
 
-    @on(NarrationAsked)
-    def asked(self, e: NarrationAsked):
-        if e.reply == DebriefWords.name and e.stretch == self._stretch:
+    @on(EngineerAsked)
+    def asked(self, e: EngineerAsked):
+        if e.kind == "debrief" and e.stretch == self._stretch:
             self._waiting = True
 
-    @enrich(DebriefWords)
-    def words(self, e: DebriefWords):
+    @enrich(EngineerReply)
+    def words(self, e: EngineerReply):
+        if e.kind != "debrief":
+            return
         fits = e.stretch == self._stretch and self.state.mode == "tranquille" and not self._done
         e.status = "none" if not e.text else "used" if fits else "too late"
         if e.text and fits:
@@ -62,15 +63,15 @@ class Debrief(EventHandler):
     def give(self, e: Frame):
         if self._due_at is None or self._done:
             return
-        waiting = self._waiting and self._words is None and e.at < self._due_at + self.settings.narrate_wait_s
+        waiting = self._waiting and self._words is None and e.at < self._due_at + self.settings.engineer_wait_s
         if waiting:
             return
         self._done = True
-        lines = chunks(self._words) if self._words else self.lines()
+        lines = phrasing.chunks(self._words) if self._words else self.lines()
         for i, text in enumerate(lines):
             self.emit(DebriefLine(text=text, index=i))
         if lines:
-            self.emit(DebriefGiven(by="coach" if self._words else "template", text=" ".join(lines)))
+            self.emit(DebriefGiven(by="engineer" if self._words else "template", text=" ".join(lines)))
         self.state.debriefs += 1
 
     def topics(self) -> list[dict]:
@@ -103,7 +104,7 @@ class Debrief(EventHandler):
         return phrasing.debrief_lines(self.topics(), self.state.lap_times, self.state.debriefs)
 
     def facts(self) -> dict:
-        """What the debrief is about, for the narrator."""
+        """What the debrief is about, for the engineer."""
         times = self.state.lap_times[-3:]
         topics = [{k: v for k, v in t.items() if k not in ("ref", "mine")} for t in self.topics()]
         return {"track": self.ctx.session.track_name, "laps_done": self.state.lap, "focus": self.state.focus_label,

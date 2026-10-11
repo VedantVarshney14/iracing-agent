@@ -25,7 +25,7 @@ from typing import Callable, Iterator
 
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.run import run
-from iagent.live.events import CoachWords, Narrate, Say, SetFocus
+from iagent.live.events import AskEngineer, EngineerReply, Say, SetFocus
 from iagent.live.speech import CapturedVoice, Voice
 from iagent.telemetry.frames import Frame
 from iagent.workspace import Workspace
@@ -44,7 +44,7 @@ class Options:
     learning_laps: int = 2
     focus: bool = True
     crewchief: str = "auto"  # "auto" (detect it), "on" or "off"
-    narrate: bool = True  # the coach (claude -p) words debriefs and answers rule wake-ups
+    engineer: bool = True  # the session has an engineer (claude -p): radio check, answers, debriefs, notes
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Options":
@@ -137,7 +137,7 @@ class LiveSessions:
         False if there's no engineer to ask."""
         if self.coach is None or self.engineer is None:
             return False
-        self.coach.post(Narrate(kind="question", reply=CoachWords.name, payload={"text": text}))
+        self.coach.post(AskEngineer(kind="question", payload={"text": text}))
         return True
 
     def note_answer(self, text: str) -> dict:
@@ -218,7 +218,7 @@ class LiveSessions:
 
             settings = Settings(learning_laps=options.learning_laps, focus=options.focus,
                                 crewchief=crewchief.resolve(options.crewchief))
-            self.engineer = self._new_engineer() if self._new_engineer and options.narrate else None
+            self.engineer = self._new_engineer() if self._new_engineer and options.engineer else None
             run(self.workspace, session_of, self._frames(frames), voice, settings, options.ref, self._attach,
                 self.engineer, self.context)
             self._log({"type": "status", "state": "stopped" if self._stop.is_set() else "ended"})
@@ -263,7 +263,7 @@ class LiveSessions:
         """The pipeline's events that are defined as logged go in the session log."""
         if e.log:
             self._log({"type": e.name, "at": e.at, **e.public()})
-        if isinstance(e, CoachWords) and e.kind == "question":  # shown with the question on the page
+        if isinstance(e, EngineerReply) and e.kind == "question":  # shown with the question on the page
             self.note_answer(e.text or "(No answer: the coach said nothing)")
 
     def _log(self, event: dict) -> dict:

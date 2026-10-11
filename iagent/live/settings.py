@@ -28,8 +28,8 @@ class Settings:
     debrief: bool = True  # talk through the last laps on a cool-down lap
     debrief_after_s: float = 15.0  # not pushing this long (not just a moment) before the debrief
     debrief_topics: int = 2
-    narrate_after_s: float = 5.0  # ask the narrator this far into a slow stretch (it takes a few seconds)
-    narrate_wait_s: float = 12.0  # once settled, wait this much longer for its words before our own
+    slowing_after_s: float = 5.0  # a slow stretch this long is `slowing`: the engineer is asked for the debrief
+    engineer_wait_s: float = 12.0  # once the debrief is due, wait this much longer for the engineer's words
     briefing: bool = True  # the engineer gives a radio check and the plan as the driver heads out
     crewchief: bool = False  # CrewChief is running: leave lap times to it, keep quiet after the line
     crewchief_quiet_s: float = 5.0

@@ -37,7 +37,7 @@ from iagent.live.state import CoachState
 
 POINTS = ("brake", "entry", "apex", "exit")
 STATUSES = ("draft", "active", "archived")
-GROUPS = ("agent", "coach")
+GROUPS = ("agent", "builtin")
 LIMITS = ("cooldown_s", "cooldown_laps", "max_per_lap", "max_per_session", "once")
 
 # Channels the live coach reads (`iagent.live.sources.LIVE_CHANNELS`), by their iRacing names.
@@ -103,8 +103,8 @@ def _action_schemas() -> list[dict]:
             "long": {**text, "description": "a fuller version, said when the driver isn't pushing"},
             "priority": {"enum": list(PRIORITIES)}, "kind": {**text, "description": "the line's kind (default: rule)"},
             "expires_s": {"type": ["number", "string"], "description": "seconds (or an expression) it may wait"}}},
-        {"type": "object", "additionalProperties": False, "required": ["wake"],
-         "properties": {"wake": {**text, "description": "a message for the engineer"}}},
+        {"type": "object", "additionalProperties": False, "required": ["ask_engineer"],
+         "properties": {"ask_engineer": {**text, "description": "a message for the engineer"}}},
         {"type": "object", "additionalProperties": False, "required": ["log"],
          "properties": {"log": {**text, "description": "noted in the session log"}}},
     ]
@@ -173,7 +173,7 @@ class Rule:
     limits: dict = field(default_factory=dict)
     in_a_row: int = 1
     pushing_only: bool = True
-    group: str = "agent"  # "coach" for the built-in rules (see the engine's groups)
+    group: str = "agent"  # "builtin" for the coach's own rules (see the engine's groups)
     enabled_by: str | None = None  # a Settings flag that switches it off
     status: str = "draft"
     meta: dict = field(default_factory=dict)  # created_by, created_at, backtest, ...

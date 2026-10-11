@@ -140,13 +140,12 @@ iagent/
     state.py          CoachState: the shared state, typed
     settings.py       Settings
     handlers/         laps, track, clock, pace, corners, positions, cue_caller, focus, history,
-                      summary, debrief, speaking (and the speech gates)
+                      summary, debrief, engineer_link (to the engineer), speaking (and the gates)
     rules/            schema (the rule format), actions (Action subclasses), engine (RuleEngine)
     builtin_rules.py  the coach's own behaviour, as rules
     phrasing.py       every template; causes of lost time (Cause subclasses)
     expr.py           the small expression language rules are written in
     speech.py         the speech arbiter, utterances, voices
-    narrator.py       Radio: the pipeline's link to the engineer
     engineer.py       Engineer: the session's conversation, its prompts
     rulebook.py       rules on disk, activation, backtests
     cues.py           cue plans (built per track and car)
@@ -275,9 +274,7 @@ while the driver isn't pushing). Only a class with a `name` is an event the pipe
 Inheritance means "is a kind of", and the pipeline relies on it: a method marked for a class gets
 its subclasses too. Shared fields go in a base class without a `name`, which is never emitted
 itself: `Crossing` (every time the car crosses the line) and `Lap` (a counted lap) both extend
-`AtTheLine`, so a handler of `AtTheLine` sees both, while one of `Crossing` doesn't see laps. The
-engineer's replies (`CoachWords`, `DebriefWords`, `NotesWritten`) share a `Reply` base the same
-way.
+`AtTheLine`, so a handler of `AtTheLine` sees both, while one of `Crossing` doesn't see laps.
 
 | Group | Events |
 | --- | --- |
@@ -288,8 +285,9 @@ way.
 | The focus | `FocusChanged`, `SetFocus` |
 | Speech | `Line` (said, cut or dropped), `RuleFired` |
 | The debrief | `DebriefLine`, `DebriefGiven` |
-| From the driver and the browser | `Say`, `SetFocus`, `Narrate` (a question) |
-| The engineer | `Narrate`, `NarrationAsked`, `Wake`, `CoachWords`, `DebriefWords`, `NotesWritten`, `Error` |
+| From the driver and the browser | `Say`, `SetFocus`, `AskEngineer` (a question) |
+| The engineer | `AskEngineer`, `EngineerAsked`, `EngineerReply` |
+| Problems | `Error` |
 
 ### Event handlers
 
@@ -315,9 +313,9 @@ class Summary(EventHandler):
 | `Focus` | `SessionStart`, `SetFocus`, `Lap` | the focus; a lap's `focus_news` | `FocusChanged`, `Error` |
 | `History` | `CornerExit`, `Crossing` | struggling corners, hints; a corner exit's `feedback` | `Advice` |
 | `Summary` | `Lap` | a lap's `summary_text` | |
-| `Debrief` | `Lap`, `PaceChanged`, `Slowing`, `CoolDown`, `DebriefWords`, `Frame` | debriefs given | `Narrate`, `DebriefLine`, `DebriefGiven` |
-| `Radio` | `Narrate`, `Line`, `Lap`, `SessionStart`, `SessionEnd` | | `NarrationAsked`; posts the engineer's replies |
-| `RuleEngine` | every event | | `Watch`, `RuleFired`, `Wake`, `Narrate`; speaks through the arbiter |
+| `Debrief` | `Lap`, `PaceChanged`, `Slowing`, `CoolDown`, `EngineerAsked`, `EngineerReply`, `Frame` | debriefs given | `AskEngineer`, `DebriefLine`, `DebriefGiven` |
+| `EngineerLink` | `AskEngineer`, `Line`, `Lap`, `SessionStart`, `SessionEnd` | | `AskEngineer`, `EngineerAsked`; posts `EngineerReply` |
+| `RuleEngine` | every event | | `Watch`, `RuleFired`, `AskEngineer`; speaks through the arbiter |
 | `Speaking` | `FrameDone` | | `Line` |
 
 Event handlers decide *what's worth saying* and put it on events (`wanted` and `text` on a cue's
@@ -389,13 +387,13 @@ live coach runs them.
   Python-syntax subset compiled to closures, no attribute access or arbitrary calls. A missing
   value makes a comparison false and keeps a line with that hole unsaid.
 - **Actions** (a list) are subclasses of `Action` ([`rules/actions.py`](iagent/live/rules/actions.py)):
-  `Say` (priority, a `long` version for when there's time, kind, expiry), `WakeEngineer` (the
+  `Say` (priority, a `long` version for when there's time, kind, expiry), `Ask` (`ask_engineer`: the
   engineer is asked and may answer on the radio) and `Log`.
 - **Limits**: `cooldown_s`, `cooldown_laps`, `max_per_lap`, `max_per_session`, `once`,
   `in_a_row`, and `pushing_only` (default) for judged events.
 - **Groups.** The coach's own behaviour is the built-in rules
-  ([`builtin_rules.py`](iagent/live/builtin_rules.py), group `coach`): the cue, the feedback, the
-  lap summary, the focus news, the debrief, answers and the engineer's words. The agent's rules
+  ([`builtin_rules.py`](iagent/live/builtin_rules.py), group `builtin`): the cue, the feedback,
+  the lap summary, the focus news, the debrief, answers and the engineer's words. The agent's rules
   are group `agent`, which share a budget of six lines a lap and four seconds between lines.
 - **Lifecycle.** `iagent rules add` checks a rule (fields, variables, corners) and saves it as a
   draft; `backtest` replays recorded sessions through the *same* `LiveCoach`, with the other
@@ -453,7 +451,7 @@ sequenceDiagram
     E->>D: radio check and the plan
     L-->>E: every line said and every lap (heard, before each turn)
     D->>E: a question (--resume)
-    L->>E: a rule's wake-up (--resume)
+    L->>E: a rule asks (--resume)
     L->>E: cool-down: the debrief, wanted ~15 s in
     E->>D: the debrief, in its words (or the coach's own if late)
     L->>E: session over: wrap-up
@@ -471,7 +469,7 @@ sequenceDiagram
   | --- | --- | --- |
   | the driver's question | 1 | 60 s |
   | the cool-down debrief | 2 | 20 s |
-  | a rule's wake-up | 3 | 20 s (at most one every 30 s) |
+  | a rule asking | 3 | 20 s (at most one every 30 s) |
   | the briefing | 4 | 90 s |
   | the wrap-up | 5 | 10 min |
 
@@ -491,7 +489,7 @@ The other conversations follow the same idea:
 | Conversation | Lives | Holds |
 | --- | --- | --- |
 | The live session's engineer (`iagent/live/engineer.py`) | one live session: radio check to wrap-up | everything said on the radio, the laps, the driver's questions, wake-ups, debriefs |
-| The lap review chat (`iagent/ui/coach.py`) | as long as the browser keeps it | the driver's questions about a lap |
+| The lap review chat (`iagent/ui/chat.py`) | as long as the browser keeps it | the driver's questions about a lap |
 | The workspace notes (`notes/<track>.md`) | across sessions | what was worked on, what changed, what to start with |
 
 ## 11. Between sessions: skills and the CLI
@@ -615,7 +613,7 @@ the library and coached sessions.
   alone", "talk to me") until the driver lifts it; every line gets an importance. It fits as
   driver command events, one field in `CoachState`, and one gate.
 - **Push-to-talk.** Local speech-to-text on the sim PC's CPU (faster-whisper `small`, Parakeet or
-  Moonshine) posting the same `Narrate` question the Coaching tab does.
+  Moonshine) posting the same `AskEngineer` question the Coaching tab does.
 - **A standalone live service** on the sim PC owning the pipeline and the engineer, with the UI
   and CLI as its clients (today both build `LiveCoach` themselves through `run.py`).
 - **Saved settings** in the workspace's `settings.json`, with per-run overrides.

@@ -25,12 +25,13 @@ def live():
 @click.option("--threads", default=2, show_default=True, help="CPU threads for speech.")
 @click.option("--crewchief", type=click.Choice(["auto", "on", "off"]), default="auto", show_default=True,
               help="Share the radio with CrewChief: leave lap times to it, keep quiet after the line. auto: if it's running.")
-@click.option("--narrate/--no-narrate", default=None,
-              help="Let the coach (claude -p) word cool-down debriefs and answer rules that wake it. "
+@click.option("--engineer/--no-engineer", "with_engineer", default=None,
+              help="A race engineer (claude -p) for the session: radio check, answers to rules, the "
+                   "cool-down debrief in its words, notes afterwards. "
                    "Default: on if `claude` is found and the replay runs in real time.")
 @click.pass_obj
 def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None, voice: str, print_only: bool,
-             ref_id: str | None, learning_laps: int, threads: int, crewchief: str, narrate: bool | None):
+             ref_id: str | None, learning_laps: int, threads: int, crewchief: str, with_engineer: bool | None):
     """Coach live: cue each corner on the approach, say what went wrong after it, sum up each lap.
 
     On the sim PC this reads iRacing (start it before or after; Ctrl+C to stop). Elsewhere, use
@@ -60,19 +61,17 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
 
     from iagent.agent import ClaudeCode
     from iagent.live.engineer import Engineer
-    from iagent.live.events import CoachWords, DebriefWords, NotesWritten, RuleFired, Wake
+    from iagent.live.events import AskEngineer, EngineerReply, RuleFired
 
     runs = ClaudeCode(ctx.workspace)
-    if narrate is None:
-        narrate = shutil.which(runs.claude) is not None and (not replay or speed <= 1.0)
-    engineer = Engineer.over(runs) if narrate else None  # one conversation for the whole session
+    if with_engineer is None:
+        with_engineer = shutil.which(runs.claude) is not None and (not replay or speed <= 1.0)
+    engineer = Engineer.over(runs) if with_engineer else None  # one conversation for the whole session
     # What the terminal shows besides the lines said: events, by name.
     shown = {
-        Wake: lambda e: f"[wake] {e.rule}: {e.message}",
         RuleFired: lambda e: "; ".join(f"[log] {e.rule}: {a['log']}" for a in e.actions if a.get("log")),
-        DebriefWords: lambda e: f"[engineer] debrief: {e.status}",
-        CoachWords: lambda e: f"[engineer] {e.kind}: {e.text or 'nothing to say'}",
-        NotesWritten: lambda e: f"[engineer] notes: {e.text or 'nothing written'}",
+        AskEngineer: lambda e: f"[engineer] asked: {e.kind}" + (f" ({e.rule})" if e.rule else ""),
+        EngineerReply: lambda e: f"[engineer] {e.kind}: {e.text or 'nothing'}" + (f" ({e.status})" if e.status else ""),
     }
 
     def on_start(coach):

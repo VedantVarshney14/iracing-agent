@@ -24,7 +24,7 @@ class Group:
     report: bool = True  # firings go in the session log as `rule` events
 
 
-GROUPS = {"agent": Group(max_lines_per_lap=6, min_gap_s=4.0), "coach": Group(report=False)}
+GROUPS = {"agent": Group(max_lines_per_lap=6, min_gap_s=4.0), "builtin": Group(report=False)}
 
 
 @dataclass

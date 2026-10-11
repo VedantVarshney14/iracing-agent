@@ -3,7 +3,7 @@
 Clearly slower (`tranquille_ratio`, 10%+) means tranquille: an out lap, a cool-down, or the few
 hundred metres after a moment; back within `push_ratio` (5%) is pushing again. On a track the
 driver hasn't lapped yet, the reference lap is the yardstick, generously (`new_track_ratio`).
-A slow stretch that lasts is a cool-down: `slowing` is emitted `narrate_after_s` into it (time to
+A slow stretch that lasts is a cool-down: `slowing` is emitted `slowing_after_s` into it (time to
 ask for the coach's words), `cool_down` at `debrief_after_s`.
 """
 
@@ -76,7 +76,7 @@ class Pace(EventHandler):
             return
         st.slow_for_s = now - self._since
         st.settled = st.slow_for_s >= self.settings.debrief_after_s
-        for event, after in ((Slowing, self.settings.narrate_after_s), (CoolDown, self.settings.debrief_after_s)):
+        for event, after in ((Slowing, self.settings.slowing_after_s), (CoolDown, self.settings.debrief_after_s)):
             if st.slow_for_s >= after and event not in self._sent:
                 self._sent.add(event)
                 self.emit(event(stretch=st.stretch))

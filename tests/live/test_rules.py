@@ -159,7 +159,7 @@ def test_a_position_rule_finishes_before_its_point_once_per_pass(root):
 def test_lap_pit_and_schedule_triggers(root):
     rules = [
         Rule.from_dict({"id": "best", "when": {"event": "lap"}, "if": "new_best",
-                        "actions": [{"wake": "new best {lap_time:.3f}"}]}),
+                        "actions": [{"ask_engineer": "new best {lap_time:.3f}"}]}),
         Rule.from_dict({"id": "pit-in", "when": {"event": "pit", "pit": "entry"}, "actions": [{"log": "in"}]}),
         Rule.from_dict({"id": "pit-out", "when": {"event": "pit", "pit": "exit"}, "actions": [{"log": "out"}]}),
         Rule.from_dict({"id": "every2", "when": {"event": "lap", "where": "lap % 2 == 0"}, "actions": [{"log": "lap {lap}"}]}),
@@ -173,7 +173,7 @@ def test_lap_pit_and_schedule_triggers(root):
     assert fired(engine, "pit-out")[0]["lap_no"] == 0  # leaving the pits on the out lap
     assert [f["values"]["lap"] for f in fired(engine, "every2")] == [2]  # three counted laps: the out lap doesn't count
     assert len(fired(engine, "hello")) == 1 and "Let's go." in [s.text for s in coach.arbiter.voice.spoken]
-    assert fired(engine, "best") and all(f["actions"][0]["wake"].startswith("new best") for f in fired(engine, "best"))
+    assert fired(engine, "best") and all(f["actions"][0]["ask_engineer"].startswith("new best") for f in fired(engine, "best"))
     fast = fired(engine, "fast")
     assert 1 <= len(fast) <= 5 and all(f["values"]["speed_kph"] > 150 for f in fast)
 
@@ -252,7 +252,7 @@ def test_rules_cli(root):
 
 def test_a_live_session_uses_active_rules_and_logs_them(root, tmp_path):
     rulebook.add_rule(root, {"id": "lap-call", "track": TRACK, "when": {"event": "lap"},
-                             "actions": [{"say": "Rule says {say_time(lap_time)}."}, {"wake": "lap {lap} done"}]})
+                             "actions": [{"say": "Rule says {say_time(lap_time)}."}, {"ask_engineer": "lap {lap} done"}]})
     rulebook.set_status(root, "lap-call", "active", force=True)
     src = SyntheticSource(n_laps=3, seed=9, start_m=2900.0)
     (tmp_path / "rec").mkdir()
@@ -264,7 +264,9 @@ def test_a_live_session_uses_active_rules_and_logs_them(root, tmp_path):
     running = next(e for e in events if e["type"] == "status" and e["state"] == "running")
     assert running["rules"] == ["lap-call"]
     assert [e for e in events if e["type"] == "rule" and e["result"] == "fired"]
-    assert [e["message"] for e in events if e["type"] == "wake"][:1] == ["lap 1 done"]
+    fired = [e for e in events if e["type"] == "rule" and e["result"] == "fired"]
+    assert fired[0]["actions"][1]["ask_engineer"] == "lap 1 done"
+    assert [e["rule"] for e in events if e["type"] == "ask_engineer" and e["kind"] == "rule"][:1] == ["lap-call"]
     lines = [e for e in events if e["type"] == "line" and e.get("rule") == "lap-call"]
     assert lines and lines[0]["kind"] == "rule"
 

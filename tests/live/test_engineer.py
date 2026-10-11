@@ -7,12 +7,12 @@ from iagent.agent import StreamParser, final_text, structured
 from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live import engineer as eng
+from iagent.live import phrasing
 from iagent.live import rulebook
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan
-from iagent.live.engineer import Engineer, debrief_prompt, wake_prompt
-from iagent.live.events import DebriefGiven, DebriefWords, Narrate
-from iagent.live.narrator import chunks
+from iagent.live.engineer import Engineer, debrief_prompt, rule_prompt
+from iagent.live.events import AskEngineer, DebriefGiven, EngineerReply
 from iagent.live.run import own_best
 from iagent.live.session import LiveSessions
 from iagent.live.speech import Arbiter, CapturedVoice
@@ -36,7 +36,7 @@ def test_replies_are_structured_and_split_for_the_radio():
     parser = StreamParser()
     result = '{"type": "result", "session_id": "s", "structured_output": {"say": null}}'
     assert structured(parser.feed(result)) == {"say": None}  # silence is null, not a magic word
-    pieces = chunks("One. Two is a bit longer than one. " + "Three goes on and on for quite a while, " * 3 + "end.", 60)
+    pieces = phrasing.chunks("One. Two is a bit longer than one. " + "Three goes on and on for quite a while, " * 3 + "end.", 60)
     assert pieces[0] == "One. Two is a bit longer than one." and all(p.endswith(".") for p in pieces)
     stream = [{"type": "text_start"}, {"type": "text", "text": "Let me check."},
               {"type": "tool", "command": "iagent laps list"}, {"type": "text_start"},
@@ -47,9 +47,9 @@ def test_replies_are_structured_and_split_for_the_radio():
 def test_prompts_give_the_facts_and_the_constraints():
     p = debrief_prompt({"topics": [{"name": "Turn 1"}], "crewchief": True, "fallback": ["Turn 1 is where the time is."]})
     assert "cool-down lap" in p and "CrewChief" in p and '"name": "Turn 1"' in p and "- Turn 1 is where" in p
-    w = wake_prompt({"rule": "t1", "message": "early again", "values": {"brake_diff_m": -20}}, {"mode": "pushing"})
+    w = rule_prompt({"id": "t1", "message": "early again", "values": {"brake_diff_m": -20}}, {"mode": "pushing"})
     assert "under 12 words" in w and "`say` is null" in w and "brake_diff_m" in w
-    assert eng.TURNS["wrap_up"].schema["required"] == ["changed"] and eng.TURNS["wake"].schema is eng.SAY
+    assert eng.TURNS["wrap_up"].schema["required"] == ["changed"] and eng.TURNS["rule"].schema is eng.SAY
 
 
 class Turns:
@@ -61,8 +61,10 @@ class Turns:
         self.delay_s, self.answer = delay_s, answer
         self.running = 0
         self.overlapped = False
+        self.started = threading.Event()  # set when the first turn begins
 
     def __call__(self, prompt, session_id, resume, schema):
+        self.started.set()
         self.running += 1
         self.overlapped |= self.running > 1
         time.sleep(self.delay_s)
@@ -75,7 +77,7 @@ class Turns:
 
 PAYLOADS = {"question": lambda t: {"text": t}, "briefing": lambda t: {"facts": {"notes": "notes/x.md", "plan": t}},
             "debrief": lambda t: {"facts": {"topics": [], "fallback": [t]}},
-            "wake": lambda t: {"wake": {"rule": "r", "message": t}, "state": {"mode": "pushing"}}}
+            "rule": lambda t: {"rule": {"id": "r", "message": t}, "state": {"mode": "pushing"}}}
 
 
 def ask(e: Engineer, kind, text="go", **kw):
@@ -93,14 +95,15 @@ def test_one_conversation_for_the_session_one_turn_at_a_time():
     turns = Turns(delay_s=0.3)
     e = Engineer(turns)
     first = ask(e, "briefing")
+    assert turns.started.wait(5)  # the rest queue up while the briefing turn runs
     e.heard("[00:05.0] coach (approach): Turn 1, right.")
-    waits = [ask(e, "wake", "a rule"), ask(e, "question", "where am I slow?")]
+    waits = [ask(e, "rule", "a rule"), ask(e, "question", "where am I slow?")]
     for done, _ in [first, *waits]:
         assert done.wait(5)
     sids = {sid for _, sid, _ in turns.calls}
     assert sids == {e.session_id} and [r for _, _, r in turns.calls] == [False, True, True]  # started once, then resumed
     assert not turns.overlapped  # never two turns at once
-    assert "where am I slow?" in turns.calls[1][0]  # the driver's question goes before the rule's wake-up
+    assert "where am I slow?" in turns.calls[1][0]  # the driver's question goes before the rule
     heard = [p for p, _, _ in turns.calls if "Turn 1, right." in p]
     assert len(heard) == 1 and "<radio since your last turn>" in heard[0]  # in the next turn, and only that one
 
@@ -113,8 +116,8 @@ def test_a_request_too_late_to_be_useful_is_dropped(monkeypatch):
     late = ask(e, "debrief")
     assert busy[0].wait(5) and late[0].wait(5)
     assert late[1]["text"] is None and len(turns.calls) == 1  # the cool-down was over by then
-    assert e.request("wake", PAYLOADS["wake"]("x"), {}, lambda t: None)
-    assert not e.request("wake", PAYLOADS["wake"]("y"), {}, lambda t: None)  # one wake-up at a time
+    assert e.request("rule", PAYLOADS["rule"]("x"), {}, lambda t: None)
+    assert not e.request("rule", PAYLOADS["rule"]("y"), {}, lambda t: None)  # one rule turn at a time
     assert e.request("question", {"text": "a"}, {}, lambda t: None) and e.request("question", {"text": "b"}, {}, lambda t: None)
 
 
@@ -164,24 +167,24 @@ class SlowEngineer:
 
 
 def drive(root, reply_after_s: float | None, settings: Settings):
-    """A session with a cool-down lap; the narrator answers REPLY_AFTER_S after being asked
+    """A session with a cool-down lap; the engineer answers REPLY_AFTER_S after being asked
     (None: never), through the pipeline's inbox like the live session's."""
-    narrator = SlowEngineer(reply_after_s)
+    engineer = SlowEngineer(reply_after_s)
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)
         kinds = [LapKind.CLEAN, LapKind.CLEAN, LapKind.CLEAN, LapKind.SLOW, LapKind.CLEAN]
         src = SyntheticSource(n_laps=len(kinds), kinds=kinds, seed=11, start_m=2900.0)
         coach = LiveCoach(src.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(CapturedVoice()),
-                          settings, own_best=own_best(ws, TRACK, CAR), engineer=narrator)
+                          settings, own_best=own_best(ws, TRACK, CAR), engineer=engineer)
     finally:
         ws.close()
     asked, said, words = [], [], []
-    coach.on(Narrate, lambda e: e.kind == "debrief" and asked.append((e.payload["facts"], e.stretch, e.at)))
+    coach.on(AskEngineer, lambda e: e.kind == "debrief" and asked.append((e.payload["facts"], e.stretch, e.at)))
     coach.on(DebriefGiven, lambda e: said.append(e.public()))
-    coach.on(DebriefWords, lambda e: words.append(e.public()))
+    coach.on(EngineerReply, lambda e: e.kind == "debrief" and words.append(e.public()))
     for f in src.frames():
-        narrator.tick(f.session_time)
+        engineer.tick(f.session_time)
         coach.push(f)
     return coach, asked, said, words
 
@@ -189,22 +192,22 @@ def drive(root, reply_after_s: float | None, settings: Settings):
 def test_the_cool_down_debrief_is_in_the_coachs_words_when_they_come_in_time(root):
     coach, asked, said, words = drive(root, 4.0, Settings(learning_laps=1))
     assert asked and asked[0][0]["fallback"] and "topics" in asked[0][0]
-    assert said and said[0]["by"] == "coach" and said[0]["text"] == WORDS
+    assert said and said[0]["by"] == "engineer" and said[0]["text"] == WORDS
     assert words[0]["status"] == "used"
     spoken = [s.text for s in coach.arbiter.voice.spoken if s.kind == "debrief"]
     assert " ".join(spoken) == WORDS and len(spoken) >= 1
 
 
 def test_without_a_reply_in_time_the_coach_uses_its_own_words(root):
-    coach, asked, said, _ = drive(root, None, Settings(learning_laps=1, narrate_wait_s=5.0))
+    coach, asked, said, _ = drive(root, None, Settings(learning_laps=1, engineer_wait_s=5.0))
     assert asked and said and said[0]["by"] == "template"
     late = [s for s in coach.arbiter.voice.spoken if s.kind == "debrief"]
-    slow_at = asked[0][2] - coach.settings.narrate_after_s
+    slow_at = asked[0][2] - coach.settings.slowing_after_s
     assert late[0].at_s >= slow_at + coach.settings.debrief_after_s + 5.0 - 0.1  # it waited, then spoke
 
 
 def test_a_reply_after_the_coachs_own_words_is_not_said_too(root):
-    coach, asked, said, words = drive(root, 30.0, Settings(learning_laps=1, narrate_wait_s=5.0))
+    coach, asked, said, words = drive(root, 30.0, Settings(learning_laps=1, engineer_wait_s=5.0))
     assert said and said[0]["by"] == "template"
     assert words and words[0]["status"] == "too late"
     assert WORDS not in [s.text for s in coach.arbiter.voice.spoken]
@@ -212,7 +215,7 @@ def test_a_reply_after_the_coachs_own_words_is_not_said_too(root):
 
 def test_a_live_session_has_one_engineer_from_radio_check_to_notes(root, tmp_path):
     rulebook.add_rule(root, {"id": "t1-watch", "track": TRACK, "when": {"event": "corner_exit", "corner": 1},
-                             "pushing_only": False, "actions": [{"wake": "T1 done, delta {delta_s}"}],
+                             "pushing_only": False, "actions": [{"ask_engineer": "T1 done, delta {delta_s}"}],
                              "limits": {"once": True}})
     rulebook.set_status(root, "t1-watch", "active", force=True)
     src = SyntheticSource(n_laps=3, seed=9, start_m=2900.0)
@@ -238,9 +241,9 @@ def test_a_live_session_has_one_engineer_from_radio_check_to_notes(root, tmp_pat
     assert len(made) == 1 and running["engineer"] == made[0].session_id
     assert {sid for _, sid, _ in turns.calls} == {made[0].session_id}  # one conversation, every turn
     assert [r for _, _, r in turns.calls][0] is False and all(r for _, _, r in turns.calls[1:])
-    said = [e["text"] for e in events if e["type"] == "line" and e["kind"] == "coach"]
+    said = [e["text"] for e in events if e["type"] == "line" and e["kind"] == "engineer"]
     assert said[:2] == ["Radio check. Easy out lap, then build into it.", "Turn one's coming together, keep at it."]
     assert any("<radio since your last turn>" in p and "lap 1:" in p for p, _, _ in turns.calls)  # it hears the radio
-    notes = [e for e in events if e["type"] == "notes_written"]
+    notes = [e for e in events if e["type"] == "engineer_reply" and e["kind"] == "wrap_up"]
     assert notes and notes[0]["text"] == "Noted the Turn 1 work."
-    assert [e["type"] for e in events].count("wake") == 1
+    assert [e.get("kind") for e in events if e["type"] == "ask_engineer"].count("rule") == 1

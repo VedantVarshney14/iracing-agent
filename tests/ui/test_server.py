@@ -307,10 +307,10 @@ def test_garage61_token_can_be_added_from_the_ui(workspace, tmp_path):
 
 
 def test_system_reports_whether_the_coach_can_run(workspace, tmp_path):
-    from iagent.ui.coach import CoachRuns
+    from iagent.agent import ClaudeCode
 
     root, _, _ = workspace
-    missing = ui_client(create_app(root, coach=CoachRuns(root, claude=str(tmp_path / "no-claude"))))
+    missing = ui_client(create_app(root, agent=ClaudeCode(root, claude=str(tmp_path / "no-claude"))))
     assert missing.get("/api/system").json()["coach"]["found"] is False
-    present = ui_client(create_app(root, coach=CoachRuns(root, claude=sys.executable)))
+    present = ui_client(create_app(root, agent=ClaudeCode(root, claude=sys.executable)))
     assert present.get("/api/system").json()["coach"]["found"] is True

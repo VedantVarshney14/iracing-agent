@@ -6,7 +6,7 @@ pick one thing to work on, and (later) cue it by voice at the right place on tra
 
 > **Status:** works on recorded sessions (telemetry, laps, corner analysis, Garage61 reference
 > laps and ghosts, coaching skills) and live: spoken corner cues and feedback on track, rules the
-> coach sets and backtests, debriefs and wake-ups in the coach's own words, and a browser UI.
+> coach sets and backtests, debriefs and answers in the engineer's own words, and a browser UI.
 > Push-to-talk voice input is next.
 
 What it's for and how it's built is explained in [ARCHITECTURE.md](ARCHITECTURE.md) (goals, the
@@ -23,7 +23,7 @@ data, the analysis, the live pipeline, rules, the engineer, how to extend it). I
   and small event handlers; everything it says goes through rules (its own built-in ones, and the
   agent's, which are backtested before they go live). No model in the real-time loop. A race
   engineer (one Claude Code conversation per session) hears the radio, answers questions and
-  wake-ups, debriefs, and writes notes for the next session.
+  rules that ask it, debriefs, and writes notes for the next session.
 - **Testable without the sim:** `.ibt` replay, a synthetic lap generator with exact ground truth,
   and regression tests against real recordings.
 
@@ -239,13 +239,13 @@ an engineer on the radio, not a recording: brief when you're busy, fuller when y
 - **An engineer for the session.** Where the model has time to answer, it does the talking, and
   it's the same conversation all session, like one engineer on the radio: your Claude Code
   (`claude -p`) gives a radio check and the plan as you head out (from its notes), hears every cue
-  and lap time, answers your questions and rules that `wake` it, words the cool-down debrief
+  and lap time, answers your questions and rules that ask it (`ask_engineer`), words the cool-down debrief
   (asked as you slow down, said if it answers in time: ~5 s in testing, wanted ~15 s in), and
   writes up its notes (`workspace/notes/<track>.md`) when the session ends; the next session's
   engineer starts from them. It's given the numbers, not asked to work them out. Corner cues stay
   fixed text, because they must be instant and exactly timed, but the coach can rewrite them
   between sessions (`iagent cues set ... --short ...`). No reply in time, or no `claude`: the coach's
-  own phrasing is said. `--no-narrate` turns it off.
+  own phrasing is said. `--no-engineer` turns it off.
 - **One focus at a time.** After the learning laps the corner losing the most (over the last two
   laps at pace) becomes the focus: *"Focus now: Turns 15 and 16. Just a lift, no brakes."* It's
   cued every lap; other corners speak up only for a big loss or an off. Once you match the
@@ -331,7 +331,7 @@ iagent rules schema                      # the exact format, as JSON Schema
   `{expression}` holes. A missing value (a corner taken without braking has no `brake_m`)
   makes the condition false rather than failing.
 - **Actions** (a list, run in order): `say` (cue, feedback or summary priority, through the same speech rules as the
-  cues; add `"long"` for a fuller version said when you're not pushing), `log`, and `wake`
+  cues; add `"long"` for a fuller version said when you're not pushing), `log`, and `ask_engineer`
   (the engineer answers on the radio in its own words, or stays silent).
 - **Limits:** cooldowns, per-lap and per-session caps, `once`, `in_a_row`. Rules ignore out
   laps, cool-downs and moments unless `"pushing_only": false`.
@@ -390,7 +390,7 @@ iagent/
   references/  Garage61 client, CSV import, iRacing ghost files
   agent.py     the agent harness: Agent (abstract), ClaudeCode (`claude -p`)
   live/        the live coach: pipeline + events + state (typed), handlers/, rules/ (schema,
-               actions, engine) + builtin_rules, phrasing, speech, engineer + narrator (radio),
+               actions, engine) + builtin_rules, phrasing, speech, engineer,
                rulebook (backtests), cues, sources, sessions and reports
   testing/     synthetic lap generator, .ibt writer
   ui/          `iagent ui`: the local API server and what the screens show (review.py)

@@ -12,7 +12,7 @@ from iagent.live.coach import LiveCoach, Settings
 from iagent.live.handlers import speaking
 from iagent.live.handlers.speaking import Gate
 from iagent.live.cues import build_plan
-from iagent.live.events import EVENTS, AtTheLine, Crossing, Event, Frame, Lap, Reply, doc
+from iagent.live.events import EVENTS, AtTheLine, Crossing, Event, Frame, Lap, doc
 from iagent.live.pipeline import EventHandler, Pipeline, enrich, on
 from iagent.live.rules import Rule, describe
 from iagent.live.speech import Arbiter, CapturedVoice
@@ -140,7 +140,7 @@ def test_only_defined_events_go_through():
     with pytest.raises(TypeError, match="acts on no events"):
         Pipeline(None, Settings(), [Idle])
     pipe = Pipeline(None, Settings(), [])
-    for base in (AtTheLine(), Reply()):  # bases group fields; they're never events themselves
+    for base in (AtTheLine(), Event()):  # bases group fields; they're never events themselves
         with pytest.raises(TypeError, match="not a defined event"):
             pipe.emit(base)
         with pytest.raises(TypeError, match="not a defined event"):

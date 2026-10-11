@@ -3,7 +3,7 @@
 In real life one engineer works with the driver through a session. Before it they read their
 notes and the plan and give a radio check; during it they hear everything said on the radio and
 see the lap times, answer the driver's questions, pick things up when something they asked to be
-told about happens (a rule's `wake`), and debrief on a cool-down lap; after it they debrief and
+told about happens (a rule that asks for it), and debrief on a cool-down lap; after it they debrief and
 write it up. The next session's engineer starts from those notes: memory between sessions is the
 notebook (the workspace notes), not an ever-longer conversation.
 
@@ -11,15 +11,15 @@ So the engineer here is:
 
 - **one conversation per session**: a fixed session id, `--session-id` on the first turn and
   `--resume` after, so every turn knows what was said before;
-- **one turn at a time**, most important first (the driver's question, the debrief, a rule's
-  wake-up, the briefing). A request that's no use by the time its turn comes (a debrief once the
+- **one turn at a time**, most important first (the driver's question, the debrief, a rule, the
+  briefing). A request that's no use by the time its turn comes (a debrief once the
   driver is pushing again) is dropped, and the coach's own words are said instead;
 - **listening**: each turn starts with what went out on the radio and the laps since the last one;
 - **isolated**: its own conversation, the coach plugin and only the tools the coach needs, on the
   workspace; nothing from the driver's other Claude Code sessions.
 
-The live coach never waits on it (`iagent.live.narrator.Radio` puts requests to it and hands the
-replies back through the pipeline's inbox).
+The live coach never waits on it (`iagent.live.handlers.engineer_link.EngineerLink` puts requests
+to it and posts the replies back through the pipeline's inbox).
 """
 
 import heapq
@@ -217,10 +217,10 @@ def debrief_prompt(f: dict) -> str:
     return "\n".join(lines)
 
 
-def wake_prompt(wake: dict, state: dict) -> str:
+def rule_prompt(rule: dict, state: dict) -> str:
     pushing = state.get("mode") == "pushing"
-    lines = [f"A rule you set has fired: {wake['rule']}" + (f" ({wake['description']})" if wake.get("description") else "")
-             + ".", f"Its message: {wake['message']}", f"Values it saw: {json.dumps(wake.get('values') or {})}",
+    lines = [f"A rule you set has fired: {rule['id']}" + (f" ({rule['description']})" if rule.get("description") else "")
+             + ".", f"Its message: {rule['message']}", f"Values it saw: {json.dumps(rule.get('values') or {})}",
              f"The driver is {'pushing: at most one short sentence, under 12 words' if pushing else 'not pushing (out lap, cool-down or after a moment): up to two short sentences'}.",
              f"Lap {state.get('lap')}, focus: {state.get('focus_label') or 'none'}."]
     if state.get("crewchief"):
@@ -259,7 +259,7 @@ class TurnKind:
 TURNS: dict[str, TurnKind] = {
     "question": TurnKind(0, 60.0, lambda p: question_prompt(p["text"])),
     "debrief": TurnKind(1, 20.0, lambda p: debrief_prompt(p["facts"])),
-    "wake": TurnKind(2, 20.0, lambda p: wake_prompt(p["wake"], p["state"])),
+    "rule": TurnKind(2, 20.0, lambda p: rule_prompt(p["rule"], p["state"])),
     "briefing": TurnKind(3, 90.0, lambda p: briefing_prompt(p["facts"])),
     "wrap_up": TurnKind(4, 600.0, lambda p: wrap_up_prompt(p["facts"]), NOTES, lambda r: r.get("changed")),
 }

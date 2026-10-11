@@ -8,7 +8,7 @@ variables the rule saw and the event. A new action is a new subclass registered 
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
-from iagent.live.events import Approach, CoachWords, Event, Narrate, Wake
+from iagent.live.events import Approach, AskEngineer, Event
 from iagent.live.expr import Expr, ExprError, Template
 from iagent.live.speech import APPROACH, FEEDBACK, SUMMARY, Utterance
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from iagent.live.rules.schema import Rule
 
 PRIORITIES = {"cue": APPROACH, "feedback": FEEDBACK, "answer": FEEDBACK, "summary": SUMMARY}
-WAKE_MIN_GAP_S = 30.0  # wake-ups at most this often (each is a model turn)
+ASK_MIN_GAP_S = 30.0  # rules ask the engineer at most this often (each ask is a model turn)
 
 
 class RuleError(ValueError):
@@ -112,23 +112,23 @@ class Say(Action):
             until = e.at + (10.0 if e.judged else 40.0)
         corner = env.get("corner") if isinstance(env.get("corner"), int) else None
         longer = self.longer.render(env) if self.longer else None
-        by = getattr(e, "rule", None) or rule.id  # a reply to a rule's wake-up is that rule's line
+        by = getattr(e, "rule", None) or rule.id  # the engineer's answer to a rule is that rule's line
         engine.ctx.arbiter.say(Utterance(text, priority, self.kind.render(env) or "rule", e.at, until, corner, rule=by,
                                          longer=longer))
         engine.said(rule, priority, e.at)
         return {}
 
 
-class WakeEngineer(Action):
-    key, doc = "wake", "wake the engineer: it may answer on the radio in its own words"
+class Ask(Action):
+    key, doc = "ask_engineer", "tell the engineer this: it may answer on the radio in its own words"
 
     def run(self, engine, rule, text, env, e):
         st = engine.state
-        wake = {"rule": rule.id, "message": text, "values": engine.values(rule, env), "description": rule.description}
-        engine.emit(Wake(**wake))
-        engine.emit(Narrate(kind="wake", reply=CoachWords.name, rule=rule.id, min_gap_s=WAKE_MIN_GAP_S, payload={
-            "wake": wake, "state": {"mode": st.mode, "lap": st.lap, "focus_label": st.focus_label,
-                                    "crewchief": engine.settings.crewchief}}))
+        engine.emit(AskEngineer(kind="rule", rule=rule.id, min_gap_s=ASK_MIN_GAP_S, payload={
+            "rule": {"id": rule.id, "description": rule.description, "message": text,
+                     "values": engine.values(rule, env)},
+            "state": {"mode": st.mode, "lap": st.lap, "focus_label": st.focus_label,
+                      "crewchief": engine.settings.crewchief}}))
         return {}
 
 
@@ -139,7 +139,7 @@ class Log(Action):
         return {}
 
 
-ACTIONS: dict[str, type[Action]] = {a.key: a for a in (Say, WakeEngineer, Log)}
+ACTIONS: dict[str, type[Action]] = {a.key: a for a in (Say, Ask, Log)}
 
 
 def parse_action(rule_id: str, raw: Any, event: str, names: set[str]) -> Action:

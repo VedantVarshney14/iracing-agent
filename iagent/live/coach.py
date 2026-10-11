@@ -3,7 +3,7 @@
 The coach is a pipeline (`iagent.live.pipeline`) of event handlers (`iagent.live.handlers`), each
 of which only handles events: line crossings and laps, where the car is, pace (pushing or not),
 corner exits with their metrics, watched points on track, the corner cues, the focus, what's
-known about each corner, the lap summary, the cool-down debrief, the narrator, the rules and,
+known about each corner, the lap summary, the cool-down debrief, the link to the engineer, the rules and,
 last, speech. What's said is decided by rules (`iagent.live.builtin_rules` for the coach's own,
 plus the agent's), and when it's said by the speech arbiter and its gates.
 

@@ -18,10 +18,10 @@ from iagent.live.handlers.history import History
 from iagent.live.handlers.summary import Summary
 from iagent.live.handlers.debrief import Debrief
 from iagent.live.handlers.speaking import GATES, Gate, Speaking
-from iagent.live.narrator import Radio
+from iagent.live.handlers.engineer_link import EngineerLink
 
-HANDLERS = [Laps, Track, Clock, Pace, Corners, Positions, CueCaller, Focus, History, Summary, Debrief, Radio]
+HANDLERS = [Laps, Track, Clock, Pace, Corners, Positions, CueCaller, Focus, History, Summary, Debrief, EngineerLink]
 # The rule engine (iagent.live.rules) comes after these, and Speaking last.
 
 __all__ = ["HANDLERS", "CornerResult", "CueCaller", "Corners", "Debrief", "Focus", "GATES", "Gate", "History",
-           "Laps", "Pace", "Positions", "Radio", "Speaking", "Summary", "Track", "Clock"]
+           "EngineerLink", "Laps", "Pace", "Positions", "Speaking", "Summary", "Track", "Clock"]

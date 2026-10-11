@@ -34,7 +34,8 @@ from iagent.references import garage61 as g61
 from iagent.references import ghosts
 from iagent.references import imports
 from iagent.ui import review
-from iagent.ui.coach import CoachRuns
+from iagent.agent import ClaudeCode
+from iagent.ui.chat import chat as chat_turn
 from iagent.workspace import Workspace, WorkspaceError
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -55,7 +56,7 @@ npm --prefix web run build</pre>
 def create_app(
     workspace: Path,
     static_dir: Path = STATIC_DIR,
-    coach: CoachRuns | None = None,
+    agent: ClaudeCode | None = None,
     garage61: Callable[[], g61.Garage61Client] = imports.client_from_env,
     watcher: TelemetryWatcher | None = None,
     lapfiles: Path | None = None,
@@ -63,11 +64,11 @@ def create_app(
     token_file: Path | None = None,
     live: LiveSessions | None = None,
 ) -> Starlette:
-    coach = coach or CoachRuns(workspace)
+    agent = agent or ClaudeCode(workspace)  # the coach agent: the chat, the engineer, debriefs
     if live is None:
         from iagent.live.engineer import Engineer
 
-        live = LiveSessions(workspace, engineer=lambda: Engineer.over(coach))
+        live = LiveSessions(workspace, engineer=lambda: Engineer.over(agent))
     debriefing: set[str] = set()  # sessions whose debrief the coach is writing
     ghost_dir = (workspace / "reference" / "ghosts").resolve()
     g61_account: dict = {}  # Garage61's answer about the token, asked once
@@ -170,7 +171,7 @@ def create_app(
             "lapfiles_found": lap_dir.is_dir(),
             "telemetry": telemetry_status(),
             "garage61": {"token": has_token()},
-            "coach": {"found": shutil.which(coach.claude) is not None, "command": coach.claude},
+            "coach": {"found": shutil.which(agent.claude) is not None, "command": agent.claude},
         })
 
     async def ingest(request: Request) -> JSONResponse:
@@ -268,12 +269,12 @@ def create_app(
         message = (body.get("message") or "").strip()
         if not message:
             return JSONResponse({"error": "message is required"}, status_code=400)
-        events = coach.run(message, body.get("context") or {}, body.get("session_id") or None)
-        return StreamingResponse(events, media_type="application/x-ndjson")
+        events = chat_turn(agent, message, body.get("context") or {}, body.get("session_id") or None)
+        return StreamingResponse((json.dumps(e) + "\n" for e in events), media_type="application/x-ndjson")
 
     async def chat_stop(request: Request) -> JSONResponse:
         body = await request.json()
-        return JSONResponse({"stopped": coach.stop(body.get("run_id", ""))})
+        return JSONResponse({"stopped": agent.stop(body.get("run_id", ""))})
 
     # --- the live coach ---------------------------------------------------------------------
 
@@ -362,8 +363,7 @@ def create_app(
         def write() -> None:
             try:
                 parts, error = [], None
-                for line in coach.run(prompt, {"page": "session", "live": lines}, engineer):
-                    event = json.loads(line)
+                for event in chat_turn(agent, prompt, {"page": "session", "live": lines}, engineer):
                     if event["type"] == "text_start":
                         parts = []
                     elif event["type"] == "text":

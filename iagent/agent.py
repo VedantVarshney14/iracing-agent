@@ -14,7 +14,7 @@ Its stream-json output is turned into a few simple events:
 - {"type": "done", "session_id", "is_error"}
 - {"type": "error", "message"}
 
-Used by the lap review's chat (`iagent.ui.coach`) and the live session's engineer
+Used by the lap review's chat (`iagent.ui.chat`) and the live session's engineer
 (`iagent.live.engineer`), each with its own system prompt and conversation.
 """
 

@@ -72,9 +72,10 @@ no model involved, so they must be exact. Backtest every rule before it goes liv
 - **Track-wide rules** (no `track`) work everywhere: lap rules (`{"event": "lap"}`), every
   fifth lap (`{"event": "lap", "where": "lap % 5 == 0"}`), a reminder on a cool-down
   (`{"event": "pace", "mode": "tranquille"}`). They can't name corners.
-- `wake` hands the event to the engineer (you) during the session: what you put in `say` is
-  spoken to the driver (one short sentence while they're pushing), or `say` is null. Use it where
-  a judgement in your own words beats a fixed line; at most one wake-up every 30 s gets through.
+- `ask_engineer` tells the engineer (you) during the session, with the rule's message and the
+  values it saw: what you put in `say` is spoken to the driver (one short sentence while they're
+  pushing), or `say` is null. Use it where a judgement in your own words beats a fixed line; a
+  rule can ask at most once every 30 s.
 
 ## Cues and lines in your words
 

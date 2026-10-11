@@ -1,22 +1,11 @@
-"""The coach chat behind the web UI: one turn of the coach (`iagent.agent`) per message, resumed
-by session id, its events sent to the browser as JSON lines.
-
-Events (one JSON object per line):
-- {"type": "run", "run_id"}             first, so the browser can stop the run
-- {"type": "session", "session_id"}     the conversation to resume next time
-- {"type": "text_start"}                a new block of the coach's text begins
-- {"type": "text", "text"}              more of that text
-- {"type": "tool", "id", "command"}     the coach ran a command (shown, not trusted)
-- {"type": "ui", "action"}              `iagent ui show` succeeded: highlight this on screen
-- {"type": "done", "session_id", "is_error"}
-- {"type": "error", "message"}
+"""The chat beside the lap review: one turn of the coach agent (`iagent.agent`) per message, with
+what's on screen, resumed by session id. The server streams the agent's events to the browser as
+JSON lines.
 """
 
-import json
-from pathlib import Path
 from typing import Iterator
 
-from iagent.agent import ClaudeCode, StreamParser  # noqa: F401  (StreamParser: re-exported for callers)
+from iagent.agent import Agent
 
 SYSTEM_PROMPT = """\
 You are the driver's coach inside the iRacing Coach lap review screen. The driver sees a track map,
@@ -59,18 +48,6 @@ def screen_context(ctx: dict) -> str:
     return "<screen>\n" + "\n".join(lines) + "\n</screen>"
 
 
-class CoachRuns(ClaudeCode):
-    """The lap review's coach: its system prompt and the screen the driver is looking at."""
-
-    def __init__(self, workspace: Path, claude: str | None = None):
-        super().__init__(workspace, claude)
-
-    def run(self, message: str, context: dict, session_id: str | None) -> Iterator[str]:
-        """Stream one coach turn as JSON lines (a sync generator: Starlette runs it in a thread)."""
-        prompt = f"{screen_context(context)}\n\n{message}"
-        for event in self.turn(prompt, SYSTEM_PROMPT, session_id):
-            yield _line(event)
-
-
-def _line(event: dict) -> str:
-    return json.dumps(event) + "\n"
+def chat(agent: Agent, message: str, context: dict, session_id: str | None) -> Iterator[dict]:
+    """One turn of the chat, as the agent's events, with the screen the driver is looking at."""
+    return agent.turn(f"{screen_context(context)}\n\n{message}", SYSTEM_PROMPT, session_id)
