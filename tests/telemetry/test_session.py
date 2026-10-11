@@ -45,7 +45,11 @@ def test_missing_track_length_is_an_error():
 
 def test_missing_optional_fields_fall_back():
     info = parse_session_yaml("WeekendInfo:\n TrackLength: 2.0 km\n")
-    assert info.car_name == "unknown" and info.track_name == "unknown" and info.track_id is None
+    assert (
+        info.car_name == "unknown"
+        and info.track_name == "unknown"
+        and info.track_id is None
+    )
 
 
 def test_keys_use_internal_names_so_layouts_and_cars_stay_apart():
@@ -57,7 +61,9 @@ def test_keys_use_internal_names_so_layouts_and_cars_stay_apart():
 
 
 def test_keys_fall_back_to_display_names():
-    info = parse_session_yaml("WeekendInfo:\n TrackDisplayName: Some Track\n TrackLength: 2.0 km\n")
+    info = parse_session_yaml(
+        "WeekendInfo:\n TrackDisplayName: Some Track\n TrackLength: 2.0 km\n"
+    )
     assert info.track_key == "some-track" and info.car_key == "unknown"
 
 

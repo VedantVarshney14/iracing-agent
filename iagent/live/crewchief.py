@@ -26,9 +26,17 @@ PROCESS = "crewchiefv4"
 
 # What CrewChief already says in iRacing: the coach leaves these to it.
 CREWCHIEF_COVERS = (
-    "spotter (cars alongside)", "lap times and personal bests", "sector times and gaps",
-    "race position", "fuel", "tyres", "flags", "pit lane, limiter and pit window", "damage",
-    "penalties", "session time remaining",
+    "spotter (cars alongside)",
+    "lap times and personal bests",
+    "sector times and gaps",
+    "race position",
+    "fuel",
+    "tyres",
+    "flags",
+    "pit lane, limiter and pit window",
+    "damage",
+    "penalties",
+    "session time remaining",
 )
 
 
@@ -37,15 +45,20 @@ def running() -> bool:
     if sys.platform != "win32":
         return False
     try:
-        out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, timeout=5,
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        out = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).stdout
     except (OSError, subprocess.SubprocessError):
         return False
     return PROCESS in out.lower()
 
 
 def resolve(setting: str | bool | None) -> bool:
-    """"on"/"off"/"auto" (or a bool) -> whether to coach alongside CrewChief."""
+    """ "on"/"off"/"auto" (or a bool) -> whether to coach alongside CrewChief."""
     if isinstance(setting, bool):
         return setting
     if setting in (None, "auto"):

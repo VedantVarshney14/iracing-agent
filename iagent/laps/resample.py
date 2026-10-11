@@ -16,7 +16,9 @@ def resample_to_distance(lap: Lap, step_m: float = 1.0) -> pd.DataFrame:
     """
     df, length = lap.frames, lap.track_length_m
     if df is None or length is None:
-        raise ValueError(f"Lap {lap.lap_id} has no samples or track length to resample.")
+        raise ValueError(
+            f"Lap {lap.lap_id} has no samples or track length to resample."
+        )
     grid = np.arange(0.0, length, step_m)
 
     # Distance must be non-decreasing to interpolate against it.
@@ -40,7 +42,9 @@ def resample_to_distance(lap: Lap, step_m: float = 1.0) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
-def _nearest(grid: np.ndarray, dist: np.ndarray, values: np.ndarray, valid_range: bool) -> np.ndarray:
+def _nearest(
+    grid: np.ndarray, dist: np.ndarray, values: np.ndarray, valid_range: bool
+) -> np.ndarray:
     """VALUES at the sample nearest each grid point (for discrete channels); NaN outside the driven
     range if VALID_RANGE."""
     idx = np.searchsorted(dist, grid)

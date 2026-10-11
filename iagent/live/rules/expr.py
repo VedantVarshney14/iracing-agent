@@ -64,12 +64,20 @@ FUNCTIONS: dict[str, tuple[Callable, str]] = {
 _CONSTANTS = {"true": True, "false": False, "none": None, "null": None}
 
 _BINARY = {
-    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv,
-    ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
 }
 _COMPARE = {
-    ast.Lt: operator.lt, ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
-    ast.Eq: operator.eq, ast.NotEq: operator.ne,
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
 }
 
 
@@ -126,15 +134,21 @@ class Expr:
             if isinstance(node.op, ast.UAdd):
                 return arg
         if isinstance(node, ast.BinOp) and type(node.op) in _BINARY:
-            op, left, right = _BINARY[type(node.op)], self._compile(node.left), self._compile(node.right)
+            op, left, right = (
+                _BINARY[type(node.op)],
+                self._compile(node.left),
+                self._compile(node.right),
+            )
 
             def binary(env):
                 a, b = left(env), right(env)
                 return None if a is None or b is None else op(a, b)
+
             return binary
         if isinstance(node, ast.BoolOp):
             parts = [self._compile(v) for v in node.values]
             if isinstance(node.op, ast.And):
+
                 def all_of(env):
                     v = True
                     for p in parts:
@@ -142,6 +156,7 @@ class Expr:
                         if not v:
                             return v
                     return v
+
                 return all_of
 
             def any_of(env):
@@ -151,24 +166,38 @@ class Expr:
                     if v:
                         return v
                 return v
+
             return any_of
         if isinstance(node, ast.Compare):
             return self._compare(node)
         if isinstance(node, ast.IfExp):
-            test, yes, no = self._compile(node.test), self._compile(node.body), self._compile(node.orelse)
+            test, yes, no = (
+                self._compile(node.test),
+                self._compile(node.body),
+                self._compile(node.orelse),
+            )
             return lambda env: yes(env) if test(env) else no(env)
         if isinstance(node, ast.Call):
             if not isinstance(node.func, ast.Name) or node.func.id not in FUNCTIONS:
-                called = node.func.id if isinstance(node.func, ast.Name) else ast.unparse(node.func)
-                raise ExprError(f"Unknown function {called!r} in {self.text!r}; there are: {', '.join(FUNCTIONS)}.")
+                called = (
+                    node.func.id
+                    if isinstance(node.func, ast.Name)
+                    else ast.unparse(node.func)
+                )
+                raise ExprError(
+                    f"Unknown function {called!r} in {self.text!r}; there are: {', '.join(FUNCTIONS)}."
+                )
             if node.keywords:
-                raise ExprError(f"Functions take positional arguments only ({self.text!r}).")
+                raise ExprError(
+                    f"Functions take positional arguments only ({self.text!r})."
+                )
             fn = FUNCTIONS[node.func.id][0]
             args = [self._compile(a) for a in node.args]
 
             def call(env):
                 values = [a(env) for a in args]
                 return None if any(v is None for v in values) else fn(*values)
+
             return call
         raise ExprError(f"Unsupported syntax {ast.unparse(node)!r} in {self.text!r}.")
 
@@ -180,10 +209,20 @@ class Expr:
         for op, right in zip(node.ops, node.comparators):
             if isinstance(op, (ast.In, ast.NotIn)):
                 negate = isinstance(op, ast.NotIn)
-                steps.append((lambda a, b, n=negate: (a in b) != n if b is not None else False, self._compile(right), False))
+                steps.append(
+                    (
+                        lambda a, b, n=negate: (
+                            (a in b) != n if b is not None else False
+                        ),
+                        self._compile(right),
+                        False,
+                    )
+                )
             elif isinstance(op, (ast.Is, ast.IsNot)) or type(op) in (ast.Eq, ast.NotEq):
                 fn = operator.eq if isinstance(op, (ast.Eq, ast.Is)) else operator.ne
-                steps.append((fn, self._compile(right), True))  # equality is defined for none
+                steps.append(
+                    (fn, self._compile(right), True)
+                )  # equality is defined for none
             elif type(op) in _COMPARE:
                 steps.append((_COMPARE[type(op)], self._compile(right), False))
             else:
@@ -202,6 +241,7 @@ class Expr:
                     return False
                 a = b
             return True
+
         return compare
 
 
@@ -216,12 +256,14 @@ class Template:
         i, literal = 0, []
         while i < len(text):
             ch = text[i]
-            if ch in "{}" and text[i:i + 2] in ("{{", "}}"):
+            if ch in "{}" and text[i : i + 2] in ("{{", "}}"):
                 literal.append(ch)
                 i += 2
                 continue
             if ch == "}":
-                raise ExprError(f"Unmatched '}}' in {text!r} (write '}}}}' for a brace).")
+                raise ExprError(
+                    f"Unmatched '}}' in {text!r} (write '}}}}' for a brace)."
+                )
             if ch != "{":
                 literal.append(ch)
                 i += 1
@@ -232,7 +274,7 @@ class Template:
                 end += 1
             if end >= len(text):
                 raise ExprError(f"Unclosed '{{' in {text!r}.")
-            body = text[i + 1:end]
+            body = text[i + 1 : end]
             expr_text, spec = _split_spec(body)
             expr = Expr(expr_text)
             if spec:
@@ -274,7 +316,11 @@ class Template:
 
     def missing(self, env: Vars) -> list[str]:
         """The holes without a value (to say why a line wasn't said)."""
-        return [p[0].text for p in self.parts if not isinstance(p, str) and p[0](env) is None]
+        return [
+            p[0].text
+            for p in self.parts
+            if not isinstance(p, str) and p[0](env) is None
+        ]
 
 
 def _split_spec(body: str) -> tuple[str, str]:
@@ -287,5 +333,5 @@ def _split_spec(body: str) -> tuple[str, str]:
         elif ch in "([":
             depth -= 1
         elif ch == ":" and depth == 0:
-            return body[:j], body[j + 1:]
+            return body[:j], body[j + 1 :]
     return body, ""

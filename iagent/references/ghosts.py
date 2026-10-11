@@ -30,11 +30,15 @@ def read_info(data: bytes) -> GhostInfo:
         raise ValueError("Not an iRacing ghost lap (.blap) file.")
     strings = [m.group().decode("ascii") for m in _PRINTABLE.finditer(data[:4096])]
     driver = data[16:80].split(b"\0", 1)[0].decode("latin-1") or None
-    track = next((s for s in strings if re.fullmatch(r"[a-z0-9 _.-]+\\[a-z0-9 _.-]+", s)), None)
+    track = next(
+        (s for s in strings if re.fullmatch(r"[a-z0-9 _.-]+\\[a-z0-9 _.-]+", s)), None
+    )
     car = None
     if track is not None:
         before = strings[: strings.index(track)]
-        car = next((s for s in reversed(before) if re.fullmatch(r"[a-z0-9_]+", s)), None)
+        car = next(
+            (s for s in reversed(before) if re.fullmatch(r"[a-z0-9_]+", s)), None
+        )
     return GhostInfo(driver, car, track)
 
 
@@ -54,7 +58,9 @@ def install_dir(lapfiles: Path, info: GhostInfo) -> Path:
     """Where iRacing will list this ghost: the existing folder for its track if iRacing has made
     one (`<track>/<config>` or `<track>`), otherwise a new `<track>` folder."""
     if not info.track_path:
-        raise ValueError("The ghost file doesn't say which track it's for; use an explicit folder.")
+        raise ValueError(
+            "The ghost file doesn't say which track it's for; use an explicit folder."
+        )
     parts = info.track_path.split("\\")
     for candidate in (lapfiles.joinpath(*parts), lapfiles / parts[0]):
         if candidate.is_dir():

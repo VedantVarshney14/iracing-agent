@@ -18,7 +18,9 @@ import certifi
 from iagent.analysis.corners import Corner, CornerMap
 
 URL = "https://raw.githubusercontent.com/mrbelowski/CrewChiefV4/master/CrewChiefV4/trackLandmarksData.json"
-SLACK_M = 60  # a corner matches a landmark if its apex is within the landmark's range ± this
+SLACK_M = (
+    60  # a corner matches a landmark if its apex is within the landmark's range ± this
+)
 _GENERIC = re.compile(r"^turn\s*\d+$|^t\d+$", re.I)
 
 
@@ -45,7 +47,9 @@ def load(cache: Path, refresh: bool = False) -> dict:
         cache.parent.mkdir(parents=True, exist_ok=True)
         # certifi's CA bundle: python.org builds on macOS ship without system certificates.
         context = ssl.create_default_context(cafile=certifi.where())
-        with urllib.request.urlopen(URL, timeout=30, context=context) as resp:  # noqa: S310
+        with urllib.request.urlopen(
+            URL, timeout=30, context=context
+        ) as resp:  # noqa: S310
             cache.write_bytes(resp.read())
     return json.loads(cache.read_text())
 
@@ -64,7 +68,11 @@ def find(data: dict, track_code: str) -> tuple[str, list[Landmark]] | None:
         for e in entries:
             if key(e["irTrackName"]) == key(track_code):
                 marks = [
-                    Landmark(m["landmarkName"], float(m["distanceRoundLapStart"]), float(m["distanceRoundLapEnd"]))
+                    Landmark(
+                        m["landmarkName"],
+                        float(m["distanceRoundLapStart"]),
+                        float(m["distanceRoundLapEnd"]),
+                    )
                     for m in e["trackLandmarks"]
                 ]
                 return e["irTrackName"], marks
@@ -76,13 +84,17 @@ def match(cmap: CornerMap, marks: list[Landmark]) -> list[dict]:
     out = []
     for m in marks:
         hits: list[Corner] = [
-            c for c in cmap.corners if m.start_m - SLACK_M <= c.apex_m <= m.end_m + SLACK_M
+            c
+            for c in cmap.corners
+            if m.start_m - SLACK_M <= c.apex_m <= m.end_m + SLACK_M
         ]
-        out.append({
-            "landmark": m.name,
-            "suggested_name": None if m.generic else m.display,
-            "start_m": m.start_m,
-            "end_m": m.end_m,
-            "corners": [c.id for c in hits],
-        })
+        out.append(
+            {
+                "landmark": m.name,
+                "suggested_name": None if m.generic else m.display,
+                "start_m": m.start_m,
+                "end_m": m.end_m,
+                "corners": [c.id for c in hits],
+            }
+        )
     return out

@@ -22,21 +22,30 @@ class CoachState:
     speed_kph: float | None = doc("current speed (km/h)")
     track: str = doc("track key", "")
     car: str = doc("car key", "")
-    on_track: bool = doc("on the racing surface (or just off it), not on pit road", False)
+    on_track: bool = doc(
+        "on the racing surface (or just off it), not on pit road", False
+    )
     alongside: bool = doc("a car alongside (CrewChief's spotter is talking)", False)
     lap_clean: bool = doc("this lap started at the line and stayed off pit road", False)
     # laps (Laps)
     lap: int = doc("laps counted so far (complete, from the line, not on pit road)", 0)
     laps_driven: int = doc("line crossings so far", 0)
     line_at: float = doc("session time of the last line crossing", -1e9)
-    after_line: bool = doc("just over the line with CrewChief running (it reads the lap time then)", False)
+    after_line: bool = doc(
+        "just over the line with CrewChief running (it reads the lap time then)", False
+    )
     learning: bool = doc("during the learning laps (every corner cued)", True)
     ref_lap_time: float | None = doc("the reference lap's time (s)")
     # pace (Pace)
     mode: str = doc('"pushing" or "tranquille"', "pushing")
     pushing: bool = doc("the driver is pushing", True)
-    slow_for_s: float = doc("seconds into the current slow stretch (0 while pushing)", 0.0)
-    settled: bool = doc("the slow stretch has lasted `debrief_after_s`: a cool-down, not a moment", False)
+    slow_for_s: float = doc(
+        "seconds into the current slow stretch (0 while pushing)", 0.0
+    )
+    settled: bool = doc(
+        "the slow stretch has lasted `debrief_after_s`: a cool-down, not a moment",
+        False,
+    )
     stretch: int = doc("counts slow stretches", 0)
     best_lap: float | None = doc("the driver's best lap time here (s), or none")
     lap_times: list = doc("the pushing laps' times, in order", factory=list)
@@ -45,7 +54,9 @@ class CoachState:
     big_trouble: set = doc("corners worth a word even with a focus set", factory=set)
     hints: dict = doc("corner -> hint for its cue next lap", factory=dict)
     # cues (Positions, CueCaller)
-    next_cue_s: float = doc("seconds until the next timed point is due (inf: none)", float("inf"))
+    next_cue_s: float = doc(
+        "seconds until the next timed point is due (inf: none)", float("inf")
+    )
     in_corner: bool = doc("between a cue's point and the end of its corners", False)
     cue_heard: dict = doc("cue corner -> times heard in full", factory=dict)
     focus_heard: bool = doc("the current focus has been cued since it was set", True)
@@ -53,7 +64,10 @@ class CoachState:
     focus: int | None = doc("the focus cue's first corner, or none")
     focus_corners: list = doc("the focus cue's corners", factory=list)
     focus_label: str | None = doc('the focus as said ("Turns 15 and 16"), or none')
-    focus_log: list = doc("every focus so far: {cue, corners, label, set_lap, done_lap, manual}", factory=list)
+    focus_log: list = doc(
+        "every focus so far: {cue, corners, label, set_lap, done_lap, manual}",
+        factory=list,
+    )
     # the debrief (Debrief)
     debriefs: int = doc("debriefs given this session", 0)
 
@@ -70,4 +84,6 @@ class CoachState:
         """The current focus's entry in `focus_log`, or None without a focus."""
         if self.focus is None:
             return None
-        return next((f for f in reversed(self.focus_log) if f["cue"] == self.focus), None)
+        return next(
+            (f for f in reversed(self.focus_log) if f["cue"] == self.focus), None
+        )

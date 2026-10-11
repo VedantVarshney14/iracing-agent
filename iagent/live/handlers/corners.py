@@ -16,7 +16,15 @@ from iagent.live import phrasing
 from iagent.live.events import CornerExit, Crossing, Frame, Lap
 from iagent.live.pipeline import EventHandler, enrich, on
 
-ROW_CHANNELS = ("LapDist", "Speed", "Brake", "Throttle", "Gear", "PlayerTrackSurface", "SessionTime")
+ROW_CHANNELS = (
+    "LapDist",
+    "Speed",
+    "Brake",
+    "Throttle",
+    "Gear",
+    "PlayerTrackSurface",
+    "SessionTime",
+)
 
 
 @dataclass
@@ -69,11 +77,24 @@ class Corners(EventHandler):
                 continue
             if at_pace:
                 self._results.append(result)
-            self.emit(CornerExit(
-                corner=c.id, corner_name=phrasing.corner_name(c), delta_s=result.delta_s, at_pace=at_pace,
-                pushing=at_pace, cause=result.cause, amount=result.amount, advice=result.advice, hint=result.hint,
-                longer=result.longer, struggling=result.struggling, metrics=result.metrics or {},
-                ref=self._ref_metrics.get(c.id) or {}, result=result))
+            self.emit(
+                CornerExit(
+                    corner=c.id,
+                    corner_name=phrasing.corner_name(c),
+                    delta_s=result.delta_s,
+                    at_pace=at_pace,
+                    pushing=at_pace,
+                    cause=result.cause,
+                    amount=result.amount,
+                    advice=result.advice,
+                    hint=result.hint,
+                    longer=result.longer,
+                    struggling=result.struggling,
+                    metrics=result.metrics or {},
+                    ref=self._ref_metrics.get(c.id) or {},
+                    result=result,
+                )
+            )
 
     def assess(self, corner_id: int, d: float) -> CornerResult | None:
         """The corner's metrics on this lap so far, time lost against the reference over its
@@ -92,16 +113,31 @@ class Corners(EventHandler):
         dist = grid["LapDist"].to_numpy()
         start = max(c.segment_start_m, float(dist[0]))
         ref_d, ref_t = self.ctx.ref_d, self.ctx.ref_t
-        delta = float((np.interp(d, dist, t) - np.interp(start, dist, t))
-                      - (np.interp(d, ref_d, ref_t) - np.interp(start, ref_d, ref_t)))
+        delta = float(
+            (np.interp(d, dist, t) - np.interp(start, dist, t))
+            - (np.interp(d, ref_d, ref_t) - np.interp(start, ref_d, ref_t))
+        )
         s = self.settings
-        struggling = delta >= s.loss_s or (mine.get("off_track_m") or 0) >= s.off_track_m
+        struggling = (
+            delta >= s.loss_s or (mine.get("off_track_m") or 0) >= s.off_track_m
+        )
         cause, amount = phrasing.cause_of(mine, ref, delta, s)
         if delta > s.incident_s:
-            cause = amount = None  # a spin or a moment: the numbers describe the incident, not the technique
+            cause = amount = (
+                None  # a spin or a moment: the numbers describe the incident, not the technique
+            )
         texts = phrasing.advice(phrasing.corner_name(c), cause, amount, ref, mine)
-        return CornerResult(corner_id, round(delta, 3), texts["advice"], texts["hint"], struggling, mine,
-                            cause.name if cause else None, amount, texts["longer"])
+        return CornerResult(
+            corner_id,
+            round(delta, 3),
+            texts["advice"],
+            texts["hint"],
+            struggling,
+            mine,
+            cause.name if cause else None,
+            amount,
+            texts["longer"],
+        )
 
     def _grid(self, lo: float, hi: float) -> pd.DataFrame | None:
         """This lap from `lo` to `hi` on a 1 m grid, or None if it wasn't all driven."""
@@ -114,7 +150,9 @@ class Corners(EventHandler):
         grid = np.arange(lo, hi, 1.0)
         out = {"LapDist": grid}
         for i, name in enumerate(ROW_CHANNELS[1:], start=1):
-            out["lap_time_s" if name == "SessionTime" else name] = np.interp(grid, dist, raw[:, i])
+            out["lap_time_s" if name == "SessionTime" else name] = np.interp(
+                grid, dist, raw[:, i]
+            )
         out["Gear"] = np.round(out["Gear"])
         out["PlayerTrackSurface"] = np.round(out["PlayerTrackSurface"])
         return pd.DataFrame(out)
@@ -130,7 +168,11 @@ class Corners(EventHandler):
     def worst(self, e: Lap):
         """Put the corner that lost the most (incidents aside) on the lap."""
         s = self.settings
-        worst = max((r for r in e.results if r.delta_s <= s.incident_s), key=lambda r: r.delta_s, default=None)
+        worst = max(
+            (r for r in e.results if r.delta_s <= s.incident_s),
+            key=lambda r: r.delta_s,
+            default=None,
+        )
         if worst is not None:
             e.worst_corner, e.worst_delta_s = worst.corner, worst.delta_s
             e.worst_name = phrasing.corner_name(self.ctx.cmap.get(worst.corner))

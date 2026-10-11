@@ -30,8 +30,14 @@ class _Cli(click.Group):
 
 
 @click.group(cls=_Cli)
-@click.option("--workspace", type=click.Path(file_okay=False, path_type=Path), envvar="IAGENT_WORKSPACE",
-              default=DEFAULT_WORKSPACE, show_default=True, help="Workspace directory (env: IAGENT_WORKSPACE).")
+@click.option(
+    "--workspace",
+    type=click.Path(file_okay=False, path_type=Path),
+    envvar="IAGENT_WORKSPACE",
+    default=DEFAULT_WORKSPACE,
+    show_default=True,
+    help="Workspace directory (env: IAGENT_WORKSPACE).",
+)
 @click.option("--debug", is_flag=True, help="Verbose logging (to stderr).")
 @click.pass_context
 def cli(click_ctx: click.Context, workspace: Path, debug: bool):
@@ -43,7 +49,16 @@ def cli(click_ctx: click.Context, workspace: Path, debug: bool):
 
 
 for command in (
-    workspace.ingest, workspace.workspace, workspace.tracks, ui.ui, laps.laps, corners.corners,
-    references.garage61, references.refs, cues.cues, rules.rules, live.live,
+    workspace.ingest,
+    workspace.workspace,
+    workspace.tracks,
+    ui.ui,
+    laps.laps,
+    corners.corners,
+    references.garage61,
+    references.refs,
+    cues.cues,
+    rules.rules,
+    live.live,
 ):
     cli.add_command(command)

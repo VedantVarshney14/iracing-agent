@@ -17,7 +17,8 @@ from iagent.live.pipeline import EventHandler, enrich, on
 
 class Pace(EventHandler):
     """Whether the driver is pushing, judged by time over the last stretch against their best lap
-    (or the reference on a new track); slow stretches, how each lap was driven, and new bests."""
+    (or the reference on a new track); slow stretches, how each lap was driven, and new bests.
+    """
 
     def start(self):
         """Judge pace against the driver's best lap here, or the reference until they have one."""
@@ -31,7 +32,9 @@ class Pace(EventHandler):
             self._d = own["LapDist"].to_numpy(dtype=float)
             self._t = own["lap_time_s"].to_numpy(dtype=float)
             best = float(self._t[-1])
-        self._trail: deque[tuple[float, float]] = deque()  # (distance run, session time)
+        self._trail: deque[tuple[float, float]] = (
+            deque()
+        )  # (distance run, session time)
         self._run_m = 0.0
         self._prev_d: float | None = None
         self._frame_no = 0
@@ -44,7 +47,9 @@ class Pace(EventHandler):
         """Start counting this lap's frames and slow stretches."""
         self._frames = 0
         self._pushing_frames = 0
-        self._slow: list[list[float]] = []  # [from_m, to_m] stretches not pushing, this lap
+        self._slow: list[list[float]] = (
+            []
+        )  # [from_m, to_m] stretches not pushing, this lap
 
     @on(Frame)
     def judge(self, e: Frame):
@@ -84,7 +89,10 @@ class Pace(EventHandler):
             return
         st.slow_for_s = now - self._since
         st.settled = st.slow_for_s >= self.settings.debrief_after_s
-        for event, after in ((Slowing, self.settings.slowing_after_s), (CoolDown, self.settings.debrief_after_s)):
+        for event, after in (
+            (Slowing, self.settings.slowing_after_s),
+            (CoolDown, self.settings.debrief_after_s),
+        ):
             if st.slow_for_s >= after and event not in self._sent:
                 self._sent.add(event)
                 self.emit(event(stretch=st.stretch))
@@ -94,18 +102,27 @@ class Pace(EventHandler):
         (m0, t0), (m1, t1) = self._trail[0], self._trail[-1]
         span = m1 - m0
         lap = self.state.best_lap or float(self._t[-1])
-        a, b = np.interp((d - span) % self.length, self._d, self._t), np.interp(d, self._d, self._t)
+        a, b = np.interp((d - span) % self.length, self._d, self._t), np.interp(
+            d, self._d, self._t
+        )
         best = float((b - a) % lap) or 1e-6
         return (t1 - t0) / best
 
     def _set(self, mode: str, now: float, d: float) -> None:
         """Switch to MODE: start or end a slow stretch, and emit `PaceChanged`."""
         st = self.state
-        st.mode, st.pushing, st.slow_for_s, st.settled = mode, mode == "pushing", 0.0, False
+        st.mode, st.pushing, st.slow_for_s, st.settled = (
+            mode,
+            mode == "pushing",
+            0.0,
+            False,
+        )
         if mode == "tranquille":
             st.stretch += 1
             self._since, self._sent = now, set()
-            self._slow.append([round(max(0.0, d - self.settings.pace_window_m / 2)), round(d)])
+            self._slow.append(
+                [round(max(0.0, d - self.settings.pace_window_m / 2)), round(d)]
+            )
         elif self._slow:
             self._slow[-1][1] = round(d)
         self.emit(PaceChanged(mode=mode, lap_dist=round(d)))
@@ -119,21 +136,32 @@ class Pace(EventHandler):
         share = self._pushing_frames / self._frames if self._frames else 0.0
         pace, moment_at = "pushing", None
         if self._slow:
-            if share >= 0.6:  # mostly pushing: one moment (a spin and its recovery can run over a km)
+            if (
+                share >= 0.6
+            ):  # mostly pushing: one moment (a spin and its recovery can run over a km)
                 where = max(self._slow, key=lambda ab: ab[1] - ab[0])[0]
-                moment_at = min(self.ctx.cmap.corners, key=lambda c: abs(c.apex_m - where)).id
+                moment_at = min(
+                    self.ctx.cmap.corners, key=lambda c: abs(c.apex_m - where)
+                ).id
                 pace = "moment"
             else:
                 pace = "tranquille"
         e.pace, e.pushing, e.pushing_share, e.slow, e.moment_at = (
-            pace, pace != "tranquille", round(share, 2), self._slow, moment_at)
+            pace,
+            pace != "tranquille",
+            round(share, 2),
+            self._slow,
+            moment_at,
+        )
         self._new_lap()
 
     @enrich(Lap)
     def best(self, e: Lap):
         """A faster pushing lap becomes the pace to judge pushing by."""
         best, lap_time = self.state.best_lap, e.lap_time
-        e.new_best = bool(e.pace == "pushing" and lap_time and (best is None or lap_time < best))
+        e.new_best = bool(
+            e.pace == "pushing" and lap_time and (best is None or lap_time < best)
+        )
         e.best_gap_s = round(lap_time - best, 3) if lap_time and best else None
         if e.pace == "pushing" and lap_time:
             self.state.lap_times = [*self.state.lap_times, lap_time]
@@ -143,4 +171,3 @@ class Pace(EventHandler):
             self._t = seg["lap_time_s"].to_numpy(dtype=float)
             self._own = True
             self.state.best_lap = lap_time
-

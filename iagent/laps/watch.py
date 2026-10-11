@@ -36,7 +36,9 @@ def settings_path(workspace: Path) -> Path:
 def saved_telemetry_dir(workspace: Path) -> Path | None:
     """The telemetry folder chosen in the UI, if any."""
     path = settings_path(workspace)
-    folder = json.loads(path.read_text()).get("telemetry_dir") if path.exists() else None
+    folder = (
+        json.loads(path.read_text()).get("telemetry_dir") if path.exists() else None
+    )
     return Path(folder) if folder else None
 
 
@@ -51,7 +53,8 @@ def save_telemetry_dir(workspace: Path, folder: Path) -> None:
 
 def ingest_file(workspace: Path, path: Path) -> dict:
     """Ingest one recording into the workspace, unless its session is already there.
-    Returns {"laps", "valid", "track", "track_key", "car_key"} (or {"laps": 0, "skipped": ...})."""
+    Returns {"laps", "valid", "track", "track_key", "car_key"} (or {"laps": 0, "skipped": ...}).
+    """
     with _INGEST_LOCK:
         store = ParquetLapStore(workspace)
         try:
@@ -65,9 +68,13 @@ def ingest_file(workspace: Path, path: Path) -> dict:
             store.close()
     logger.info("Ingested %s: %d laps", path.name, len(records))
     first = records[0] if records else None
-    return {"laps": len(records), "valid": sum(r.valid for r in records),
-            "track": first.track if first else None,
-            "track_key": first.track_key if first else None, "car_key": first.car_key if first else None}
+    return {
+        "laps": len(records),
+        "valid": sum(r.valid for r in records),
+        "track": first.track if first else None,
+        "track_key": first.track_key if first else None,
+        "car_key": first.car_key if first else None,
+    }
 
 
 def default_telemetry_dir() -> Path:
@@ -86,16 +93,30 @@ class TelemetryWatcher:
     """Watches iRacing's telemetry folder and ingests each new recording once it has stopped
     growing; remembers what it has ingested."""
 
-    def __init__(self, workspace: Path, folder: Path, interval_s: float = 10.0, settle_s: float = 15.0):
+    def __init__(
+        self,
+        workspace: Path,
+        folder: Path,
+        interval_s: float = 10.0,
+        settle_s: float = 15.0,
+    ):
         self.workspace = workspace
         self.folder = folder
         self.interval_s = interval_s
         self.settle_s = settle_s
         self._state_path = workspace / "cache" / "telemetry-ingested.json"
-        self._done: dict[str, dict] = json.loads(self._state_path.read_text()) if self._state_path.exists() else {}
-        self._sizes: dict[str, int] = {}  # size at the previous scan, to tell a finished file
+        self._done: dict[str, dict] = (
+            json.loads(self._state_path.read_text())
+            if self._state_path.exists()
+            else {}
+        )
+        self._sizes: dict[str, int] = (
+            {}
+        )  # size at the previous scan, to tell a finished file
         self._lock = threading.Lock()
-        self._scan_lock = threading.Lock()  # the background thread and a rescan from the UI
+        self._scan_lock = (
+            threading.Lock()
+        )  # the background thread and a rescan from the UI
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.version = 0  # bumped whenever new laps arrive, so the UI knows to reload
@@ -108,7 +129,9 @@ class TelemetryWatcher:
                 "folder": str(self.folder),
                 "found": self.folder.is_dir(),
                 "watching": self._thread is not None and self._thread.is_alive(),
-                "files_ingested": sum(1 for d in self._done.values() if not d.get("error")),
+                "files_ingested": sum(
+                    1 for d in self._done.values() if not d.get("error")
+                ),
                 "last": self.last,
                 "error": self.error,
                 "version": self.version,
@@ -117,7 +140,9 @@ class TelemetryWatcher:
     def start(self) -> None:
         """Start watching on a background thread."""
         if self._thread is None:
-            self._thread = threading.Thread(target=self._run, name="telemetry-watch", daemon=True)
+            self._thread = threading.Thread(
+                target=self._run, name="telemetry-watch", daemon=True
+            )
             self._thread.start()
 
     def stop(self) -> None:

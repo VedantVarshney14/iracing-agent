@@ -16,11 +16,15 @@ def test_rejects_other_files():
 
 def test_installs_into_the_folder_iracing_already_made(tmp_path):
     info = GhostInfo("x", "formulair04", "okayama\\full")
-    assert install_dir(tmp_path, info) == tmp_path / "okayama"  # nothing yet: new track folder
+    assert (
+        install_dir(tmp_path, info) == tmp_path / "okayama"
+    )  # nothing yet: new track folder
     (tmp_path / "okayama").mkdir()
     assert install_dir(tmp_path, info) == tmp_path / "okayama"
     (tmp_path / "okayama" / "full").mkdir()
-    assert install_dir(tmp_path, info) == tmp_path / "okayama" / "full"  # most specific wins
+    assert (
+        install_dir(tmp_path, info) == tmp_path / "okayama" / "full"
+    )  # most specific wins
 
 
 def test_file_names_never_collide_with_iracings_own():

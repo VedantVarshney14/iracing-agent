@@ -70,7 +70,9 @@ class Workspace:
                 matches = [r for r in store.list() if r.lap_id == lap_id]
                 if matches:
                     return matches[0]
-        raise WorkspaceError(f"Unknown lap {lap_id!r}. See `iagent laps list` or `iagent refs list`.")
+        raise WorkspaceError(
+            f"Unknown lap {lap_id!r}. See `iagent laps list` or `iagent refs list`."
+        )
 
     def load(self, lap_id: str) -> pd.DataFrame:
         """The distance-gridded lap, from whichever store holds it."""
@@ -87,10 +89,17 @@ class Workspace:
     def reference(self, rec: Lap, ref_id: str | None) -> Lap:
         """REF_ID's record, or the fastest other valid lap on the same track and car."""
         if ref_id is None:
-            candidates = [r for r in self.store().list(track=rec.track_key, car=rec.car_key, valid_only=True)
-                          if r.lap_id != rec.lap_id and r.lap_time is not None]
+            candidates = [
+                r
+                for r in self.store().list(
+                    track=rec.track_key, car=rec.car_key, valid_only=True
+                )
+                if r.lap_id != rec.lap_id and r.lap_time is not None
+            ]
             if not candidates:
-                raise WorkspaceError("No other valid lap on this track and car to compare against.")
+                raise WorkspaceError(
+                    "No other valid lap on this track and car to compare against."
+                )
             return min(candidates, key=lambda r: r.lap_time)
         ref = self.find(ref_id)
         if group_of(ref) != group_of(rec):
@@ -106,18 +115,30 @@ class Workspace:
         if cmap is None:
             cmap = self.derive_map(track, None)
             path = save_map(self.root, cmap)
-            logger.info("No corner map for %s yet: derived %d corners into %s", track, len(cmap.corners), path)
+            logger.info(
+                "No corner map for %s yet: derived %d corners into %s",
+                track,
+                len(cmap.corners),
+                path,
+            )
         return cmap
 
     def derive_map(self, track: str, car: str | None) -> CornerMap:
         """From the driver's representative laps; on a track they haven't driven yet, from
-        reference laps (e.g. a Garage61 teammate's), so a first visit can still be coached."""
-        own = self.store().list(track=track, car=car) if (self.root / "index.sqlite").exists() else []
+        reference laps (e.g. a Garage61 teammate's), so a first visit can still be coached.
+        """
+        own = (
+            self.store().list(track=track, car=car)
+            if (self.root / "index.sqlite").exists()
+            else []
+        )
         reps, store = representative(own), self.store() if own else None
         if not reps and (refs := self.refs()) is not None:
             reps, store = representative(refs.list(track=track, car=car)), refs
         if not reps or store is None:
-            raise WorkspaceError(f"No representative laps for track {track!r}; see `iagent tracks`.")
+            raise WorkspaceError(
+                f"No representative laps for track {track!r}; see `iagent tracks`."
+            )
         if car is None:  # use the car with the most representative laps
             counts: dict[str, int] = {}
             for r in reps:
@@ -130,14 +151,24 @@ class Workspace:
         except ValueError as e:
             raise WorkspaceError(str(e)) from e
 
-    def best_lap(self, track: str, car: str, exclude_session: str | None = None) -> pd.DataFrame | None:
+    def best_lap(
+        self, track: str, car: str, exclude_session: str | None = None
+    ) -> pd.DataFrame | None:
         """The driver's fastest valid lap on this track and car (gridded), or None. A backtest
-        leaves out the session it replays (EXCLUDE_SESSION): that lap hadn't happened yet."""
+        leaves out the session it replays (EXCLUDE_SESSION): that lap hadn't happened yet.
+        """
         if not (self.root / "index.sqlite").exists():
             return None
-        laps = [r for r in self.store().list(track=track, car=car, valid_only=True)
-                if r.lap_time and r.session_id != exclude_session]
-        return self.store().load(min(laps, key=lambda r: r.lap_time).lap_id) if laps else None
+        laps = [
+            r
+            for r in self.store().list(track=track, car=car, valid_only=True)
+            if r.lap_time and r.session_id != exclude_session
+        ]
+        return (
+            self.store().load(min(laps, key=lambda r: r.lap_time).lap_id)
+            if laps
+            else None
+        )
 
     def meta_path(self, lap_id: str) -> Path:
         return self.root / "reference" / "meta" / f"{lap_id}.json"

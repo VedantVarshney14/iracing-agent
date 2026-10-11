@@ -45,12 +45,15 @@ def summarize(lap: dict) -> dict:
     driver = lap.get("driver") or {}
     return {
         "garage61_id": lap.get("id"),
-        "driver": f"{driver.get('firstName', '')} {driver.get('lastName', '')}".strip() or driver.get("slug"),
+        "driver": f"{driver.get('firstName', '')} {driver.get('lastName', '')}".strip()
+        or driver.get("slug"),
         "driver_slug": driver.get("slug"),
         "lap_time": lap.get("lapTime"),
         "driver_rating": lap.get("driverRating"),
         "date": (lap.get("startTime") or "")[:10],
-        "session_type": {1: "practice", 2: "qualifying", 3: "race"}.get(lap.get("sessionType")),
+        "session_type": {1: "practice", 2: "qualifying", 3: "race"}.get(
+            lap.get("sessionType")
+        ),
         "track_temp_c": round(lap["trackTemp"], 1) if lap.get("trackTemp") else None,
         "track_usage_pct": lap.get("trackUsage"),
         "clean": lap.get("clean"),
@@ -61,7 +64,11 @@ def summarize(lap: dict) -> dict:
 
 def all_track_info(ws: Workspace) -> list[dict]:
     root = ws.root / "tracks"
-    return [json.loads(p.read_text()) for p in sorted(root.glob("*/track.json"))] if root.exists() else []
+    return (
+        [json.loads(p.read_text()) for p in sorted(root.glob("*/track.json"))]
+        if root.exists()
+        else []
+    )
 
 
 def imported(ws: Workspace) -> dict[str, str]:
@@ -75,16 +82,26 @@ def imported(ws: Workspace) -> dict[str, str]:
     return out
 
 
-def find(ws: Workspace, client: g61.Garage61Client, track: str, car: str | None,
-         teams: tuple[str, ...] = (), limit: int = 20) -> dict:
+def find(
+    ws: Workspace,
+    client: g61.Garage61Client,
+    track: str,
+    car: str | None,
+    teams: tuple[str, ...] = (),
+    limit: int = 20,
+) -> dict:
     """Best Garage61 lap per driver (the driver's own and teammates'), fastest first."""
     info = load_track_info(ws.root, track)
     if not info or not info.get("track_id"):
-        raise WorkspaceError(f"No iRacing ids recorded for {track}. Re-run `iagent ingest` on a recording of it.")
+        raise WorkspaceError(
+            f"No iRacing ids recorded for {track}. Re-run `iagent ingest` on a recording of it."
+        )
     cars = info.get("cars", {})
     if car is None:
         if len(cars) != 1:
-            raise WorkspaceError(f"Pick a car with --car: {', '.join(cars) or 'none recorded'}.")
+            raise WorkspaceError(
+                f"Pick a car with --car: {', '.join(cars) or 'none recorded'}."
+            )
         car = next(iter(cars))
     if car not in cars or not cars[car].get("car_id"):
         raise WorkspaceError(f"No iRacing car id recorded for {car} on {track}.")
@@ -120,7 +137,9 @@ def import_lap(ws: Workspace, client: g61.Garage61Client, gid: str) -> dict:
             f"{gid} is on {(meta.get('track') or {}).get('name')} (iRacing track {track_pid}), "
             "which you haven't recorded. Ingest one of your own laps there first."
         )
-    car_key = next((k for k, c in info["cars"].items() if c.get("car_id") == car_pid), None)
+    car_key = next(
+        (k for k, c in info["cars"].items() if c.get("car_id") == car_pid), None
+    )
     car_name = (meta.get("car") or {}).get("name", "unknown")
     session = SessionInfo(
         track_name=info["name"],
@@ -140,19 +159,32 @@ def import_lap(ws: Workspace, client: g61.Garage61Client, gid: str) -> dict:
     except g61.Garage61Error as e:
         raise WorkspaceError(f"Couldn't download the telemetry of {gid}: {e}") from e
     try:
-        lap = g61.csv_to_lap(csv_text, session, meta.get("lapTime"), meta.get("lapNumber"))
+        lap = g61.csv_to_lap(
+            csv_text, session, meta.get("lapTime"), meta.get("lapNumber")
+        )
     except ValueError as e:
         raise WorkspaceError(str(e)) from e
     rec = ws.refs(create=True).save(lap)
     path = ws.meta_path(rec.lap_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(summary, indent=2) + "\n")
-    return {**summary, "lap_id": rec.lap_id, "track": rec.track_key, "car": rec.car_key,
-            "valid": rec.valid, "same_car_as_yours": car_key is not None}
+    return {
+        **summary,
+        "lap_id": rec.lap_id,
+        "track": rec.track_key,
+        "car": rec.car_key,
+        "valid": rec.valid,
+        "same_car_as_yours": car_key is not None,
+    }
 
 
-def ghost(ws: Workspace, client: g61.Garage61Client, gid: str, install: bool = False,
-          lapfiles: Path | None = None) -> dict:
+def ghost(
+    ws: Workspace,
+    client: g61.Garage61Client,
+    gid: str,
+    install: bool = False,
+    lapfiles: Path | None = None,
+) -> dict:
     """Download a Garage61 lap's iRacing ghost (.blap) into the workspace and, with `install`,
     copy it into iRacing's lapfiles folder for that track (on the sim PC)."""
     meta = client.lap(gid)
@@ -165,12 +197,20 @@ def ghost(ws: Workspace, client: g61.Garage61Client, gid: str, install: bool = F
         raise WorkspaceError(str(e)) from e
 
     summary = summarize(meta)
-    name = ghosts.file_name(summary["driver_slug"] or "driver", info.car_path, summary["lap_time"])
+    name = ghosts.file_name(
+        summary["driver_slug"] or "driver", info.car_path, summary["lap_time"]
+    )
     track_dir = (info.track_path or "unknown").replace("\\", "-").replace(" ", "-")
     saved = ws.root / "reference" / "ghosts" / track_dir / name
     saved.parent.mkdir(parents=True, exist_ok=True)
     saved.write_bytes(data)
-    out = {**summary, "car_path": info.car_path, "track_path": info.track_path, "saved": str(saved), "installed": None}
+    out = {
+        **summary,
+        "car_path": info.car_path,
+        "track_path": info.track_path,
+        "saved": str(saved),
+        "installed": None,
+    }
 
     if install:
         root = lapfiles or ghosts.default_lapfiles()

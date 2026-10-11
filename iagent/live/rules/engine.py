@@ -22,12 +22,17 @@ class Group:
     """Limits shared by every rule in a group (the agent's share a line budget; the built-in ones
     don't)."""
 
-    max_lines_per_lap: int | None = None  # lines said a lap, all the group's rules together
+    max_lines_per_lap: int | None = (
+        None  # lines said a lap, all the group's rules together
+    )
     min_gap_s: float = 0.0  # between two of the group's lines (cues aside)
     report: bool = True  # firings go in the session log as `rule` events
 
 
-GROUPS = {"agent": Group(max_lines_per_lap=6, min_gap_s=4.0), "builtin": Group(report=False)}
+GROUPS = {
+    "agent": Group(max_lines_per_lap=6, min_gap_s=4.0),
+    "builtin": Group(report=False),
+}
 
 
 @dataclass
@@ -125,20 +130,38 @@ class RuleEngine(EventHandler):
     def _watch(self, rule: Rule) -> str:
         """A rule on a point on track: watched like the corner cues, timed by what it will say."""
         plan = self.ctx.plan
-        target, corner = resolve_at(rule.when["at"], float(rule.when.get("offset_m", 0.0)), self.ctx.cmap,
-                                    lambda c: (cue.target_m if (cue := plan.cue_for(c)) is not None else None))
+        target, corner = resolve_at(
+            rule.when["at"],
+            float(rule.when.get("offset_m", 0.0)),
+            self.ctx.cmap,
+            lambda c: (cue.target_m if (cue := plan.cue_for(c)) is not None else None),
+        )
         tags = {"source": "rule"}
         if corner is not None:
-            tags.update(corner=corner.id, corner_name=corner.name or f"Turn {corner.id}")
+            tags.update(
+                corner=corner.id, corner_name=corner.name or f"Turn {corner.id}"
+            )
         says = [a for a in rule.actions if isinstance(a, Say)]
         lead = float(rule.when.get("lead_s", 0.8 if says else 0.0))
 
         def speak() -> float:
-            env = {**self.pipe.channels, **self.state.variables(), "target_m": target, "corner": tags.get("corner"),
-                   "name": tags.get("corner_name")}
+            env = {
+                **self.pipe.channels,
+                **self.state.variables(),
+                "target_m": target,
+                "corner": tags.get("corner"),
+                "name": tags.get("corner_name"),
+            }
             texts = [t for a in says if (t := a.template.render(env))]
             voice = self.ctx.arbiter.voice
-            return max((voice.duration(t) or Utterance(t, 0, "", 0, 0).length_s for t in texts), default=0.0)
+            return max(
+                (
+                    voice.duration(t) or Utterance(t, 0, "", 0, 0).length_s
+                    for t in texts
+                ),
+                default=0.0,
+            )
+
         watch = f"rule:{rule.id}"
         self.emit(Watch(id=watch, target_m=target, lead_s=lead, speak=speak, tags=tags))
         self._watches.add(watch)
@@ -170,7 +193,9 @@ class RuleEngine(EventHandler):
         by being false for `rearm_s` since it last fired."""
         st = self._st[rule.id]
         holds = bool(rule.edge(env))
-        for_s, rearm_s = float(rule.when.get("for_s", 0.0)), float(rule.when.get("rearm_s", 1.0))
+        for_s, rearm_s = float(rule.when.get("for_s", 0.0)), float(
+            rule.when.get("rearm_s", 1.0)
+        )
         if holds:
             st.false_since = None
             st.true_since = now if st.true_since is None else st.true_since
@@ -200,9 +225,14 @@ class RuleEngine(EventHandler):
             return
         stats.matched += 1
         lap_no = self.state.laps_driven
-        record = {"rule": rule.id, "lap": self.state.lap, "lap_no": lap_no, "trigger": rule.trigger,
-                  "lap_dist": None if env.get("lap_dist") is None else round(env["lap_dist"]),
-                  "values": self.values(rule, env)}
+        record = {
+            "rule": rule.id,
+            "lap": self.state.lap,
+            "lap_no": lap_no,
+            "trigger": rule.trigger,
+            "lap_dist": None if env.get("lap_dist") is None else round(env["lap_dist"]),
+            "values": self.values(rule, env),
+        }
         held = self._held(rule, st, e.at)
         if held:
             stats.limited += 1
@@ -252,9 +282,17 @@ class RuleEngine(EventHandler):
             return f"{st.fired} time(s) this session already"
         if "max_per_lap" in lim and st.per_lap.get(lap_no, 0) >= lim["max_per_lap"]:
             return "enough this lap"
-        if "cooldown_s" in lim and st.last_fired_s is not None and now - st.last_fired_s < lim["cooldown_s"]:
+        if (
+            "cooldown_s" in lim
+            and st.last_fired_s is not None
+            and now - st.last_fired_s < lim["cooldown_s"]
+        ):
             return f"cooldown ({lim['cooldown_s']:g} s)"
-        if "cooldown_laps" in lim and st.last_fired_lap is not None and lap_no - st.last_fired_lap <= lim["cooldown_laps"]:
+        if (
+            "cooldown_laps" in lim
+            and st.last_fired_lap is not None
+            and lap_no - st.last_fired_lap <= lim["cooldown_laps"]
+        ):
             return f"cooldown ({lim['cooldown_laps']:g} lap(s))"
         return None
 

@@ -25,19 +25,28 @@ def screen_context(ctx: dict) -> str:
     """The <screen> block sent with each message, from the browser's view of the review."""
     lines = []
     if ctx.get("page") == "corner":
-        lines.append("view: corner view (racing lines, line offset and traces for one corner)")
+        lines.append(
+            "view: corner view (racing lines, line offset and traces for one corner)"
+        )
     if ctx.get("page") == "session":
-        lines.append("view: review of a coached session (after it, not while driving). This page has no map or "
-                     "traces to point at: don't run `iagent ui show`. Answer in a few short paragraphs.")
+        lines.append(
+            "view: review of a coached session (after it, not while driving). This page has no map or "
+            "traces to point at: don't run `iagent ui show`. Answer in a few short paragraphs."
+        )
     if ctx.get("page") == "live":
-        lines.append("view: live session. The driver is on track and hears your reply spoken: answer in at most "
-                     "two short sentences, plain words, no markdown, no lists.")
+        lines.append(
+            "view: live session. The driver is on track and hears your reply spoken: answer in at most "
+            "two short sentences, plain words, no markdown, no lists."
+        )
     if ctx.get("track"):
         lines.append(f"track: {ctx['track']}  car: {ctx.get('car', '')}")
     if ctx.get("lap"):
         lines.append(f"lap: {ctx['lap']}")
     if ctx.get("ref"):
-        lines.append(f"ghost: {ctx['ref']}" + (f" ({ctx['ref_driver']})" if ctx.get("ref_driver") else ""))
+        lines.append(
+            f"ghost: {ctx['ref']}"
+            + (f" ({ctx['ref_driver']})" if ctx.get("ref_driver") else "")
+        )
     if ctx.get("corners"):
         lines.append("selected corners: " + ", ".join(f"T{c}" for c in ctx["corners"]))
     if ctx.get("range"):
@@ -48,6 +57,10 @@ def screen_context(ctx: dict) -> str:
     return "<screen>\n" + "\n".join(lines) + "\n</screen>"
 
 
-def chat(agent: Agent, message: str, context: dict, session_id: str | None) -> Iterator[dict]:
+def chat(
+    agent: Agent, message: str, context: dict, session_id: str | None
+) -> Iterator[dict]:
     """One turn of the chat, as the agent's events, with the screen the driver is looking at."""
-    return agent.turn(f"{screen_context(context)}\n\n{message}", SYSTEM_PROMPT, session_id)
+    return agent.turn(
+        f"{screen_context(context)}\n\n{message}", SYSTEM_PROMPT, session_id
+    )

@@ -20,8 +20,38 @@ from iagent.live.handlers.debrief import Debrief
 from iagent.live.handlers.speaking import GATES, Gate, Speaking
 from iagent.live.handlers.engineer_link import EngineerLink
 
-HANDLERS = [Laps, Track, Clock, Pace, Corners, Positions, CueCaller, Focus, History, Summary, Debrief, EngineerLink]
+HANDLERS = [
+    Laps,
+    Track,
+    Clock,
+    Pace,
+    Corners,
+    Positions,
+    CueCaller,
+    Focus,
+    History,
+    Summary,
+    Debrief,
+    EngineerLink,
+]
 # The rule engine (iagent.live.rules) comes after these, and Speaking last.
 
-__all__ = ["HANDLERS", "CornerResult", "CueCaller", "Corners", "Debrief", "Focus", "GATES", "Gate", "History",
-           "EngineerLink", "Laps", "Pace", "Positions", "Speaking", "Summary", "Track", "Clock"]
+__all__ = [
+    "HANDLERS",
+    "CornerResult",
+    "CueCaller",
+    "Corners",
+    "Debrief",
+    "Focus",
+    "GATES",
+    "Gate",
+    "History",
+    "EngineerLink",
+    "Laps",
+    "Pace",
+    "Positions",
+    "Speaking",
+    "Summary",
+    "Track",
+    "Clock",
+]

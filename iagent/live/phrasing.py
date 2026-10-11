@@ -14,8 +14,21 @@ from abc import ABC, abstractmethod
 
 from iagent.live.rules.expr import round5, say_gap, say_time
 
-__all__ = ["CAUSES", "Cause", "cause_of", "corner_name", "cue_label", "debrief_lines", "consistency",
-           "summary", "again", "better", "round5", "say_gap", "say_time"]
+__all__ = [
+    "CAUSES",
+    "Cause",
+    "cause_of",
+    "corner_name",
+    "cue_label",
+    "debrief_lines",
+    "consistency",
+    "summary",
+    "again",
+    "better",
+    "round5",
+    "say_gap",
+    "say_time",
+]
 
 
 def corner_name(c) -> str:
@@ -61,7 +74,11 @@ class OffTrack(Cause):
     name, doc, any_loss = "off", "ran off track (amount: metres off)", True
 
     def detect(self, m, r, d, s):
-        return float(m["off_track_m"]) if (m.get("off_track_m") or 0) >= s.off_track_m else None
+        return (
+            float(m["off_track_m"])
+            if (m.get("off_track_m") or 0) >= s.off_track_m
+            else None
+        )
 
     def short(self, n, a, r):
         return f"{n}: you ran off track. Brake a touch earlier and tidy the entry."
@@ -70,8 +87,10 @@ class OffTrack(Cause):
         return "Tidy entry, you ran wide last lap."
 
     def longer(self, who, a, r, m):
-        return (f"{who} ran wide, {round(a)} metres off track. That usually starts at the entry: brake a touch earlier, "
-                "get the car turned before you go back to the throttle, and build up from there once it sticks.")
+        return (
+            f"{who} ran wide, {round(a)} metres off track. That usually starts at the entry: brake a touch earlier, "
+            "get the car turned before you go back to the throttle, and build up from there once it sticks."
+        )
 
 
 class EarlyBrake(Cause):
@@ -93,9 +112,15 @@ class EarlyBrake(Cause):
 
     def longer(self, who, a, r, m):
         slow = _diff(m.get("min_speed_kph"), r.get("min_speed_kph"))
-        extra = " and you're slower at the apex too, so it costs you twice" if slow is not None and slow <= -3 else ""
-        return (f"{who}'re braking about {round5(a)} metres before the reference{extra}. There's more room than it "
-                "feels: move the brake point a few metres a lap, same pressure, and let the car tell you when it's enough.")
+        extra = (
+            " and you're slower at the apex too, so it costs you twice"
+            if slow is not None and slow <= -3
+            else ""
+        )
+        return (
+            f"{who}'re braking about {round5(a)} metres before the reference{extra}. There's more room than it "
+            "feels: move the brake point a few metres a lap, same pressure, and let the car tell you when it's enough."
+        )
 
 
 class LateBrake(Cause):
@@ -118,8 +143,10 @@ class LateBrake(Cause):
         return "Brake a little earlier than last lap."
 
     def longer(self, who, a, r, m):
-        return (f"{who}'re braking about {round5(a)} metres late and it's costing the exit. Brake a little earlier, get "
-                "it slowed and turned, and you'll be back on the power sooner. Exit speed is worth more than entry.")
+        return (
+            f"{who}'re braking about {round5(a)} metres late and it's costing the exit. Brake a little earlier, get "
+            "it slowed and turned, and you'll be back on the power sooner. Exit speed is worth more than entry."
+        )
 
 
 class NoBrakeNeeded(Cause):
@@ -128,18 +155,24 @@ class NoBrakeNeeded(Cause):
     name, doc = "no_brake_needed", "braked where the reference doesn't"
 
     def detect(self, m, r, d, s):
-        return 0.0 if m.get("brake_m") is not None and r.get("brake_m") is None else None
+        return (
+            0.0 if m.get("brake_m") is not None and r.get("brake_m") is None else None
+        )
 
     def short(self, n, a, r):
-        return f"{n}: no need to brake there." + (" A lift is enough." if _lift(r) else "")
+        return f"{n}: no need to brake there." + (
+            " A lift is enough." if _lift(r) else ""
+        )
 
     def hint(self, r):
         return "Just a lift, no brakes." if _lift(r) else "Stay off the brakes."
 
     def longer(self, who, a, r, m):
         lift = _lift(r)
-        return (f"{who} don't need the brakes there, {'a lift is enough' if lift else 'it is flat'}. Next time try "
-                f"{'just a lift' if lift else 'staying flat'} and trust the grip, a little more each lap.")
+        return (
+            f"{who} don't need the brakes there, {'a lift is enough' if lift else 'it is flat'}. Next time try "
+            f"{'just a lift' if lift else 'staying flat'} and trust the grip, a little more each lap."
+        )
 
 
 class SlowApex(Cause):
@@ -158,14 +191,19 @@ class SlowApex(Cause):
         return "Carry more speed in."
 
     def longer(self, who, a, r, m):
-        return (f"{who}'re about {round(a)} kilometres an hour slower at the apex. Ease off the brake more gradually as "
-                "you turn in and let the car roll more speed to the apex. Don't brake later, just release it smoother.")
+        return (
+            f"{who}'re about {round(a)} kilometres an hour slower at the apex. Ease off the brake more gradually as "
+            "you turn in and let the car roll more speed to the apex. Don't brake later, just release it smoother."
+        )
 
 
 class LateThrottle(Cause):
     """Back on full throttle later than the reference."""
 
-    name, doc = "late_throttle", "full throttle later than the reference (amount: metres)"
+    name, doc = (
+        "late_throttle",
+        "full throttle later than the reference (amount: metres)",
+    )
 
     def detect(self, m, r, d, s):
         dt = _diff(m.get("full_throttle_m"), r.get("full_throttle_m"))
@@ -178,16 +216,31 @@ class LateThrottle(Cause):
         return "Earlier on the throttle."
 
     def longer(self, who, a, r, m):
-        lead = "Full throttle comes" if who == "You" else f"{who.split(':')[0]}: full throttle comes"
-        return (f"{lead} about {round5(a)} metres later than the reference. Once you're past the apex, open the steering "
-                "and commit to the throttle earlier, a bit more each lap.")
+        lead = (
+            "Full throttle comes"
+            if who == "You"
+            else f"{who.split(':')[0]}: full throttle comes"
+        )
+        return (
+            f"{lead} about {round5(a)} metres later than the reference. Once you're past the apex, open the steering "
+            "and commit to the throttle earlier, a bit more each lap."
+        )
 
 
-CAUSES: list[Cause] = [OffTrack(), EarlyBrake(), LateBrake(), NoBrakeNeeded(), SlowApex(), LateThrottle()]
+CAUSES: list[Cause] = [
+    OffTrack(),
+    EarlyBrake(),
+    LateBrake(),
+    NoBrakeNeeded(),
+    SlowApex(),
+    LateThrottle(),
+]
 CAUSE_BY_NAME = {c.name: c for c in CAUSES}
 
 
-def cause_of(mine: dict, ref: dict, delta: float, settings) -> tuple[Cause | None, float | None]:
+def cause_of(
+    mine: dict, ref: dict, delta: float, settings
+) -> tuple[Cause | None, float | None]:
     """The clearest cause of a corner's lost time (the first that fits), with how much."""
     for cause in CAUSES:
         if not cause.any_loss and delta < settings.loss_s:
@@ -198,15 +251,22 @@ def cause_of(mine: dict, ref: dict, delta: float, settings) -> tuple[Cause | Non
     return None, None
 
 
-def advice(name: str, cause: Cause | None, amount: float | None, ref: dict, mine: dict) -> dict:
+def advice(
+    name: str, cause: Cause | None, amount: float | None, ref: dict, mine: dict
+) -> dict:
     """Short advice, the cue hint and the longer version for a corner."""
     if cause is None:
         return {"advice": None, "hint": None, "longer": None}
-    return {"advice": cause.short(name, amount, ref), "hint": cause.hint(ref),
-            "longer": cause.longer(f"{name}: you", amount, ref, mine)}
+    return {
+        "advice": cause.short(name, amount, ref),
+        "hint": cause.hint(ref),
+        "longer": cause.longer(f"{name}: you", amount, ref, mine),
+    }
 
 
-def longer(name: str, cause_name: str | None, amount, ref: dict, mine: dict, named: bool = True) -> str | None:
+def longer(
+    name: str, cause_name: str | None, amount, ref: dict, mine: dict, named: bool = True
+) -> str | None:
     """The fuller explanation of a cause of lost time (by its name), for when the driver has time to
     listen; None for no cause."""
     cause = CAUSE_BY_NAME.get(cause_name) if cause_name else None
@@ -222,7 +282,10 @@ def again(name: str, advice_text: str) -> str:
 
 
 def better(name: str) -> tuple[str, str]:
-    return f"{name}: better.", f"That's better at {name}. Right with the reference there, keep that."
+    return (
+        f"{name}: better.",
+        f"That's better at {name}. Right with the reference there, keep that.",
+    )
 
 
 def cue_label(names: list[str | None], corners: list[int]) -> str:
@@ -243,10 +306,16 @@ def with_hint(base: str, hint: str | None, hint_corner_name: str | None) -> str:
     return f"{base} {hint}"
 
 
-def summary(lap_time: float, ref_time: float | None, worst_name: str | None, moment_name: str | None,
-            crewchief: bool) -> str | None:
+def summary(
+    lap_time: float,
+    ref_time: float | None,
+    worst_name: str | None,
+    moment_name: str | None,
+    crewchief: bool,
+) -> str | None:
     """Short enough (~3 s) for the straights of a busy track: "1 33.9, 3 seconds down. Worst: Turn 6."
-    With CrewChief reading the lap time, only what it can't say: "Most time lost at Turn 6.", or nothing."""
+    With CrewChief reading the lap time, only what it can't say: "Most time lost at Turn 6.", or nothing.
+    """
     text = "" if crewchief else say_time(lap_time)
     if moment_name is not None:  # the gap means nothing: say where it went
         return f"{text + '. ' if text else ''}Lost it at {moment_name}."
@@ -256,12 +325,20 @@ def summary(lap_time: float, ref_time: float | None, worst_name: str | None, mom
         gap = lap_time - ref_time
         text += f", {say_gap(gap)} {'down' if gap > 0 else 'up'}."
     if worst_name:
-        text += f" Most time lost at {worst_name}." if crewchief else f" Worst: {worst_name}."
+        text += (
+            f" Most time lost at {worst_name}."
+            if crewchief
+            else f" Worst: {worst_name}."
+        )
     return text.strip() or None
 
 
 # How a debrief opens, in turn, so it doesn't sound like a recording.
-DEBRIEF_OPENERS = ("While you cool them down: ", "Okay, easy lap. ", "Right, while it's quiet: ")
+DEBRIEF_OPENERS = (
+    "While you cool them down: ",
+    "Okay, easy lap. ",
+    "Right, while it's quiet: ",
+)
 
 
 def debrief_lines(topics: list[dict], lap_times: list[float], n: int) -> list[str]:
@@ -270,10 +347,20 @@ def debrief_lines(topics: list[dict], lap_times: list[float], n: int) -> list[st
     lines = []
     for i, t in enumerate(topics):
         lead = (opener if i == 0 else "And ") + (
-            f"{t['name']} is still the focus. " if t["in_focus"] else f"{t['name']} is where the time is. ")
+            f"{t['name']} is still the focus. "
+            if t["in_focus"]
+            else f"{t['name']} is where the time is. "
+        )
         laps = f"the last {t['laps']} laps" if t["laps"] > 1 else "that lap"
         cost = f"About {say_gap(t['loss_per_lap_s'])} a lap over {laps}."
-        how = longer(t["name"], t["cause"], t["amount"], t.get("ref") or {}, t.get("mine") or {}, named=False)
+        how = longer(
+            t["name"],
+            t["cause"],
+            t["amount"],
+            t.get("ref") or {},
+            t.get("mine") or {},
+            named=False,
+        )
         lines.append(f"{lead}{cost}" + (f" {how}" if how else ""))
     pace = consistency(lap_times)
     if not lines:
@@ -294,8 +381,10 @@ def consistency(lap_times: list[float]) -> str | None:
         return f"Last three laps within {say_gap(spread)} of each other. Nice and consistent."
     if spread <= 0.6:
         return f"Last three laps within {say_gap(spread)}. Fairly consistent, a bit more to tidy up."
-    return (f"Last three laps varied by {say_gap(spread)}. Get the same lap every time first, "
-            "then go looking for more.")
+    return (
+        f"Last three laps varied by {say_gap(spread)}. Get the same lap every time first, "
+        "then go looking for more."
+    )
 
 
 def chunks(text: str, max_chars: int = 140) -> list[str]:

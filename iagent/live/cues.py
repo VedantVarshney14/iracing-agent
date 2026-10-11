@@ -22,14 +22,25 @@ from iagent.laps.lap import Lap
 from iagent.workspace import Workspace, WorkspaceError
 
 BEFORE_TURN_IN_M = 30  # a no-brake corner's cue ends this far before the corner starts
-MERGE_GAP_M = 150  # a corner this close after the previous one's exit is cued together with it
+MERGE_GAP_M = (
+    150  # a corner this close after the previous one's exit is cued together with it
+)
 MERGE_MAX = 2  # corners per cue: longer cues come too late
 HARD_BRAKE, MEDIUM_BRAKE = 0.8, 0.5  # reference brake pressure (0-1)
 LIFT_THROTTLE = 0.6  # a no-brake corner whose throttle dips below this is a lift
 logger = logging.getLogger("iagent.live")
 
 PLAN_VERSION = 2  # 2: cues have short forms
-GEARS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth", 7: "seventh", 8: "eighth"}
+GEARS = {
+    1: "first",
+    2: "second",
+    3: "third",
+    4: "fourth",
+    5: "fifth",
+    6: "sixth",
+    7: "seventh",
+    8: "eighth",
+}
 
 
 @dataclass
@@ -42,7 +53,9 @@ class Cue:
     target_m: float
     text: str
     source: str = "template"  # "template", or who rewrote it: "coach", "driver"
-    short: str | None = None  # said once the full text has been heard (None: always the full text)
+    short: str | None = (
+        None  # said once the full text has been heard (None: always the full text)
+    )
 
 
 @dataclass
@@ -55,9 +68,13 @@ class CuePlan:
     ref_lap_id: str
     length_m: float
     cues: list[Cue]
-    ref_metrics: list[dict]  # the reference lap's corner metrics, for feedback after each corner
+    ref_metrics: list[
+        dict
+    ]  # the reference lap's corner metrics, for feedback after each corner
     ref_lap_time: float | None = None
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     version: int = PLAN_VERSION
 
     def to_json(self) -> str:
@@ -92,15 +109,28 @@ def save_plan(root: Path, plan: CuePlan) -> Path:
     return path
 
 
-def reference_lap(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> Lap:
+def reference_lap(
+    ws: Workspace, track: str, car: str, ref_id: str | None = None
+) -> Lap:
     """The lap cues follow: REF_ID, else the fastest valid Garage61 lap, else the driver's best."""
     if ref_id:
         rec = ws.find(ref_id)
         if (rec.track_key, rec.car_key) != (track, car):
-            raise WorkspaceError(f"{ref_id} is {rec.track_key}/{rec.car_key}, not {track}/{car}.")
+            raise WorkspaceError(
+                f"{ref_id} is {rec.track_key}/{rec.car_key}, not {track}/{car}."
+            )
         return rec
-    for store in (ws.refs(), ws.store() if (ws.root / "index.sqlite").exists() else None):
-        timed = [r for r in (store.list(track=track, car=car, valid_only=True) if store else []) if r.lap_time]
+    for store in (
+        ws.refs(),
+        ws.store() if (ws.root / "index.sqlite").exists() else None,
+    ):
+        timed = [
+            r
+            for r in (
+                store.list(track=track, car=car, valid_only=True) if store else []
+            )
+            if r.lap_time
+        ]
         if timed:
             return min(timed, key=lambda r: r.lap_time)
     raise WorkspaceError(
@@ -109,13 +139,17 @@ def reference_lap(ws: Workspace, track: str, car: str, ref_id: str | None = None
     )
 
 
-def build_plan(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> CuePlan:
+def build_plan(
+    ws: Workspace, track: str, car: str, ref_id: str | None = None
+) -> CuePlan:
     """A new plan from the reference lap (REF_ID, or the default): a cue per corner from its
     metrics, close corners merged into one cue, and cues someone rewrote kept."""
     ref = reference_lap(ws, track, car, ref_id)
     cmap = ws.corner_map(track)
     metrics = corner_metrics(ws.load(ref.lap_id), ref.lap_time, cmap)
-    cues = merge_close(cmap, [approach_cue(c, m) for c, m in zip(cmap.corners, metrics)])
+    cues = merge_close(
+        cmap, [approach_cue(c, m) for c, m in zip(cmap.corners, metrics)]
+    )
     plan = CuePlan(track, car, ref.lap_id, cmap.length_m, cues, metrics, ref.lap_time)
     if (old := load_plan(ws.root, track, car)) is not None:
         keep_rewritten(old, plan)
@@ -124,7 +158,8 @@ def build_plan(ws: Workspace, track: str, car: str, ref_id: str | None = None) -
 
 def approach_cue(c: Corner, m: dict) -> Cue:
     """A corner's cue from the reference lap's metrics: its name and direction, then how to brake
-    (hard, medium or light, and the gear), or flat or a lift for a corner without braking."""
+    (hard, medium or light, and the gear), or flat or a lift for a corner without braking.
+    """
     name = c.name or f"Turn {c.id}"
     side = "left" if c.direction == "L" else "right"
     gear = GEARS.get(m.get("min_gear") or 0)
@@ -134,9 +169,19 @@ def approach_cue(c: Corner, m: dict) -> Cue:
     if brake_m is None:
         lift = (m.get("min_throttle") or 1.0) < LIFT_THROTTLE
         text = f"{name}. Lift, {side}." if lift else f"{name}. Flat, {side}."
-        return Cue(c.id, [c.id], c.entry_m - BEFORE_TURN_IN_M, text, short=f"{name}. {'Lift' if lift else 'Flat'}.")
-    strength = "Hard" if peak >= HARD_BRAKE else "Medium" if peak >= MEDIUM_BRAKE else "Light"
-    hairpin = (m.get("min_speed_kph") or 999) < 90 and (m.get("entry_speed_kph") or 0) > 150
+        return Cue(
+            c.id,
+            [c.id],
+            c.entry_m - BEFORE_TURN_IN_M,
+            text,
+            short=f"{name}. {'Lift' if lift else 'Flat'}.",
+        )
+    strength = (
+        "Hard" if peak >= HARD_BRAKE else "Medium" if peak >= MEDIUM_BRAKE else "Light"
+    )
+    hairpin = (m.get("min_speed_kph") or 999) < 90 and (
+        m.get("entry_speed_kph") or 0
+    ) > 150
     shape = f"hairpin {side}" if hairpin else side
     text = f"{name}, {shape}. {strength} brake" + (f", {gear} gear." if gear else ".")
     return Cue(c.id, [c.id], float(brake_m), text, short=f"{name}. {strength} brake.")
@@ -144,12 +189,16 @@ def approach_cue(c: Corner, m: dict) -> Cue:
 
 def merge_close(cmap: CornerMap, cues: list[Cue]) -> list[Cue]:
     """A corner that follows the previous one too closely to cue on its own (a chicane, a quick
-    left-right) is added to the previous cue: "Bus Stop, right. Hard brake, second gear. Then left."."""
+    left-right) is added to the previous cue: "Bus Stop, right. Hard brake, second gear. Then left.".
+    """
     by_id = {c.id: c for c in cmap.corners}
     out: list[Cue] = []
     for cue in cues:
         prev = out[-1] if out else None
-        close = prev is not None and cue.target_m - by_id[prev.corners[-1]].exit_m < MERGE_GAP_M
+        close = (
+            prev is not None
+            and cue.target_m - by_id[prev.corners[-1]].exit_m < MERGE_GAP_M
+        )
         if close and len(prev.corners) < MERGE_MAX:
             c = by_id[cue.corner]
             then = c.name or ("left" if c.direction == "L" else "right")
@@ -179,12 +228,24 @@ def next_plan_path(root: Path, track_key: str, car_key: str) -> Path:
     return root / "tracks" / track_key / "cues" / f"{car_key}.next.json"
 
 
-def save_next_plan(root: Path, track_key: str, car_key: str, focus: int, note: str = "",
-                   from_session: str | None = None, sessions: int = PLAN_SESSIONS) -> dict:
+def save_next_plan(
+    root: Path,
+    track_key: str,
+    car_key: str,
+    focus: int,
+    note: str = "",
+    from_session: str | None = None,
+    sessions: int = PLAN_SESSIONS,
+) -> dict:
     """Start the next sessions here with FOCUS (a corner). The coach re-checks it after two
     pushing laps, so it can't get stuck on something already sorted."""
-    plan = {"focus": focus, "note": note, "from_session": from_session, "sessions_left": sessions,
-            "saved_at": datetime.now(timezone.utc).isoformat()}
+    plan = {
+        "focus": focus,
+        "note": note,
+        "from_session": from_session,
+        "sessions_left": sessions,
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+    }
     path = next_plan_path(root, track_key, car_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(plan, indent=1) + "\n")
@@ -198,9 +259,12 @@ def load_next_plan(root: Path, track_key: str, car_key: str) -> dict | None:
 
 def plan_for(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> CuePlan:
     """The saved plan for this track and car, built (and saved) if there isn't one or REF_ID asks
-    for a different reference lap; a plan in an older format is rebuilt, keeping rewritten cues."""
+    for a different reference lap; a plan in an older format is rebuilt, keeping rewritten cues.
+    """
     plan = None if ref_id else load_plan(ws.root, track, car)
-    if plan is not None and plan.version < PLAN_VERSION:  # older format: rebuild, keeping rewritten cues
+    if (
+        plan is not None and plan.version < PLAN_VERSION
+    ):  # older format: rebuild, keeping rewritten cues
         try:
             plan = build_plan(ws, track, car, plan.ref_lap_id)
         except WorkspaceError:  # its reference lap is gone
@@ -209,7 +273,9 @@ def plan_for(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> 
     if plan is None:
         plan = build_plan(ws, track, car, ref_id)
         path = save_plan(ws.root, plan)
-        logger.info("Cue plan for %s / %s from %s: %s", track, car, plan.ref_lap_id, path)
+        logger.info(
+            "Cue plan for %s / %s from %s: %s", track, car, plan.ref_lap_id, path
+        )
     return plan
 
 
@@ -225,4 +291,3 @@ def use_next_plan(root: Path, track_key: str, car_key: str) -> dict | None:
     else:
         path.write_text(json.dumps(plan, indent=1) + "\n")
     return plan
-

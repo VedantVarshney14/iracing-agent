@@ -14,7 +14,9 @@ BRAKE_ON = 0.1  # Brake fraction that counts as "on the brakes"
 FULL_THROTTLE = 0.98
 
 
-def _times_at(grid: pd.DataFrame, distances: np.ndarray, lap_time: float | None) -> np.ndarray:
+def _times_at(
+    grid: pd.DataFrame, distances: np.ndarray, lap_time: float | None
+) -> np.ndarray:
     """Elapsed lap time at each distance. The final boundary (the line) is the lap time itself."""
     times = np.interp(distances, grid["LapDist"], grid["lap_time_s"])
     if lap_time is not None:
@@ -46,14 +48,19 @@ def _first_brake_m(part: pd.DataFrame) -> float | None:
 
 def _section_stats(part: pd.DataFrame) -> dict:
     return {
-        "min_speed_kph": round(float(part["Speed"].min()) * MS_TO_KPH, 1) if "Speed" in part else None,
+        "min_speed_kph": (
+            round(float(part["Speed"].min()) * MS_TO_KPH, 1)
+            if "Speed" in part
+            else None
+        ),
         "brake_start_m": _first_brake_m(part),
     }
 
 
 def summarize(grid: pd.DataFrame, lap_time: float | None, sections: int = 10) -> dict:
     """Headline numbers and distance splits for one lap. `brake_start_m` is the first point in
-    each section where braking begins (None if braking only continues from the previous one)."""
+    each section where braking begins (None if braking only continues from the previous one).
+    """
     grid = _with_brake_onsets(grid)
     out: dict = {}
     if "Speed" in grid:
@@ -61,7 +68,9 @@ def summarize(grid: pd.DataFrame, lap_time: float | None, sections: int = 10) ->
         out["top_speed_kph"] = round(float(speed.max()), 1)
         out["min_speed_kph"] = round(float(speed.min()), 1)
     if "Throttle" in grid:
-        out["full_throttle_pct"] = round(float((grid["Throttle"] > FULL_THROTTLE).mean()) * 100, 1)
+        out["full_throttle_pct"] = round(
+            float((grid["Throttle"] > FULL_THROTTLE).mean()) * 100, 1
+        )
     if "Brake" in grid:
         out["braking_pct"] = round(float((grid["Brake"] > BRAKE_ON).mean()) * 100, 1)
 
@@ -73,7 +82,9 @@ def summarize(grid: pd.DataFrame, lap_time: float | None, sections: int = 10) ->
             "start_m": round(float(bounds[i])),
             "end_m": round(float(bounds[i + 1])),
             "time_s": round(float(times[i + 1] - times[i]), 3),
-            **_section_stats(grid[(grid["LapDist"] >= bounds[i]) & (grid["LapDist"] < bounds[i + 1])]),
+            **_section_stats(
+                grid[(grid["LapDist"] >= bounds[i]) & (grid["LapDist"] < bounds[i + 1])]
+            ),
         }
         for i in range(sections)
     ]
@@ -100,16 +111,20 @@ def compare(
         in_lap = lap[(lap["LapDist"] >= bounds[i]) & (lap["LapDist"] < bounds[i + 1])]
         in_ref = ref[(ref["LapDist"] >= bounds[i]) & (ref["LapDist"] < bounds[i + 1])]
         mine, theirs = _section_stats(in_lap), _section_stats(in_ref)
-        rows.append({
-            "section": i + 1,
-            "start_m": round(float(bounds[i])),
-            "end_m": round(float(bounds[i + 1])),
-            "delta_s": round(float((t_lap[i + 1] - t_lap[i]) - (t_ref[i + 1] - t_ref[i])), 3),
-            "min_speed_kph": mine["min_speed_kph"],
-            "ref_min_speed_kph": theirs["min_speed_kph"],
-            "brake_start_m": mine["brake_start_m"],
-            "ref_brake_start_m": theirs["brake_start_m"],
-        })
+        rows.append(
+            {
+                "section": i + 1,
+                "start_m": round(float(bounds[i])),
+                "end_m": round(float(bounds[i + 1])),
+                "delta_s": round(
+                    float((t_lap[i + 1] - t_lap[i]) - (t_ref[i + 1] - t_ref[i])), 3
+                ),
+                "min_speed_kph": mine["min_speed_kph"],
+                "ref_min_speed_kph": theirs["min_speed_kph"],
+                "brake_start_m": mine["brake_start_m"],
+                "ref_brake_start_m": theirs["brake_start_m"],
+            }
+        )
     total = None
     if lap_time is not None and ref_time is not None:
         total = round(lap_time - ref_time, 3)
@@ -131,7 +146,9 @@ def trace(
     """Channel values every `step_m` metres between `start_m` and `end_m`. Speed is in km/h."""
     missing = [c for c in channels if c not in grid]
     if missing:
-        raise KeyError(f"channels not in this lap: {missing}; available: {sorted(grid.columns)}")
+        raise KeyError(
+            f"channels not in this lap: {missing}; available: {sorted(grid.columns)}"
+        )
     end = float(grid["LapDist"].iloc[-1]) if end_m is None else end_m
     part = grid[(grid["LapDist"] >= start_m) & (grid["LapDist"] <= end)]
     stride = max(1, int(round(step_m / float(grid["LapDist"].diff().median()))))
@@ -139,4 +156,6 @@ def trace(
     if "Speed" in out:
         out["Speed"] = out["Speed"] * MS_TO_KPH
     # Degrees need more places than the rest: 7 is ~1 cm, 3 would be ~100 m.
-    return out.round({c: 7 if c in ("Lat", "Lon") else 3 for c in out.columns}).reset_index(drop=True)
+    return out.round(
+        {c: 7 if c in ("Lat", "Lon") else 3 for c in out.columns}
+    ).reset_index(drop=True)

@@ -47,7 +47,9 @@ class Options:
     learning_laps: int = 2
     focus: bool = True
     crewchief: str = "auto"  # "auto" (detect it), "on" or "off"
-    engineer: bool = True  # the session has an engineer (claude -p): radio check, answers, debriefs, notes
+    engineer: bool = (
+        True  # the session has an engineer (claude -p): radio check, answers, debriefs, notes
+    )
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Options":
@@ -55,7 +57,9 @@ class Options:
         return cls(**known)
 
 
-WRAP_UP_WAIT_S = 120.0  # after the session, how long the engineer has to write up its notes
+WRAP_UP_WAIT_S = (
+    120.0  # after the session, how long the engineer has to write up its notes
+)
 
 
 class SessionError(Exception):
@@ -69,10 +73,17 @@ class LiveSessions:
     """The live session run from the browser: at most one at a time, on its own thread, with its log
     kept in memory and in `sessions/live/<id>.jsonl`."""
 
-    def __init__(self, workspace: Path, voice_factory: Callable[[str], Voice] | None = None,
-                 iracing: Callable[[], object] | None = None, engineer: Callable[[], object] | None = None):
+    def __init__(
+        self,
+        workspace: Path,
+        voice_factory: Callable[[str], Voice] | None = None,
+        iracing: Callable[[], object] | None = None,
+        engineer: Callable[[], object] | None = None,
+    ):
         self.workspace = workspace
-        self._new_engineer = engineer  # makes the session's Engineer; None: the coach's own words only
+        self._new_engineer = (
+            engineer  # makes the session's Engineer; None: the coach's own words only
+        )
         self.engineer = None
         self._voice_factory = voice_factory or self._pocket
         self._iracing = iracing  # makes the live source (tests inject one)
@@ -83,7 +94,9 @@ class LiveSessions:
         self._events: list[dict] = []
         self._log_path: Path | None = None
         self.coach: LiveCoach | None = None
-        self.state = "idle"  # idle, starting, waiting (for iRacing), running, stopping, error
+        self.state = (
+            "idle"  # idle, starting, waiting (for iRacing), running, stopping, error
+        )
         self.error: str | None = None
         self.options: Options | None = None
         self.session_id: str | None = None
@@ -99,7 +112,9 @@ class LiveSessions:
         options = Options.from_dict(raw)
         if options.source not in ("iracing", "replay"):
             raise SessionError("source must be iracing or replay")
-        if options.source == "replay" and not (options.file and Path(options.file).is_file()):
+        if options.source == "replay" and not (
+            options.file and Path(options.file).is_file()
+        ):
             raise SessionError(f"No such recording: {options.file}")
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
@@ -108,9 +123,13 @@ class LiveSessions:
             self._events = []
             self.coach, self.error, self.options = None, None, options
             self.session_id = datetime.now().strftime("%Y%m%d-%H%M%S")
-            self._log_path = self.workspace / "sessions" / "live" / f"{self.session_id}.jsonl"
+            self._log_path = (
+                self.workspace / "sessions" / "live" / f"{self.session_id}.jsonl"
+            )
             self.state = "starting"
-            self._thread = threading.Thread(target=self._run, name="live-coach", daemon=True)
+            self._thread = threading.Thread(
+                target=self._run, name="live-coach", daemon=True
+            )
             self._thread.start()
         self._log({"type": "status", "state": "starting", "options": options.__dict__})
         return self.status()
@@ -172,18 +191,31 @@ class LiveSessions:
         if coach is not None:
             last = self._last_frame
             focus = coach.state.focus_entry()
-            out.update({
-                "track": {"key": coach.ctx.session.track_key, "name": coach.ctx.session.track_name,
-                          "car": coach.ctx.session.car_key, "car_name": coach.ctx.session.car_name},
-                "ref": {"lap_id": coach.ctx.plan.ref_lap_id, "lap_time": coach.ctx.plan.ref_lap_time, "driver": self._ref_driver},
-                "laps_done": coach.state.lap,
-                "mode": coach.state.mode,
-                "learning": coach.state.learning,
-                "focus": focus,
-                "cues": [{"corners": c.corners, "text": c.text, "cued": coach.wanted(c)} for c in coach.ctx.plan.cues],
-                "lap_dist": last.get("LapDist") if last else None,
-                "session_time": last.session_time if last else None,
-            })
+            out.update(
+                {
+                    "track": {
+                        "key": coach.ctx.session.track_key,
+                        "name": coach.ctx.session.track_name,
+                        "car": coach.ctx.session.car_key,
+                        "car_name": coach.ctx.session.car_name,
+                    },
+                    "ref": {
+                        "lap_id": coach.ctx.plan.ref_lap_id,
+                        "lap_time": coach.ctx.plan.ref_lap_time,
+                        "driver": self._ref_driver,
+                    },
+                    "laps_done": coach.state.lap,
+                    "mode": coach.state.mode,
+                    "learning": coach.state.learning,
+                    "focus": focus,
+                    "cues": [
+                        {"corners": c.corners, "text": c.text, "cued": coach.wanted(c)}
+                        for c in coach.ctx.plan.cues
+                    ],
+                    "lap_dist": last.get("LapDist") if last else None,
+                    "session_time": last.session_time if last else None,
+                }
+            )
         return out
 
     def events(self, since: int = 0) -> list[dict]:
@@ -196,15 +228,26 @@ class LiveSessions:
         lines = []
         for lap in laps:
             worst = sorted(lap["corners"], key=lambda c: -c["delta_s"])[:3]
-            lines.append(f"lap {lap['lap']}: {lap['lap_time']:.3f} s, gap {lap['gap_s']:+.3f} s"
-                         + {"pushing": "", "moment": f" (a moment near T{lap['moment_at']})",
-                            "tranquille": " (not pushing)"}[lap["pace"]] + "; most lost: "
-                         + ", ".join(f"T{c['corner']} {c['delta_s']:+.2f}" for c in worst))
+            lines.append(
+                f"lap {lap['lap']}: {lap['lap_time']:.3f} s, gap {lap['gap_s']:+.3f} s"
+                + {
+                    "pushing": "",
+                    "moment": f" (a moment near T{lap['moment_at']})",
+                    "tranquille": " (not pushing)",
+                }[lap["pace"]]
+                + "; most lost: "
+                + ", ".join(f"T{c['corner']} {c['delta_s']:+.2f}" for c in worst)
+            )
         if st.get("focus"):
             lines.append(f"current focus: {st['focus']['label']}")
         track = st.get("track") or {}
-        return {"page": "live", "track": track.get("key"), "car": track.get("car"),
-                "ref": (st.get("ref") or {}).get("lap_id"), "live": lines}
+        return {
+            "page": "live",
+            "track": track.get("key"),
+            "car": track.get("car"),
+            "ref": (st.get("ref") or {}).get("lap_id"),
+            "live": lines,
+        }
 
     # --- the coach thread ----------------------------------------------------------------------
 
@@ -213,7 +256,11 @@ class LiveSessions:
         stopped, then give the engineer time to write up its notes."""
         options = self.options
         try:
-            voice = CapturedVoice() if options.voice == "silent" else self._voice(options.voice)
+            voice = (
+                CapturedVoice()
+                if options.voice == "silent"
+                else self._voice(options.voice)
+            )
             if options.source == "replay":
                 from iagent.live.run import LIVE_CHANNELS, paced
                 from iagent.telemetry.ibt import IbtSource
@@ -233,15 +280,38 @@ class LiveSessions:
                 frames = src.frames()
             from iagent.live import crewchief
 
-            settings = Settings(learning_laps=options.learning_laps, focus=options.focus,
-                                crewchief=crewchief.resolve(options.crewchief))
-            self.engineer = self._new_engineer() if self._new_engineer and options.engineer else None
-            run(self.workspace, session_of, self._frames(frames), voice, settings, options.ref, self._attach,
-                self.engineer, self.context)
-            self._log({"type": "status", "state": "stopped" if self._stop.is_set() else "ended"})
+            settings = Settings(
+                learning_laps=options.learning_laps,
+                focus=options.focus,
+                crewchief=crewchief.resolve(options.crewchief),
+            )
+            self.engineer = (
+                self._new_engineer()
+                if self._new_engineer and options.engineer
+                else None
+            )
+            run(
+                self.workspace,
+                session_of,
+                self._frames(frames),
+                voice,
+                settings,
+                options.ref,
+                self._attach,
+                self.engineer,
+                self.context,
+            )
+            self._log(
+                {
+                    "type": "status",
+                    "state": "stopped" if self._stop.is_set() else "ended",
+                }
+            )
             if self.engineer is not None:
                 self.engineer.close(wait_s=WRAP_UP_WAIT_S)  # let it write up its notes
-                if self.coach is not None:  # replies posted after the last frame (the notes)
+                if (
+                    self.coach is not None
+                ):  # replies posted after the last frame (the notes)
                     self.coach.pipeline.run_inbox()
         except Exception as e:  # report it on the page
             logger.exception("Live session failed")
@@ -270,26 +340,45 @@ class LiveSessions:
         self.coach = coach
         self.state = "running"
         coach.on("*", self._event)
-        self._log({"type": "status", "state": "running", "track": coach.ctx.session.track_name,
-                   "car": coach.ctx.session.car_name, "ref": coach.ctx.plan.ref_lap_id,
-                   "track_key": coach.ctx.session.track_key, "car_key": coach.ctx.session.car_key,
-                   "ref_lap_time": coach.ctx.plan.ref_lap_time, "length_m": coach.ctx.plan.length_m,
-                   "source": self.options.source, "file": self.options.file,
-                   "focus": coach.state.focus_log[-1] if coach.state.focus_log else None,
-                   "rules": [r.id for r in coach.rules.rules], "crewchief": coach.settings.crewchief,
-                   "engineer": self.engineer.session_id if self.engineer is not None else None})
+        self._log(
+            {
+                "type": "status",
+                "state": "running",
+                "track": coach.ctx.session.track_name,
+                "car": coach.ctx.session.car_name,
+                "ref": coach.ctx.plan.ref_lap_id,
+                "track_key": coach.ctx.session.track_key,
+                "car_key": coach.ctx.session.car_key,
+                "ref_lap_time": coach.ctx.plan.ref_lap_time,
+                "length_m": coach.ctx.plan.length_m,
+                "source": self.options.source,
+                "file": self.options.file,
+                "focus": coach.state.focus_log[-1] if coach.state.focus_log else None,
+                "rules": [r.id for r in coach.rules.rules],
+                "crewchief": coach.settings.crewchief,
+                "engineer": (
+                    self.engineer.session_id if self.engineer is not None else None
+                ),
+            }
+        )
 
     def _event(self, e) -> None:
         """The pipeline's events that are defined as logged go in the session log."""
         if e.log:
             self._log({"type": e.name, "at": e.at, **e.public()})
-        if isinstance(e, EngineerReply) and e.kind == "question":  # shown with the question on the page
+        if (
+            isinstance(e, EngineerReply) and e.kind == "question"
+        ):  # shown with the question on the page
             self.note_answer(e.text or "(No answer: the coach said nothing)")
 
     def _log(self, event: dict) -> dict:
         """Add an event to the session log (in memory and on disk), numbered and timestamped;
         returns it."""
-        event = {"seq": len(self._events), "wall": datetime.now(timezone.utc).isoformat(), **event}
+        event = {
+            "seq": len(self._events),
+            "wall": datetime.now(timezone.utc).isoformat(),
+            **event,
+        }
         self._events.append(event)
         if self._log_path is not None:
             try:
@@ -328,5 +417,14 @@ def recordings(folders: list[Path], limit: int = 50) -> list[dict]:
         if folder.is_dir():
             files += list(folder.glob("*.ibt"))
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return [{"path": str(p), "name": p.name, "size": p.stat().st_size,
-             "modified": time.strftime("%Y-%m-%d %H:%M", time.localtime(p.stat().st_mtime))} for p in files[:limit]]
+    return [
+        {
+            "path": str(p),
+            "name": p.name,
+            "size": p.stat().st_size,
+            "modified": time.strftime(
+                "%Y-%m-%d %H:%M", time.localtime(p.stat().st_mtime)
+            ),
+        }
+        for p in files[:limit]
+    ]

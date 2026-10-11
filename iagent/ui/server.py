@@ -21,7 +21,13 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from starlette.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    Response,
+    StreamingResponse,
+)
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -67,7 +73,9 @@ def create_app(
     """The `iagent ui` app over the workspace: the lap library and review, the chat, Garage61, ghost
     files, the telemetry watcher and live coaching. Arguments other than WORKSPACE let tests swap
     in fakes."""
-    agent = agent or ClaudeCode(workspace)  # the coach agent: the chat, the engineer, debriefs
+    agent = agent or ClaudeCode(
+        workspace
+    )  # the coach agent: the chat, the engineer, debriefs
     if live is None:
         from iagent.live.engineer import Engineer
 
@@ -99,19 +107,25 @@ def create_app(
     async def laps(request: Request) -> JSONResponse:
         track, car = request.query_params.get("track"), request.query_params.get("car")
         if not track or not car:
-            return JSONResponse({"error": "track and car are required"}, status_code=400)
+            return JSONResponse(
+                {"error": "track and car are required"}, status_code=400
+            )
         return await call(lambda ws: review.laps(ws, track, car))
 
     async def review_lap(request: Request) -> JSONResponse:
         lap = request.query_params.get("lap")
         if not lap:
             return JSONResponse({"error": "lap is required"}, status_code=400)
-        return await call(lambda ws: review.review(ws, lap, request.query_params.get("ref") or None))
+        return await call(
+            lambda ws: review.review(ws, lap, request.query_params.get("ref") or None)
+        )
 
     async def garage61_laps(request: Request) -> JSONResponse:
         track, car = request.query_params.get("track"), request.query_params.get("car")
         if not track or not car:
-            return JSONResponse({"error": "track and car are required"}, status_code=400)
+            return JSONResponse(
+                {"error": "track and car are required"}, status_code=400
+            )
 
         def find(ws: Workspace) -> dict:
             # Garage61 is optional: say why it's unavailable instead of failing the screen.
@@ -122,9 +136,17 @@ def create_app(
             try:
                 hit = g61_found.get((track, car))
                 if hit is None or time.monotonic() - hit[0] > G61_CACHE_S:
-                    hit = g61_found[(track, car)] = (time.monotonic(), imports.find(ws, client, track, car))
-                already = imports.imported(ws)  # imported since it was cached: still current
-                laps = [{**row, "lap_id": already.get(row["garage61_id"])} for row in hit[1]["laps"]]
+                    hit = g61_found[(track, car)] = (
+                        time.monotonic(),
+                        imports.find(ws, client, track, car),
+                    )
+                already = imports.imported(
+                    ws
+                )  # imported since it was cached: still current
+                laps = [
+                    {**row, "lap_id": already.get(row["garage61_id"])}
+                    for row in hit[1]["laps"]
+                ]
                 return {"available": True, **hit[1], "laps": laps}
             except (WorkspaceError, g61.Garage61Error) as e:
                 return {"available": False, "reason": str(e), "laps": []}
@@ -152,10 +174,19 @@ def create_app(
         return await call(run_import)
 
     def telemetry_status() -> dict:
-        return watcher.status() if watcher else {
-            "folder": str(default_telemetry_dir()), "found": default_telemetry_dir().is_dir(), "watching": False,
-            "files_ingested": 0, "last": None, "error": None, "version": 0,
-        }
+        return (
+            watcher.status()
+            if watcher
+            else {
+                "folder": str(default_telemetry_dir()),
+                "found": default_telemetry_dir().is_dir(),
+                "watching": False,
+                "files_ingested": 0,
+                "last": None,
+                "error": None,
+                "version": 0,
+            }
+        )
 
     def has_token() -> bool:
         try:
@@ -168,20 +199,28 @@ def create_app(
         """What this machine can do: is iRacing here (ghosts install), is its telemetry watched,
         is Garage61 set up, can the coach run."""
         lap_dir = lapfiles or ghosts.default_lapfiles()
-        return JSONResponse({
-            "platform": sys.platform,
-            "lapfiles": str(lap_dir),
-            "lapfiles_found": lap_dir.is_dir(),
-            "telemetry": telemetry_status(),
-            "garage61": {"token": has_token()},
-            "coach": {"found": shutil.which(agent.claude) is not None, "command": agent.claude},
-        })
+        return JSONResponse(
+            {
+                "platform": sys.platform,
+                "lapfiles": str(lap_dir),
+                "lapfiles_found": lap_dir.is_dir(),
+                "telemetry": telemetry_status(),
+                "garage61": {"token": has_token()},
+                "coach": {
+                    "found": shutil.which(agent.claude) is not None,
+                    "command": agent.claude,
+                },
+            }
+        )
 
     async def ingest(request: Request) -> JSONResponse:
         """One .ibt file as the request body (?name= its file name, which dates the session)."""
         name = request.query_params.get("name", "").replace("\\", "/").split("/")[-1]
         if not name.lower().endswith(".ibt"):
-            return JSONResponse({"error": "Only iRacing telemetry files (.ibt) can be imported."}, status_code=400)
+            return JSONResponse(
+                {"error": "Only iRacing telemetry files (.ibt) can be imported."},
+                status_code=400,
+            )
         (workspace / "cache").mkdir(parents=True, exist_ok=True)
         upload = Path(tempfile.mkdtemp(prefix="upload-", dir=workspace / "cache"))
         try:
@@ -192,15 +231,21 @@ def create_app(
             try:
                 out = await run_in_threadpool(ingest_file, workspace, path)
             except Exception as e:  # a damaged or foreign file: say so, keep serving
-                return JSONResponse({"error": f"Couldn't read {name}: {e}"}, status_code=422)
+                return JSONResponse(
+                    {"error": f"Couldn't read {name}: {e}"}, status_code=422
+                )
             return JSONResponse({"file": name, **out})
         finally:
             shutil.rmtree(upload, ignore_errors=True)
 
     async def telemetry_folder(request: Request) -> JSONResponse:
         if watcher is None:
-            return JSONResponse({"error": "Not watching a folder: `iagent ui` was started with --no-watch."},
-                                status_code=409)
+            return JSONResponse(
+                {
+                    "error": "Not watching a folder: `iagent ui` was started with --no-watch."
+                },
+                status_code=409,
+            )
         folder = Path(str((await request.json()).get("folder") or "")).expanduser()
         if not str(folder).strip() or not folder.is_dir():
             return JSONResponse({"error": f"No such folder: {folder}"}, status_code=400)
@@ -209,8 +254,12 @@ def create_app(
 
     async def telemetry_rescan(request: Request) -> JSONResponse:
         if watcher is None:
-            return JSONResponse({"error": "Not watching a folder: `iagent ui` was started with --no-watch."},
-                                status_code=409)
+            return JSONResponse(
+                {
+                    "error": "Not watching a folder: `iagent ui` was started with --no-watch."
+                },
+                status_code=409,
+            )
         found = await run_in_threadpool(watcher.rescan)
         return JSONResponse({"ingested": found, "telemetry": watcher.status()})
 
@@ -227,8 +276,15 @@ def create_app(
                 return {"connected": False, "reason": str(e)}
             finally:
                 client.close()
-            g61_account.update({"connected": True, "user": me.get("slug"),
-                                "teams": [(t.get("name") or t.get("slug") or "").strip() for t in teams]})
+            g61_account.update(
+                {
+                    "connected": True,
+                    "user": me.get("slug"),
+                    "teams": [
+                        (t.get("name") or t.get("slug") or "").strip() for t in teams
+                    ],
+                }
+            )
         return g61_account
 
     async def garage61_status(request: Request) -> JSONResponse:
@@ -251,12 +307,21 @@ def create_app(
         def run_ghost(ws: Workspace) -> dict:
             client = garage61()
             try:
-                out = imports.ghost(ws, client, gid, install=bool(body.get("install")), lapfiles=lapfiles)
+                out = imports.ghost(
+                    ws,
+                    client,
+                    gid,
+                    install=bool(body.get("install")),
+                    lapfiles=lapfiles,
+                )
             except g61.Garage61Error as e:
                 raise WorkspaceError(f"Garage61: {e}") from e
             finally:
                 client.close()
-            out["download"] = "/api/ghost-file?name=" + Path(out["saved"]).resolve().relative_to(ghost_dir).as_posix()
+            out["download"] = (
+                "/api/ghost-file?name="
+                + Path(out["saved"]).resolve().relative_to(ghost_dir).as_posix()
+            )
             return out
 
         return await call(run_ghost)
@@ -265,15 +330,21 @@ def create_app(
         path = (ghost_dir / request.query_params.get("name", "")).resolve()
         if not path.is_file() or ghost_dir not in path.parents:
             return JSONResponse({"error": "No such ghost file."}, status_code=404)
-        return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+        return FileResponse(
+            path, filename=path.name, media_type="application/octet-stream"
+        )
 
     async def chat(request: Request) -> StreamingResponse | JSONResponse:
         body = await request.json()
         message = (body.get("message") or "").strip()
         if not message:
             return JSONResponse({"error": "message is required"}, status_code=400)
-        events = chat_turn(agent, message, body.get("context") or {}, body.get("session_id") or None)
-        return StreamingResponse((json.dumps(e) + "\n" for e in events), media_type="application/x-ndjson")
+        events = chat_turn(
+            agent, message, body.get("context") or {}, body.get("session_id") or None
+        )
+        return StreamingResponse(
+            (json.dumps(e) + "\n" for e in events), media_type="application/x-ndjson"
+        )
 
     async def chat_stop(request: Request) -> JSONResponse:
         body = await request.json()
@@ -291,7 +362,10 @@ def create_app(
     async def live_recordings(request: Request) -> JSONResponse:
         """Recordings to replay: the watched folder, iRacing's own, and the repo's data/telemetry."""
         folders = [watcher.folder] if watcher else []
-        folders += [default_telemetry_dir(), workspace.resolve().parent / "data" / "telemetry"]
+        folders += [
+            default_telemetry_dir(),
+            workspace.resolve().parent / "data" / "telemetry",
+        ]
         unique = list(dict.fromkeys(f.resolve() for f in folders))
         return JSONResponse(await run_in_threadpool(recordings, unique))
 
@@ -319,7 +393,9 @@ def create_app(
         if not text:
             return JSONResponse({"error": "text is required"}, status_code=400)
         if live.coach is None or live.engineer is None:
-            return JSONResponse({"error": "No live session with an engineer to ask."}, status_code=409)
+            return JSONResponse(
+                {"error": "No live session with an engineer to ask."}, status_code=409
+            )
         live.note_driver(text)
         live.ask(text)
         return JSONResponse({"ok": True})
@@ -327,7 +403,9 @@ def create_app(
     # --- coached sessions, afterwards ------------------------------------------------------
 
     async def coaching_sessions(request: Request) -> JSONResponse:
-        return JSONResponse(await run_in_threadpool(session_report.list_sessions, workspace))
+        return JSONResponse(
+            await run_in_threadpool(session_report.list_sessions, workspace)
+        )
 
     async def coaching_session(request: Request) -> JSONResponse:
         sid = request.query_params.get("id", "")
@@ -336,9 +414,22 @@ def create_app(
             out = session_report.session_report(ws, sid)
             out["debrief_running"] = sid in debriefing
             track = out["track"]
-            out["next_plan"] = load_next_plan(ws.root, track["key"], track["car"]) if track["key"] else None
-            plan = load_plan(ws.root, track["key"], track["car"]) if track["key"] else None
-            out["cues"] = [{"corners": c.corners, "text": c.text, "source": c.source} for c in plan.cues] if plan else []
+            out["next_plan"] = (
+                load_next_plan(ws.root, track["key"], track["car"])
+                if track["key"]
+                else None
+            )
+            plan = (
+                load_plan(ws.root, track["key"], track["car"]) if track["key"] else None
+            )
+            out["cues"] = (
+                [
+                    {"corners": c.corners, "text": c.text, "source": c.source}
+                    for c in plan.cues
+                ]
+                if plan
+                else []
+            )
             return out
 
         return await call(build)
@@ -357,16 +448,20 @@ def create_app(
         if sid in debriefing:
             return JSONResponse({"running": True})
         debriefing.add(sid)
-        prompt = ("Write a short debrief of this coaching session for the driver: two short paragraphs, plain "
-                  "text, under 90 words. What worked, what still costs the most, and the one thing to focus on "
-                  "next session. Use the numbers given; don't run commands unless something is missing.")
+        prompt = (
+            "Write a short debrief of this coaching session for the driver: two short paragraphs, plain "
+            "text, under 90 words. What worked, what still costs the most, and the one thing to focus on "
+            "next session. Use the numbers given; don't run commands unless something is missing."
+        )
         # The session's engineer writes it, continuing its conversation (it was there); else a new one.
         engineer = report.get("engineer")
 
         def write() -> None:
             try:
                 parts, error = [], None
-                for event in chat_turn(agent, prompt, {"page": "session", "live": lines}, engineer):
+                for event in chat_turn(
+                    agent, prompt, {"page": "session", "live": lines}, engineer
+                ):
                     if event["type"] == "text_start":
                         parts = []
                     elif event["type"] == "text":
@@ -374,7 +469,11 @@ def create_app(
                     elif event["type"] == "error":
                         error = event["message"]
                 text = "".join(parts).strip()
-                session_report.save_debrief(workspace, sid, text or f"(No debrief: {error or 'the coach said nothing'})")
+                session_report.save_debrief(
+                    workspace,
+                    sid,
+                    text or f"(No debrief: {error or 'the coach said nothing'})",
+                )
             finally:
                 debriefing.discard(sid)
 
@@ -386,7 +485,9 @@ def create_app(
         body = await request.json()
         track, car, focus = body.get("track"), body.get("car"), body.get("focus")
         if not track or not car or focus is None:
-            return JSONResponse({"error": "track, car and focus are required"}, status_code=400)
+            return JSONResponse(
+                {"error": "track, car and focus are required"}, status_code=400
+            )
         cue_text = str(body.get("cue_text") or "").strip()
 
         def save(ws: Workspace) -> dict:
@@ -397,7 +498,14 @@ def create_app(
                 cue = plan.cue_for(int(focus))
                 cue.text, cue.source = cue_text, "driver"
                 save_plan(ws.root, plan)
-            return save_next_plan(ws.root, track, car, int(focus), str(body.get("note") or ""), body.get("from_session"))
+            return save_next_plan(
+                ws.root,
+                track,
+                car,
+                int(focus),
+                str(body.get("note") or ""),
+                body.get("from_session"),
+            )
 
         return await call(save)
 
@@ -453,8 +561,13 @@ class RequireClientHeader:
         """Refuse a request that changes something unless it carries the X-Iagent header (which a
         page on another site can't send without asking)."""
         if scope["type"] == "http" and scope["method"] not in ("GET", "HEAD"):
-            if not any(k.decode("latin-1").lower() == CLIENT_HEADER for k, _ in scope["headers"]):
-                response = JSONResponse({"error": "Missing X-Iagent header."}, status_code=403)
+            if not any(
+                k.decode("latin-1").lower() == CLIENT_HEADER
+                for k, _ in scope["headers"]
+            ):
+                response = JSONResponse(
+                    {"error": "Missing X-Iagent header."}, status_code=403
+                )
                 await response(scope, receive, send)
                 return
         await self.app(scope, receive, send)

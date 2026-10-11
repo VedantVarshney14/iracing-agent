@@ -2,7 +2,12 @@
 
 import pandas as pd
 
-from iagent.laps.lap import REASON_DISCONTINUITY, REASON_INCOMPLETE, REASON_PIT_ROAD, Lap
+from iagent.laps.lap import (
+    REASON_DISCONTINUITY,
+    REASON_INCOMPLETE,
+    REASON_PIT_ROAD,
+    Lap,
+)
 from iagent.telemetry.frames import Frame, SURFACE_OFF_TRACK
 from iagent.telemetry.session import SessionInfo
 
@@ -53,7 +58,9 @@ class LapSegmenter:
                 # Where in the gap between the two frames did the line get crossed?
                 to_line = 1.0 - prev_pct
                 frac = to_line / (to_line + pct) if (to_line + pct) > 0 else 1.0
-                t_cross = prev.session_time + frac * (frame.session_time - prev.session_time)
+                t_cross = prev.session_time + frac * (
+                    frame.session_time - prev.session_time
+                )
                 finished = self._finish(end_time=t_cross)
                 self._start_time = t_cross
             elif abs(pct - prev_pct) > self._jump:
@@ -82,7 +89,11 @@ class LapSegmenter:
         df = pd.DataFrame(self._rows)
         if "LapDist" not in df:
             df["LapDist"] = df["LapDistPct"] * self._session.track_length_m
-        origin = self._start_time if self._start_time is not None else df["SessionTime"].iloc[0]
+        origin = (
+            self._start_time
+            if self._start_time is not None
+            else df["SessionTime"].iloc[0]
+        )
         df["lap_time_s"] = df["SessionTime"] - origin
 
         reasons: list[str] = []

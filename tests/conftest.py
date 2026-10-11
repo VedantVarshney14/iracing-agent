@@ -31,7 +31,10 @@ def no_audio(monkeypatch):
     """Tests never play sound: opening an audio device fails the test."""
     try:
         import sounddevice
-    except (ImportError, OSError):  # the voice extra isn't installed: nothing could play
+    except (
+        ImportError,
+        OSError,
+    ):  # the voice extra isn't installed: nothing could play
         return
 
     def refuse(*args, **kwargs):

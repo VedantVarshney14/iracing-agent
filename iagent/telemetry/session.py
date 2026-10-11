@@ -13,13 +13,17 @@ class SessionInfo:
     """What a session is: the track (name, length, iRacing's ids and layout) and the car.
     `track_key` and `car_key` group laps."""
 
-    track_name: str  # display name, e.g. "Circuit de Spa-Francorchamps" (same for every layout)
+    track_name: (
+        str  # display name, e.g. "Circuit de Spa-Francorchamps" (same for every layout)
+    )
     track_length_m: float
     car_name: str = "unknown"  # display name, e.g. "FIA F4"
     track_id: int | None = None
     # Free-form origin label, e.g. the .ibt file stem or "synthetic-7". Used in lap ids.
     session_id: str = "session"
-    track_code: str | None = None  # iRacing's internal TrackName, e.g. "spa 2024 up": one per layout
+    track_code: str | None = (
+        None  # iRacing's internal TrackName, e.g. "spa 2024 up": one per layout
+    )
     track_config: str | None = None  # e.g. "Grand Prix"
     car_path: str | None = None  # iRacing's internal car id, e.g. "formulair04"
     car_id: int | None = None  # iRacing's numeric car id, e.g. 148
@@ -49,7 +53,9 @@ def parse_session_yaml(text: str, session_id: str = "session") -> SessionInfo:
     """
     length_km = _first(r"^\s*TrackLength:[ \t]*([\d.]+)\s*km", text, re.M)
     if length_km is None:
-        raise ValueError("Session info has no TrackLength; cannot build a distance grid.")
+        raise ValueError(
+            "Session info has no TrackLength; cannot build a distance grid."
+        )
 
     track_name = _first(r"^\s*TrackDisplayName:[ \t]*(.+)$", text, re.M) or "unknown"
     track_id = _first(r"^\s*TrackID:[ \t]*(\d+)", text, re.M)
@@ -65,7 +71,10 @@ def parse_session_yaml(text: str, session_id: str = "session") -> SessionInfo:
             rf"-\s*CarIdx:\s*{idx}\s*\n(.*?)(?=\n\s*-\s*CarIdx:|\Z)", text, re.S
         )
         if block:
-            car_name = _first(r"^\s*CarScreenName:[ \t]*(.+)$", block.group(1), re.M) or car_name
+            car_name = (
+                _first(r"^\s*CarScreenName:[ \t]*(.+)$", block.group(1), re.M)
+                or car_name
+            )
             car_path = _first(r"^\s*CarPath:[ \t]*(.+)$", block.group(1), re.M)
             car_id = _first(r"^\s*CarID:[ \t]*(\d+)", block.group(1), re.M)
 

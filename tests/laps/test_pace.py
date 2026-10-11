@@ -11,8 +11,15 @@ def records(tmp_path):
     """Seven recorded laps of every kind (clean, off track, slow, pit, reset)."""
     source = SyntheticSource(
         n_laps=7,
-        kinds=[LapKind.CLEAN, LapKind.CLEAN, LapKind.OFF_TRACK, LapKind.SLOW,
-               LapKind.PIT_IN, LapKind.RESET, LapKind.CLEAN],
+        kinds=[
+            LapKind.CLEAN,
+            LapKind.CLEAN,
+            LapKind.OFF_TRACK,
+            LapKind.SLOW,
+            LapKind.PIT_IN,
+            LapKind.RESET,
+            LapKind.CLEAN,
+        ],
     )
     store = ParquetLapStore(tmp_path)
     yield record(source, store, "synthetic")
@@ -51,8 +58,16 @@ def test_no_valid_laps(tmp_path):
 
 
 def test_store_filter_matches_the_pure_function(tmp_path):
-    source = SyntheticSource(n_laps=5, kinds=[LapKind.CLEAN, LapKind.CLEAN, LapKind.SLOW,
-                                               LapKind.CLEAN, LapKind.CLEAN])
+    source = SyntheticSource(
+        n_laps=5,
+        kinds=[
+            LapKind.CLEAN,
+            LapKind.CLEAN,
+            LapKind.SLOW,
+            LapKind.CLEAN,
+            LapKind.CLEAN,
+        ],
+    )
     store = ParquetLapStore(tmp_path)
     recs = record(source, store, "x")
     assert store.list(within_best=0.05) == representative(recs, 0.05)
@@ -65,10 +80,19 @@ def test_pace_is_judged_per_track_and_car(records):
     from iagent.laps.pace import best_times
 
     # The same laps on a second, much faster "track": its best must not exclude the first group.
-    other = [replace(r, track_key="elsewhere", lap_id=r.lap_id + "x", lap_time=r.lap_time / 2)
-             for r in records if r.lap_time is not None]
+    other = [
+        replace(
+            r, track_key="elsewhere", lap_id=r.lap_id + "x", lap_time=r.lap_time / 2
+        )
+        for r in records
+        if r.lap_time is not None
+    ]
     both = list(records) + other
     assert len(best_times(both)) == 2
-    assert [r.seq for r in representative(both) if r.track_key != "elsewhere"] == [1, 2, 6]
+    assert [r.seq for r in representative(both) if r.track_key != "elsewhere"] == [
+        1,
+        2,
+        6,
+    ]
     with pytest.raises(ValueError, match="several"):
         best_time(both)
