@@ -107,8 +107,8 @@ export function Coaching({ system, onOpenLap }: { system: SystemInfo | null; onO
             <button key={s.id} type="button" className="session-card" aria-pressed={s.id === selected} onClick={() => setSelected(s.id)}>
               <b>{s.track ?? s.track_key} · {s.car ?? ""}</b>
               <span className="muted small">{when(s.started)} · {s.laps} laps{s.source === "replay" ? " · replay" : ""}</span>
-              <span className="small"><span className="mono">{lapTime(s.best_lap)}</span>{s.focus ? ` · focus ${s.focus.label}` : ""}
-                {s.focus && <span className={`verdict-text ${s.focus.verdict.replace(" ", "-")}`}> {verdictLabel(s.focus.verdict)}</span>}
+              <span className="small"><span className="mono">{lapTime(s.best_lap)}</span>{s.focus ? ` · focus ${s.focus.label}: ` : ""}
+                {s.focus && <span className={`verdict-text ${s.focus.verdict.replace(" ", "-")}`} title={VERDICT_HELP[s.focus.verdict]}>{verdictLabel(s.focus.verdict)}</span>}
               </span>
             </button>
           ))}
@@ -283,8 +283,18 @@ function SessionMap({ report, focus }: { report: SessionReport; focus: FocusOutc
   );
 }
 
+// How the corner went on the pushing laps after the focus (or advice), against the lap before it.
 const VERDICTS: Record<Verdict, string> = {
-  working: "Working", mixed: "Mixed", "not yet": "Not yet", "no laps since": "No laps since", sorted: "Sorted", replaced: "Moved on",
+  working: "Improving", mixed: "Up and down", "not yet": "No better yet", "no laps since": "No pushing laps since",
+  sorted: "Sorted", replaced: "Moved on",
+};
+const VERDICT_HELP: Record<Verdict, string> = {
+  working: "Every pushing lap since was clearly faster through it (or matched the reference).",
+  mixed: "Some pushing laps since were faster through it, some weren't.",
+  "not yet": "No pushing lap since was faster through it.",
+  "no laps since": "No pushing laps were driven after it was set.",
+  sorted: "Two pushing laps in a row lost little there, so the coach moved on.",
+  replaced: "Another corner was losing clearly more, so the focus moved there.",
 };
 
 function AdviceCard({ report }: { report: SessionReport }) {
@@ -331,7 +341,7 @@ function AdviceRow({ corner, said, when, before, after, verdict }: {
             </span>
           </span>
         ))}
-        <span className={`verdict ${verdict.replace(" ", "-")}`}>{VERDICTS[verdict]}</span>
+        <span className={`verdict ${verdict.replace(" ", "-")}`} title={VERDICT_HELP[verdict]}>{VERDICTS[verdict]}</span>
       </div>
     </li>
   );
