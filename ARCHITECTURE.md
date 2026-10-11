@@ -200,6 +200,7 @@ workspace/
   notes/driver.md                       who the driver is, goals, preferences
   notes/<track>.md                      the engineer's notebook for the track
   sessions/live/<id>.jsonl              each coached session's log (every logged event)
+  sessions/live/debug/<id>.jsonl        its debug log: the whole loop (every event but frames and ticks)
   cache/                                downloads (CrewChief landmarks, Garage61 catalogues, voices)
   scratch/                              the agent's free space (scripts, plots)
 ```
@@ -269,6 +270,15 @@ class CornerExit(Event):
 Class attributes say how an event is treated: `name` (for rules and the log), `log` (written to
 the session log, which the review page reads) and `judged` (rules with `pushing_only` ignore it
 while the driver isn't pushing). Only a class with a `name` is an event the pipeline carries.
+
+Every event except `frame`, `frame_done` and `tick` also goes in the session's **debug log**
+(`iagent.live.debug_log`), written by sessions run from the browser and by `iagent live run`. The
+review page shows it under "Debug: the whole loop", live or afterwards. It holds every
+rule firing, including the coach's own rules, with the values each saw, or the limit that held
+it back. It also holds every engineer turn (`engineer_turn`): the exact prompt, the structured
+reply, the outcome (answered, nothing to say, too late, failed) and how long the turn waited and
+took. Use it to work on the harness: why a line was or wasn't said, what the engineer knew when it
+spoke, and where turns arrive too late.
 
 Inheritance means "is a kind of", and the pipeline relies on it: a method marked for a class gets
 its subclasses too. Shared fields go in a base class without a `name`, which is never emitted

@@ -9,6 +9,7 @@ from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan
 from iagent.live.engineer import Engineer, debrief_prompt, rule_prompt
 from iagent.live.events import AskEngineer, DebriefGiven, EngineerReply
+from iagent.live.report import read_log
 from iagent.live.session import LiveSessions
 from iagent.live.speech import Arbiter, CapturedVoice
 from iagent.testing.ibt_writer import write_ibt
@@ -110,8 +111,9 @@ def ask(e: Engineer, kind, text="go", **kw):
     done = threading.Event()
     out = {}
 
-    def reply(words):
-        out["text"] = words
+    def reply(turn):
+        out["text"] = turn.words
+        out["turn"] = turn
         done.set()
 
     assert e.request(kind, PAYLOADS[kind](text), {}, reply, **kw)
@@ -155,6 +157,7 @@ def test_a_request_too_late_to_be_useful_is_dropped(monkeypatch):
     assert (
         late[1]["text"] is None and len(turns.calls) == 1
     )  # the cool-down was over by then
+    assert late[1]["turn"].outcome == "too late" and late[1]["turn"].prompt is None
     assert e.request("rule", PAYLOADS["rule"]("x"), {}, lambda t: None)
     assert not e.request(
         "rule", PAYLOADS["rule"]("y"), {}, lambda t: None
@@ -217,7 +220,7 @@ class SlowEngineer:
                 and a[2] is not None
                 and now >= a[3] + self.reply_after_s
             ):
-                a[2](WORDS)
+                a[2](eng.TurnRecord(a[0], WORDS, "answered"))
                 a[2] = None
 
 
@@ -359,3 +362,14 @@ def test_a_live_session_has_one_engineer_from_radio_check_to_notes(root, tmp_pat
     assert [e.get("kind") for e in events if e["type"] == "ask_engineer"].count(
         "rule"
     ) == 1
+
+    # The debug log has the whole loop: each turn as the engineer saw it, every rule firing (the
+    # coach's own too, which the session log leaves out), the pipeline's events, but no frames.
+    debug = read_log(root, live.session_id, debug=True)
+    shown = [e for e in debug if e["type"] == "engineer_turn"]
+    assert [e["prompt"] for e in shown] == [p for p, _, _ in turns.calls]
+    assert {e["outcome"] for e in shown} <= {"answered", "nothing to say"}
+    assert any(e["type"] == "rule" and e["group"] == "builtin" for e in debug)
+    assert not any(e["type"] == "rule" and e["group"] == "builtin" for e in events)
+    assert {"corner_exit", "approach", "crossing"} <= {e["type"] for e in debug}
+    assert not {"frame", "frame_done", "tick"} & {e["type"] for e in debug}

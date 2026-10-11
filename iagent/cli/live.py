@@ -75,8 +75,12 @@ def live_run(
     """Coach live: cue each corner on the approach, say what went wrong after it, sum up each lap.
 
     On the sim PC this reads iRacing (start it before or after; Ctrl+C to stop). Elsewhere, use
-    --replay to hear a recording. Cues come from `iagent cues build` (built on first use).
+    --replay to hear a recording. Cues come from `iagent cues build` (built on first use). The whole
+    loop goes in a debug log (`sessions/live/debug/<id>.jsonl`).
     """
+    from datetime import datetime
+
+    from iagent.live.debug_log import DebugLog, debug_log_path
     from iagent.live.coach import Settings
     from iagent.live.run import run
     from iagent.live.run import LIVE_CHANNELS, IrsdkSource, paced
@@ -124,8 +128,26 @@ def live_run(
         + (f" ({e.status})" if e.status else ""),
     }
 
+    debug = DebugLog(
+        debug_log_path(ctx.workspace, datetime.now().strftime("%Y%m%d-%H%M%S"))
+    )
+    coaches = []
+
     def on_start(coach):
+        coaches.append(coach)
         rules = coach.rules.rules
+        coach.on("*", debug.event)
+        debug.write(
+            {
+                "type": "status",
+                "state": "running",
+                "track": coach.ctx.session.track_name,
+                "car": coach.ctx.session.car_name,
+                "ref": coach.ctx.plan.ref_lap_id,
+                "rules": [r.id for r in rules],
+                "engineer": engineer.session_id if engineer else None,
+            }
+        )
         click.echo(
             f"Coaching {coach.ctx.session.track_name} in {coach.ctx.session.car_name}: {len(coach.ctx.plan.cues)} cues, "
             f"following {coach.ctx.plan.ref_lap_id}."
@@ -176,8 +198,11 @@ def live_run(
                 engineer.close(wait_s=120)
             except KeyboardInterrupt:
                 pass
+        if coaches:  # replies posted after the last frame (the notes)
+            coaches[-1].pipeline.run_inbox()
         if hasattr(out, "close"):
             out.close()
+        click.echo(f"Debug log: {debug.path}")
 
 
 class _SpokenToo:

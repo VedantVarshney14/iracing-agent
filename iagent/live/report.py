@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from iagent.analysis.position import has_position, to_local_xy
+from iagent.live.debug_log import debug_log_path
 from iagent.workspace import Workspace, WorkspaceError
 
 LOSS_S = 0.08  # a corner within this of the reference is matched
@@ -22,14 +23,27 @@ def sessions_dir(root: Path) -> Path:
     return root / "sessions" / "live"
 
 
-def read_log(root: Path, session_id: str) -> list[dict]:
-    """The session's logged events, in order. WorkspaceError for an unknown or malformed session id."""
+def read_log(root: Path, session_id: str, debug: bool = False) -> list[dict]:
+    """The session's logged events (or with DEBUG, its debug log), in order. WorkspaceError for an
+    unknown or malformed session id, or a session without that log."""
     if not session_id.replace("-", "").isalnum():
         raise WorkspaceError(f"Unknown session {session_id!r}.")
-    path = sessions_dir(root) / f"{session_id}.jsonl"
+    path = (
+        debug_log_path(root, session_id)
+        if debug
+        else sessions_dir(root) / f"{session_id}.jsonl"
+    )
     if not path.exists():
-        raise WorkspaceError(f"Unknown session {session_id!r}.")
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        raise WorkspaceError(
+            f"No debug log for session {session_id!r}."
+            if debug
+            else f"Unknown session {session_id!r}."
+        )
+    lines = [line for line in path.read_text().splitlines() if line.strip()]
+    try:
+        return [json.loads(line) for line in lines]
+    except json.JSONDecodeError:  # the last line, half written by the running session
+        return [json.loads(line) for line in lines[:-1]]
 
 
 def list_sessions(root: Path) -> list[dict]:

@@ -2,7 +2,8 @@
 
 It tells the engineer what went out on the radio and the laps driven (as a real engineer hears
 them), takes `AskEngineer` requests to it, and posts its answers back through the pipeline's inbox
-as `EngineerReply`, so the coach never waits. If no answer comes in time, the coach says its own
+as `EngineerReply` (after an `EngineerTurn` with what it was shown, for the debug log), so the
+coach never waits. If no answer comes in time, the coach says its own
 words. Corner cues are never generated: they must be instant and exactly timed.
 """
 
@@ -10,11 +11,13 @@ from iagent.live.events import (
     AskEngineer,
     EngineerAsked,
     EngineerReply,
+    EngineerTurn,
     Lap,
     Line,
     SessionEnd,
     SessionStart,
 )
+from iagent.live.engineer import TurnRecord
 from iagent.live.pipeline import EventHandler, on
 
 
@@ -23,17 +26,30 @@ class EngineerLink(EventHandler):
 
     @on(AskEngineer)
     def ask(self, e: AskEngineer):
-        """Put the request to the engineer; its answer is posted back as an `EngineerReply`. If it
-        takes the request on, emit `EngineerAsked`."""
+        """Put the request to the engineer; how it went is posted back as an `EngineerTurn`, then
+        its answer as an `EngineerReply`. If it takes the request on, emit `EngineerAsked`."""
         engineer = self.ctx.engineer
         if engineer is None:
             return
 
-        def reply(text: str | None) -> None:
+        def reply(turn: TurnRecord) -> None:
+            self.pipe.post(
+                EngineerTurn(
+                    kind=e.kind,
+                    rule=e.rule,
+                    asked_at=e.at,
+                    outcome=turn.outcome,
+                    prompt=turn.prompt,
+                    reply=turn.reply,
+                    resumed=turn.resumed,
+                    waited_s=round(turn.waited_s, 2),
+                    took_s=round(turn.took_s, 2),
+                )
+            )
             self.pipe.post(
                 EngineerReply(
                     kind=e.kind,
-                    text=(text or "").strip() or None,
+                    text=(turn.words or "").strip() or None,
                     asked_at=e.at,
                     rule=e.rule,
                     stretch=e.stretch,
