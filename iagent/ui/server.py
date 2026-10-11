@@ -434,6 +434,17 @@ def create_app(
 
         return await call(build)
 
+    async def coaching_debug(request: Request) -> JSONResponse:
+        """The session's debug log from event SINCE on (the page polls it while the session runs)."""
+        sid = request.query_params.get("id", "")
+        since = int(request.query_params.get("since", "0") or 0)
+
+        def read(ws: Workspace) -> dict:
+            events = session_report.read_log(ws.root, sid, debug=True)
+            return {"events": events[since:], "total": len(events)}
+
+        return await call(read)
+
     async def coaching_debrief(request: Request) -> JSONResponse:
         """The coach writes a short debrief (in the background; the session report shows it)."""
         sid = str((await request.json()).get("id") or "")
@@ -535,6 +546,7 @@ def create_app(
         Route("/api/live/ask", live_ask, methods=["POST"]),
         Route("/api/coaching/sessions", coaching_sessions),
         Route("/api/coaching/session", coaching_session),
+        Route("/api/coaching/debug", coaching_debug),
         Route("/api/coaching/debrief", coaching_debrief, methods=["POST"]),
         Route("/api/coaching/plan", coaching_plan, methods=["POST"]),
         Route("/api/chat", chat, methods=["POST"]),

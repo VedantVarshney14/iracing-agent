@@ -163,6 +163,13 @@ garage61 id                  driver                      time  vs you rating dat
 ## Lap review in the browser
 
 `iagent ui` opens a lap review in your browser:
+
+| Library | Lap review |
+| --- | --- |
+| ![Library: sources, tracks and a session's laps](docs/screenshots/library.png) | ![Lap review: track map, corner table, traces and coach chat](docs/screenshots/review.png) |
+| **Corner view** | **Coaching** |
+| ![Corner view: both racing lines, corner numbers and traces](docs/screenshots/corner.png) | ![Coaching: a coached session's pushing laps, time lost, debrief and whether the advice worked](docs/screenshots/coaching.png) |
+
 - **Library.** Where laps come from, every track you've driven, and each session's laps with a
   Review and a Ghost choice (your laps or Garage61 teammates'). On the sim PC it shows the watched
   telemetry folder; on a Mac, drop `.ibt` files onto it or point it at a folder synced from the

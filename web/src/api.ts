@@ -1,5 +1,5 @@
 import type {
-  Garage61Account, Garage61Laps, GhostResult, IngestResult, LapsResponse, LiveEvent, LiveStatus, Recording, Review,
+  DebugEvent, Garage61Account, Garage61Laps, GhostResult, IngestResult, LapsResponse, LiveEvent, LiveStatus, Recording, Review,
   SessionReport, SessionRow,
   SystemInfo, TelemetryStatus, TrackRow,
 } from "./types";
@@ -43,6 +43,7 @@ export const api = {
   liveAsk: (text: string) => post<{ ok: boolean }>("/api/live/ask", { text }),
   sessions: () => get<SessionRow[]>("/api/coaching/sessions"),
   session: (id: string) => get<SessionReport>("/api/coaching/session", { id }),
+  debugLog: (id: string, since: number) => get<{ events: DebugEvent[]; total: number }>("/api/coaching/debug", { id, since: String(since) }),
   debrief: (id: string) => post<{ running: boolean }>("/api/coaching/debrief", { id }),
   savePlan: (plan: { track: string; car: string; focus: number; cue_text?: string; note?: string; from_session?: string }) =>
     post<{ focus: number; sessions_left: number }>("/api/coaching/plan", plan),

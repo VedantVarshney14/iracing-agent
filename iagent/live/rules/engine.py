@@ -26,12 +26,11 @@ class Group:
         None  # lines said a lap, all the group's rules together
     )
     min_gap_s: float = 0.0  # between two of the group's lines (cues aside)
-    report: bool = True  # firings go in the session log as `rule` events
 
 
 GROUPS = {
     "agent": Group(max_lines_per_lap=6, min_gap_s=4.0),
-    "builtin": Group(report=False),
+    "builtin": Group(),
 }
 
 
@@ -306,7 +305,6 @@ class RuleEngine(EventHandler):
         return out
 
     def _report(self, rule: Rule, record: dict, at: float) -> None:
-        """Keep the firing for backtests and, for reported groups, emit it as a `RuleFired`."""
+        """Keep the firing for backtests and emit it as a `RuleFired`."""
         self.firings.append({**record, "at": round(at, 2)})
-        if GROUPS[rule.group].report:
-            self.emit(RuleFired(**record))
+        self.emit(RuleFired(**record, group=rule.group))

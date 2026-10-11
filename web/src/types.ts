@@ -208,6 +208,9 @@ export type LiveEvent = { seq: number; wall: string; at?: number | null } & (
   | { type: "error"; message: string }
 );
 
+/** An entry in a session's debug log (sessions/live/debug/<id>.jsonl): any event, with its fields. */
+export type DebugEvent = { debug_seq: number; type: string; at?: number | null; wall: string } & Record<string, unknown>;
+
 export interface Recording {
   path: string;
   name: string;
