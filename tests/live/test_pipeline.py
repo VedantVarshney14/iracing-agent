@@ -178,7 +178,7 @@ def test_a_new_event_handler_event_and_rule_need_nothing_but_their_definitions(r
         ws.close()
     for f in src.frames():
         coach.push(f)
-    said = [s.text for s in coach.arbiter.voice.spoken if s.kind == "rule"]
+    said = [s.text for s in coach.ctx.arbiter.voice.spoken if s.kind == "rule"]
     assert said and said[0] == "Kerb, 1 so far."
     assert coach.rules.stats["kerbs"].fired >= 2
 
@@ -197,4 +197,4 @@ def test_a_new_reason_to_keep_quiet_is_a_gate(root, monkeypatch):
     coach.on(Lap, lambda e: first_lap.append(e.at))
     for f in src.frames():
         coach.push(f)
-    assert all(s.at_s <= first_lap[0] for s in coach.arbiter.voice.spoken)  # nothing after the first counted lap
+    assert all(s.at_s <= first_lap[0] for s in coach.ctx.arbiter.voice.spoken)  # nothing after the first counted lap

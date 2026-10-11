@@ -93,9 +93,9 @@ flowchart LR
 
 Solid lines run every frame with no model; dotted ones involve the model and run off the
 real-time path. A live session runs inside `iagent ui` (the Coaching tab) or `iagent live run`;
-both build the same `LiveCoach` (`iagent/live/run.py`). Everything runs on the sim PC except,
-optionally, the model. For development the same pieces run on a Mac against recorded `.ibt`
-files.
+both run `iagent/live/run.py`, and a backtest replays recordings through the same coach. All three
+build it with `LiveCoach.load`. Everything runs on the sim PC except, optionally, the model. For
+development the same pieces run on a Mac against recorded `.ibt` files.
 
 ### The harness and the models
 
@@ -134,7 +134,7 @@ iagent/
   analysis/           corner map and metrics (shared with the live coach), comparisons, traces
   references/         Garage61, iRacing ghost files
   live/
-    coach.py          LiveCoach: builds the pipeline; a small facade, no feature logic
+    coach.py          LiveCoach: the pipeline with its handlers, and `load` (a coach from the workspace)
     pipeline.py       Pipeline, EventHandler (the base class), @on / @enrich
     events.py         every event, as a typed dataclass
     state.py          CoachState: the shared state, typed
@@ -152,7 +152,8 @@ iagent/
     crewchief.py      sharing the radio with CrewChief
     session.py        live sessions run from the browser, and their logs
     report.py         a coached session, read back from its log
-    run.py, sources.py, voice.py   wiring, iRacing and replay sources, Pocket TTS
+    run.py            running a coach over a stream of frames (new session: new coach; rules reload)
+    sources.py, voice.py   iRacing and replay sources, Pocket TTS
   ui/                 `iagent ui`: the local API and the lap review chat
   cli/                the `iagent` command: one module per command group (laps, corners, rules, ...)
   testing/            synthetic laps, an .ibt writer, fakes for Garage61 and the web

@@ -145,14 +145,14 @@ def test_conditions_in_a_row_and_limits(root):
 def test_a_position_rule_finishes_before_its_point_once_per_pass(root):
     r = rule(when={"event": "approach", "at": {"corner": 3}, "lead_s": 0.5}, actions=[{"say": "Three. Stay off the kerb."}])
     coach, engine = drive(root, [r], settings=Settings(learning_laps=0, summary=False))
-    target = coach.plan.cue_for(3).target_m
+    target = coach.ctx.plan.cue_for(3).target_m
     fires = fired(engine)
     assert len(fires) == len({f["lap_no"] for f in fires}) >= 3
-    said = [s for s in coach.arbiter.voice.spoken if s.text == "Three. Stay off the kerb."]
+    said = [s for s in coach.ctx.arbiter.voice.spoken if s.text == "Three. Stay off the kerb."]
     assert said
     for s in said:
         f = next(f for f in coach._frames_seen if f.session_time >= s.at_s)
-        to_target = (target - f.get("LapDist")) % coach.length
+        to_target = (target - f.get("LapDist")) % coach.ctx.plan.length_m
         assert to_target / f.get("Speed") >= len(s.text) / 14.0 + 0.25  # it can be said in time
 
 
@@ -172,7 +172,7 @@ def test_lap_pit_and_schedule_triggers(root):
     assert len(fired(engine, "pit-in")) == 1
     assert fired(engine, "pit-out")[0]["lap_no"] == 0  # leaving the pits on the out lap
     assert [f["values"]["lap"] for f in fired(engine, "every2")] == [2]  # three counted laps: the out lap doesn't count
-    assert len(fired(engine, "hello")) == 1 and "Let's go." in [s.text for s in coach.arbiter.voice.spoken]
+    assert len(fired(engine, "hello")) == 1 and "Let's go." in [s.text for s in coach.ctx.arbiter.voice.spoken]
     assert fired(engine, "best") and all(f["actions"][0]["ask_engineer"].startswith("new best") for f in fired(engine, "best"))
     fast = fired(engine, "fast")
     assert 1 <= len(fast) <= 5 and all(f["values"]["speed_kph"] > 150 for f in fast)

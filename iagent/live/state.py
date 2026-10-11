@@ -56,7 +56,15 @@ class CoachState:
 
     @classmethod
     def docs(cls) -> dict[str, str]:
+        """Each field's description."""
         return {f.name: f.metadata.get("doc", "") for f in fields(cls)}
 
     def variables(self) -> dict[str, Any]:
+        """Every field, as rules see them."""
         return dict(self.__dict__)
+
+    def focus_entry(self) -> dict | None:
+        """The current focus's entry in `focus_log`, or None without a focus."""
+        if self.focus is None:
+            return None
+        return next((f for f in reversed(self.focus_log) if f["cue"] == self.focus), None)

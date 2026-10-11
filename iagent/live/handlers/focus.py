@@ -27,14 +27,10 @@ class Focus(EventHandler):
     @on(SessionStart)
     def carried_over(self, e: SessionStart):
         if self._carried:
-            self.emit(FocusChanged(focus=self._entry(), by="coach"))
+            self.emit(FocusChanged(focus=self.state.focus_entry(), by="coach"))
 
     def label(self, cue) -> str:
         return phrasing.cue_label([self.ctx.cmap.get(c).name for c in cue.corners], cue.corners)
-
-    def _entry(self) -> dict | None:
-        focus = self.state.focus
-        return next((f for f in reversed(self.state.focus_log) if f["cue"] == focus), None) if focus is not None else None
 
     def _set(self, cue, manual: bool, extra: dict | None = None) -> dict | None:
         st = self.state
@@ -56,15 +52,15 @@ class Focus(EventHandler):
             self.emit(Error(message=f"No cue covers T{e.corner}."))
             return
         self._set(cue, manual=True)
-        self.emit(FocusChanged(focus=self._entry(), by="driver"))
+        self.emit(FocusChanged(focus=self.state.focus_entry(), by="driver"))
 
     @enrich(Lap)
     def after_lap(self, e: Lap):
-        before = self._entry()
+        before = self.state.focus_entry()
         enough = len(e.results) >= max(1, len(self.ctx.cmap.corners) // 2)  # most corners at pace
         e.focus_news = self.update(e.results) if enough else None
         e.focus = self.state.focus
-        after = self._entry()
+        after = self.state.focus_entry()
         if after is not None and after is not before:
             self.emit(FocusChanged(focus=after, by="coach"))
 
@@ -90,7 +86,7 @@ class Focus(EventHandler):
                 news.append(replaced)
         if st.focus is not None:
             recent = [lap[st.focus] for lap in self.cue_losses if st.focus in lap][-2:]
-            entry = self._entry()
+            entry = self.state.focus_entry()
             if len(recent) == 2 and all(x < s.loss_s for x in recent) and st.lap > entry["set_lap"]:
                 entry["done_lap"] = st.lap
                 news.append(f"{entry['label']} sorted.")
@@ -112,7 +108,7 @@ class Focus(EventHandler):
         if len(values) < 2:
             return None
         self._carried = False
-        entry = self._entry()
+        entry = self.state.focus_entry()
         mine = sum(values[-2:]) / 2
         if mine < s.focus_min_s:
             entry["done_lap"] = st.lap

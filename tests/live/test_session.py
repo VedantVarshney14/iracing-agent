@@ -55,23 +55,23 @@ def test_the_focus_is_the_biggest_loss_and_moves_on_once_sorted(root):
     coach = coach_for(root, learning_laps=2)
     assert lap(coach, {1: 0.3, 2: 0.1, 3: 0.0, 4: 0.0}) is None  # still learning
     news = lap(coach, {1: 0.3, 2: 0.2, 3: 0.0, 4: 0.0})
-    assert coach.focus == 1 and news == "Focus now: Turn 1."
+    assert coach.state.focus == 1 and news == "Focus now: Turn 1."
     assert lap(coach, {1: 0.05, 2: 0.2}) is None  # one good lap isn't enough
     news = lap(coach, {1: 0.02, 2: 0.25})
-    assert news == "Turn 1 sorted. Focus now: Turn 2." and coach.focus == 2
-    assert coach.focus_log[0]["done_lap"] == 4 and coach.focus_log[1]["set_lap"] == 4
+    assert news == "Turn 1 sorted. Focus now: Turn 2." and coach.state.focus == 2
+    assert coach.state.focus_log[0]["done_lap"] == 4 and coach.state.focus_log[1]["set_lap"] == 4
 
 
 def test_with_a_focus_only_it_and_big_losses_are_cued(root):
     coach = coach_for(root, learning_laps=0)
     st = coach.state
     st.lap, st.learning, st.focus, st.big_trouble = 2, False, 2, {4}
-    wanted = [c.corner for c in coach.plan.cues if coach.wanted(c)]
+    wanted = [c.corner for c in coach.ctx.plan.cues if coach.wanted(c)]
     assert wanted == [2, 4]
     coach.post(SetFocus(corner=3))
     coach.pipeline.run_inbox()
-    assert coach.focus == 3 and coach.focus_log[-1]["manual"] is True
-    assert coach.pipeline.get(CueCaller).text(coach.plan.cue_for(3)).startswith("Focus. ")
+    assert coach.state.focus == 3 and coach.state.focus_log[-1]["manual"] is True
+    assert coach.pipeline.get(CueCaller).text(coach.ctx.plan.cue_for(3)).startswith("Focus. ")
 
 
 def test_a_session_replays_and_logs_what_was_said(root, recording):
@@ -135,14 +135,13 @@ def test_recordings_lists_ibt_files_newest_first(tmp_path, recording):
 
 def drive_kinds(root, kinds, seed=11):
     """Replay synthetic laps of the given kinds through a coach judged against the stored best."""
-    from iagent.live.run import own_best
 
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)
         src = SyntheticSource(n_laps=len(kinds), kinds=kinds, seed=seed, start_m=2900.0)
         coach = LiveCoach(src.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(CapturedVoice()),
-                          Settings(learning_laps=0), own_best=own_best(ws, TRACK, CAR))
+                          Settings(learning_laps=0), own_best=ws.best_lap(TRACK, CAR))
     finally:
         ws.close()
     laps = []
@@ -159,7 +158,7 @@ def test_slow_laps_are_tranquille_and_get_no_cues_or_numbers(root):
     assert [lap["pace"] for lap in laps] == ["pushing", "tranquille", "pushing"]
     slow = laps[1]
     assert slow["pushing_share"] < 0.6 and slow["corners"] == []  # nothing assessed while cruising
-    spoken = coach.arbiter.voice.spoken
+    spoken = coach.ctx.arbiter.voice.spoken
     cruising = [s for s in spoken if s.kind == "approach" and laps[0]["at"] + 15 < s.at_s < slow["at"]]
     assert cruising == []  # no corner cues on the slow lap (after it was spotted)
     assert not any(s.kind == "summary" and laps[0]["at"] < s.at_s < slow["at"] + 5 and "down" in s.text for s in spoken)

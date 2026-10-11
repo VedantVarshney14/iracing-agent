@@ -121,6 +121,15 @@ class Workspace:
         except ValueError as e:
             raise WorkspaceError(str(e)) from e
 
+    def best_lap(self, track: str, car: str, exclude_session: str | None = None) -> pd.DataFrame | None:
+        """The driver's fastest valid lap on this track and car (gridded), or None. A backtest
+        leaves out the session it replays (EXCLUDE_SESSION): that lap hadn't happened yet."""
+        if not (self.root / "index.sqlite").exists():
+            return None
+        laps = [r for r in self.store().list(track=track, car=car, valid_only=True)
+                if r.lap_time and r.session_id != exclude_session]
+        return self.store().load(min(laps, key=lambda r: r.lap_time).lap_id) if laps else None
+
     def meta_path(self, lap_id: str) -> Path:
         return self.root / "reference" / "meta" / f"{lap_id}.json"
 

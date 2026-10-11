@@ -156,16 +156,16 @@ class LiveSessions:
         }
         if coach is not None:
             last = self._last_frame
-            focus = coach.focus_entry()
+            focus = coach.state.focus_entry()
             out.update({
-                "track": {"key": coach.session.track_key, "name": coach.session.track_name,
-                          "car": coach.session.car_key, "car_name": coach.session.car_name},
-                "ref": {"lap_id": coach.plan.ref_lap_id, "lap_time": coach.plan.ref_lap_time, "driver": self._ref_driver},
-                "laps_done": coach.laps,
-                "mode": coach.mode,
+                "track": {"key": coach.ctx.session.track_key, "name": coach.ctx.session.track_name,
+                          "car": coach.ctx.session.car_key, "car_name": coach.ctx.session.car_name},
+                "ref": {"lap_id": coach.ctx.plan.ref_lap_id, "lap_time": coach.ctx.plan.ref_lap_time, "driver": self._ref_driver},
+                "laps_done": coach.state.lap,
+                "mode": coach.state.mode,
                 "learning": coach.state.learning,
                 "focus": focus,
-                "cues": [{"corners": c.corners, "text": c.text, "cued": coach.wanted(c)} for c in coach.plan.cues],
+                "cues": [{"corners": c.corners, "text": c.text, "cued": coach.wanted(c)} for c in coach.ctx.plan.cues],
                 "lap_dist": last.get("LapDist") if last else None,
                 "session_time": last.session_time if last else None,
             })
@@ -244,18 +244,18 @@ class LiveSessions:
     def _attach(self, coach: LiveCoach) -> None:
         ws = Workspace(self.workspace)
         try:
-            self._ref_driver = ws.ref_meta(coach.plan.ref_lap_id).get("driver")
+            self._ref_driver = ws.ref_meta(coach.ctx.plan.ref_lap_id).get("driver")
         finally:
             ws.close()
         self.coach = coach
         self.state = "running"
         coach.on("*", self._event)
-        self._log({"type": "status", "state": "running", "track": coach.session.track_name,
-                   "car": coach.session.car_name, "ref": coach.plan.ref_lap_id,
-                   "track_key": coach.session.track_key, "car_key": coach.session.car_key,
-                   "ref_lap_time": coach.plan.ref_lap_time, "length_m": coach.length,
+        self._log({"type": "status", "state": "running", "track": coach.ctx.session.track_name,
+                   "car": coach.ctx.session.car_name, "ref": coach.ctx.plan.ref_lap_id,
+                   "track_key": coach.ctx.session.track_key, "car_key": coach.ctx.session.car_key,
+                   "ref_lap_time": coach.ctx.plan.ref_lap_time, "length_m": coach.ctx.plan.length_m,
                    "source": self.options.source, "file": self.options.file,
-                   "focus": coach.focus_log[-1] if coach.focus_log else None,
+                   "focus": coach.state.focus_log[-1] if coach.state.focus_log else None,
                    "rules": [r.id for r in coach.rules.rules], "crewchief": coach.settings.crewchief,
                    "engineer": self.engineer.session_id if self.engineer is not None else None})
 

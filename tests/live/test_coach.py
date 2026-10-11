@@ -66,7 +66,7 @@ class Where(CapturedVoice):
 
     def play(self, utterance, now):
         super().play(utterance, now)
-        self.at.append((utterance.text, self.frame.get("LapDist"), self.frame.get("Speed"), self.coach.laps))
+        self.at.append((utterance.text, self.frame.get("LapDist"), self.frame.get("Speed"), self.coach.state.lap))
 
 
 def drive(ws, source, settings=None):
@@ -88,10 +88,10 @@ def test_cues_finish_before_the_brake_point(ws):
     approach = [(s, at) for s, at in zip(voice.spoken, voice.at) if s.kind == "approach"]
     assert sorted(s.corner for s, _ in approach) == [1, 1, 2, 2, 3, 3, 4, 4]  # both learning laps, every corner
     for spoken, (text, d, v, _) in approach:
-        cue = coach.plan.cue_for(spoken.corner)
-        to_target = (cue.target_m - d) % coach.length
+        cue = coach.ctx.plan.cue_for(spoken.corner)
+        to_target = (cue.target_m - d) % coach.ctx.plan.length_m
         assert to_target / v >= len(text) / 14.0 + 0.25, text  # it can be said before the brake point
-    assert coach.arbiter.dropped == [] or all(u.kind != "approach" for u in coach.arbiter.dropped)
+    assert coach.ctx.arbiter.dropped == [] or all(u.kind != "approach" for u in coach.ctx.arbiter.dropped)
 
 
 def test_after_the_learning_laps_only_struggling_corners_are_cued(ws):

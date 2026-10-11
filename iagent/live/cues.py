@@ -12,6 +12,7 @@ lap. Rewriting a cue's text without giving a short form drops the template's sho
 """
 
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,8 @@ MERGE_GAP_M = 150  # a corner this close after the previous one's exit is cued t
 MERGE_MAX = 2  # corners per cue: longer cues come too late
 HARD_BRAKE, MEDIUM_BRAKE = 0.8, 0.5  # reference brake pressure (0-1)
 LIFT_THROTTLE = 0.6  # a no-brake corner whose throttle dips below this is a lift
+logger = logging.getLogger("iagent.live")
+
 PLAN_VERSION = 2  # 2: cues have short forms
 GEARS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth", 7: "seventh", 8: "eighth"}
 
@@ -179,6 +182,23 @@ def save_next_plan(root: Path, track_key: str, car_key: str, focus: int, note: s
 def load_next_plan(root: Path, track_key: str, car_key: str) -> dict | None:
     path = next_plan_path(root, track_key, car_key)
     return json.loads(path.read_text()) if path.exists() else None
+
+
+def plan_for(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> CuePlan:
+    """The saved plan for this track and car, built (and saved) if there isn't one or REF_ID asks
+    for a different reference lap; a plan in an older format is rebuilt, keeping rewritten cues."""
+    plan = None if ref_id else load_plan(ws.root, track, car)
+    if plan is not None and plan.version < PLAN_VERSION:  # older format: rebuild, keeping rewritten cues
+        try:
+            plan = build_plan(ws, track, car, plan.ref_lap_id)
+        except WorkspaceError:  # its reference lap is gone
+            plan = build_plan(ws, track, car)
+        save_plan(ws.root, plan)
+    if plan is None:
+        plan = build_plan(ws, track, car, ref_id)
+        path = save_plan(ws.root, plan)
+        logger.info("Cue plan for %s / %s from %s: %s", track, car, plan.ref_lap_id, path)
+    return plan
 
 
 def use_next_plan(root: Path, track_key: str, car_key: str) -> dict | None:

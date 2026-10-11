@@ -5,73 +5,38 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 from iagent.live.coach import LiveCoach, Settings
-from iagent.live.cues import PLAN_VERSION, CuePlan, build_plan, load_plan, save_plan, use_next_plan
+from iagent.live.cues import use_next_plan
 from iagent.live.rulebook import load_rules, signature
-from iagent.live.speech import Arbiter, Voice
+from iagent.live.speech import Voice
 from iagent.telemetry.frames import Frame
 from iagent.telemetry.session import SessionInfo
-from iagent.workspace import Workspace, WorkspaceError
 
 logger = logging.getLogger("iagent.live")
 
 
-def plan_for(ws: Workspace, session: SessionInfo, ref_id: str | None = None, rebuild: bool = False) -> CuePlan:
-    """The saved plan for this track and car, built (and saved) if there isn't one."""
-    plan = None if rebuild or ref_id else load_plan(ws.root, session.track_key, session.car_key)
-    if plan is not None and plan.version < PLAN_VERSION:  # older format: rebuild, keeping rewritten cues
-        try:
-            plan = build_plan(ws, session.track_key, session.car_key, plan.ref_lap_id)
-        except WorkspaceError:  # its reference lap is gone
-            plan = build_plan(ws, session.track_key, session.car_key)
-        save_plan(ws.root, plan)
-    if plan is None:
-        plan = build_plan(ws, session.track_key, session.car_key, ref_id)
-        path = save_plan(ws.root, plan)
-        logger.info("Cue plan for %s / %s from %s: %s", session.track_key, session.car_key, plan.ref_lap_id, path)
-    return plan
-
-
 def start_coach(root: Path, session: SessionInfo, voice: Voice, settings: Settings | None = None,
                 ref_id: str | None = None, engineer=None, radio_context=None) -> LiveCoach:
-    ws = Workspace(root)
-    try:
-        plan = plan_for(ws, session, ref_id)
-        cmap = ws.corner_map(session.track_key)
-        ref_grid = ws.load(plan.ref_lap_id)
-        own = own_best(ws, session.track_key, session.car_key)
-    finally:
-        ws.close()
-    if hasattr(voice, "prepare"):
-        rendered = voice.prepare(c.text for c in plan.cues)
-        logger.info("Rendered %d cue(s)", rendered)
-    carried = use_next_plan(root, session.track_key, session.car_key)
-    if carried:
-        logger.info("Starting with the planned focus T%s (%s more session(s))", carried["focus"], carried["sessions_left"])
+    """A coach for a live (or replayed) session: the active rules, a focus planned last session,
+    and the cues rendered by the voice up front so none costs time at a brake point."""
     rules = load_rules(root, session.track_key, session.car_key, "active")
     if rules:
         logger.info("Active rules: %s", ", ".join(r.id for r in rules))
-    if hasattr(voice, "prepare"):  # cue-like rule lines with fixed text can be rendered now too
+    carried = use_next_plan(root, session.track_key, session.car_key)
+    if carried:
+        logger.info("Starting with the planned focus T%s (%s more session(s))", carried["focus"], carried["sessions_left"])
+    coach = LiveCoach.load(root, session, voice, settings, rules, ref_id, carried["focus"] if carried else None,
+                           engineer, radio_context)
+    if hasattr(voice, "prepare"):  # cues, and rule lines with fixed text
         fixed = [a.template.text for r in rules for a in r.actions if a.key == "say" and not a.template.names]
-        if fixed:
-            voice.prepare(fixed)
-    return LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own,
-                     carried_focus=carried["focus"] if carried else None, rules=rules, engineer=engineer,
-                     radio_context=radio_context)
+        logger.info("Rendered %d line(s)", voice.prepare([c.text for c in coach.ctx.plan.cues] + fixed))
+    return coach
 
 
 def reload_rules(root: Path, coach: LiveCoach) -> None:
     """Pick up rules activated, changed or deactivated since the coach started."""
-    rules = load_rules(root, coach.session.track_key, coach.session.car_key, "active")
+    rules = load_rules(root, coach.ctx.session.track_key, coach.ctx.session.car_key, "active")
     coach.rules.replace(rules)
     logger.info("Rules reloaded: %s", ", ".join(r.id for r in coach.rules.rules) or "none active")
-
-
-def own_best(ws: Workspace, track: str, car: str):
-    """The driver's fastest valid lap here (the pace that counts as pushing), or None."""
-    if not (ws.root / "index.sqlite").exists():
-        return None
-    laps = [r for r in ws.store().list(track=track, car=car, valid_only=True) if r.lap_time]
-    return ws.load(min(laps, key=lambda r: r.lap_time).lap_id) if laps else None
 
 
 def run(root: Path, session_of: Callable[[], SessionInfo], frames: Iterator[Frame], voice: Voice,

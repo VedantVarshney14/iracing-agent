@@ -20,10 +20,10 @@ import numpy as np
 
 from iagent.laps.tracks import load_track_info
 from iagent.live.coach import LiveCoach, Settings
-from iagent.live.cues import build_plan, load_plan
+from iagent.live.cues import plan_for
 from iagent.live.events import Line
 from iagent.live.rules import Rule, RuleError, RuleStats, check_against_map
-from iagent.live.speech import Arbiter, CapturedVoice
+from iagent.live.speech import CapturedVoice
 from iagent.telemetry.frames import Frame
 from iagent.telemetry.session import SessionInfo
 from iagent.workspace import Workspace, WorkspaceError
@@ -211,8 +211,7 @@ def backtest(root: Path, rules: list[Rule], track: str, car: str, sessions: list
         cmap = ws.corner_map(track)
         for rule in rules:
             check_against_map(rule, cmap)
-        plan = load_plan(root, track, car) or build_plan(ws, track, car)
-        ref_grid = ws.load(plan.ref_lap_id)
+        plan = plan_for(ws, track, car)
         sources: list[tuple[str, SessionInfo, Iterator[Frame]]] = []
         for path in ibt or []:
             from iagent.live.sources import LIVE_CHANNELS
@@ -230,7 +229,7 @@ def backtest(root: Path, rules: list[Rule], track: str, car: str, sessions: list
                 session, frames = session_frames(ws, sid, track, car)
                 sources.append((sid, session, frames))
         for name, session, frames in sources:
-            runs.append(_replay(ws, name, session, frames, plan, cmap, ref_grid, rules + others, testing, settings))
+            runs.append(_replay(root, name, session, frames, rules + others, testing, settings))
     finally:
         ws.close()
     report = {"track": track, "car": car, "ref_lap_id": plan.ref_lap_id, "sessions": [r["session"] for r in runs],
@@ -250,17 +249,16 @@ def backtest(root: Path, rules: list[Rule], track: str, car: str, sessions: list
     return report
 
 
-def _replay(ws: Workspace, name: str, session: SessionInfo, frames: Iterator[Frame], plan, cmap, ref_grid,
-            rules: list[Rule], testing: set[str], settings: Settings | None) -> dict:
-    voice = CapturedVoice()
-    own = _own_best(ws, plan.track_key, plan.car_key, exclude=session.session_id)
-    coach = LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own, rules=rules)
+def _replay(root: Path, name: str, session: SessionInfo, frames: Iterator[Frame], rules: list[Rule],
+            testing: set[str], settings: Settings | None) -> dict:
+    """One recorded session through a coach with RULES: what each rule in TESTING did."""
+    coach = LiveCoach.load(root, session, CapturedVoice(), settings, rules, exclude_session=session.session_id)
     lines: dict[str, list[dict]] = {}
 
     def on_line(e: Line):
         if e.rule in testing:
             lines.setdefault(e.rule, []).append({"status": e.status, "text": e.text, "at": round(e.at, 2),
-                                                 "lap": coach.laps, "note": e.note})
+                                                 "lap": coach.state.lap, "note": e.note})
     coach.on(Line, on_line)
     last = None
     for frame in frames:
@@ -269,7 +267,7 @@ def _replay(ws: Workspace, name: str, session: SessionInfo, frames: Iterator[Fra
     if last is not None:
         coach.finish(last.session_time)
     engine = coach.rules
-    out = {"session": name, "laps": coach.laps, "laps_driven": coach.state.laps_driven + 1, "rules": {}}
+    out = {"session": name, "laps": coach.state.lap, "laps_driven": coach.state.laps_driven + 1, "rules": {}}
     for rule_id in testing:
         out["rules"][rule_id] = {
             "session": name,
@@ -279,14 +277,6 @@ def _replay(ws: Workspace, name: str, session: SessionInfo, frames: Iterator[Fra
         }
     return out
 
-
-
-def _own_best(ws: Workspace, track: str, car: str, exclude: str | None):
-    if not (ws.root / "index.sqlite").exists():
-        return None
-    laps = [r for r in ws.store().list(track=track, car=car, valid_only=True)
-            if r.lap_time and r.session_id != exclude]
-    return ws.load(min(laps, key=lambda r: r.lap_time).lap_id) if laps else None
 
 
 def record_backtest(root: Path, rule: Rule, result: dict) -> Rule:

@@ -13,7 +13,7 @@ from iagent.live.events import CornerExit, Lap, PaceChanged
 from iagent.live.phrasing import longer as _longer
 from iagent.live.cues import build_plan, load_plan, plan_path, save_plan
 from iagent.live.rules import Rule
-from iagent.live.run import own_best, plan_for
+from iagent.live.cues import plan_for
 from iagent.live.speech import FEEDBACK, Arbiter, CapturedVoice, Utterance
 from iagent.testing.synthetic import LapKind, SyntheticSource
 from iagent.workspace import Workspace
@@ -36,7 +36,7 @@ def drive(root, kinds, settings, rules=None, seed=11):
         plan = build_plan(ws, TRACK, CAR)
         src = SyntheticSource(n_laps=len(kinds), kinds=kinds, seed=seed, start_m=2900.0)
         coach = LiveCoach(src.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(CapturedVoice()),
-                          settings, own_best=own_best(ws, TRACK, CAR), rules=rules or [])
+                          settings, own_best=ws.best_lap(TRACK, CAR), rules=rules or [])
     finally:
         ws.close()
     laps, modes = [], []
@@ -65,10 +65,10 @@ def test_a_line_has_a_longer_version_for_when_the_driver_has_time():
 def test_cues_get_shorter_once_the_driver_has_heard_them(root):
     coach, _, _ = drive(root, [LapKind.CLEAN] * 5, Settings(learning_laps=2, focus=False, summary=False))
     by_corner: dict[int, list[str]] = {}
-    for s in coach.arbiter.voice.spoken:
+    for s in coach.ctx.arbiter.voice.spoken:
         if s.kind == "approach":
             by_corner.setdefault(s.corner, []).append(s.text)
-    cue = coach.plan.cue_for(1)
+    cue = coach.ctx.plan.cue_for(1)
     texts = by_corner[1]
     assert texts[:2] == [cue.text, cue.text]  # the learning laps: in full
     assert all(t.startswith(cue.short) for t in texts[2:])  # after that, the short form (plus any hint)
@@ -79,10 +79,10 @@ def test_a_cool_down_lap_gets_a_debrief_not_silence(root):
     kinds = [LapKind.CLEAN, LapKind.CLEAN, LapKind.CLEAN, LapKind.SLOW, LapKind.CLEAN]
     coach, laps, modes = drive(root, kinds, Settings(learning_laps=1, debrief_after_s=10.0))
     slow_from = next(t for mode, t in modes if mode == "tranquille")
-    debrief = [s for s in coach.arbiter.voice.spoken if s.kind == "debrief"]
+    debrief = [s for s in coach.ctx.arbiter.voice.spoken if s.kind == "debrief"]
     assert debrief and debrief[0].text.startswith("While you cool them down")
     assert all(s.at_s >= slow_from + 10.0 for s in debrief)  # not straight after slowing (a moment)
-    approach = [s for s in coach.arbiter.voice.spoken if s.kind == "approach" and slow_from + 15 < s.at_s < laps[-1]["at"] - 60]
+    approach = [s for s in coach.ctx.arbiter.voice.spoken if s.kind == "approach" and slow_from + 15 < s.at_s < laps[-1]["at"] - 60]
     assert approach == []  # still no corner cues on the cool-down
 
 
@@ -96,16 +96,16 @@ def test_the_longer_advice_says_why_and_how():
 
 def test_with_crewchief_lap_times_are_left_to_it(root):
     coach, _, _ = drive(root, [LapKind.CLEAN] * 4, Settings(learning_laps=1, crewchief=True))
-    summaries = [s for s in coach.arbiter.voice.spoken if s.kind == "summary"]
+    summaries = [s for s in coach.ctx.arbiter.voice.spoken if s.kind == "summary"]
     assert all("down" not in s.text and "up." not in s.text for s in summaries)
     plain, _, _ = drive(root, [LapKind.CLEAN] * 4, Settings(learning_laps=1, crewchief=False))
-    assert any(" down." in s.text or " up." in s.text for s in plain.arbiter.voice.spoken if s.kind == "summary")
+    assert any(" down." in s.text or " up." in s.text for s in plain.ctx.arbiter.voice.spoken if s.kind == "summary")
 
 
 def test_crewchief_quiet_window_after_the_line(root):
     coach, laps, _ = drive(root, [LapKind.CLEAN] * 4, Settings(learning_laps=1, crewchief=True, crewchief_quiet_s=6.0))
     line_times = [lap["at"] for lap in laps]
-    for s in coach.arbiter.voice.spoken:
+    for s in coach.ctx.arbiter.voice.spoken:
         if s.kind != "approach" and s.at_s < line_times[-1]:  # (after the last line: the replay's end flush)
             assert not any(0 <= s.at_s - t < 6.0 for t in line_times), (s.text, s.at_s)
 
@@ -126,7 +126,7 @@ def test_a_rule_can_say_more_when_the_driver_is_cruising(root):
     assert Rule.from_dict(rule.to_dict()).actions[0].longer.text.startswith("Cool-down lap.")
     kinds = [LapKind.CLEAN, LapKind.CLEAN, LapKind.SLOW, LapKind.CLEAN]
     coach, _, _ = drive(root, kinds, Settings(learning_laps=1, debrief=False, debrief_after_s=5.0), [rule])
-    said = [s.text for s in coach.arbiter.voice.spoken if s.kind == "rule"]
+    said = [s.text for s in coach.ctx.arbiter.voice.spoken if s.kind == "rule"]
     assert said and said[0].startswith("Cool-down lap. Keep some heat")
 
 
@@ -143,7 +143,7 @@ def test_old_cue_plans_are_rebuilt_with_short_forms_keeping_rewritten_cues(root)
         plan_path(root, TRACK, CAR).write_text(json.dumps(raw))
         assert load_plan(root, TRACK, CAR).version == 1
         session = SyntheticSource(n_laps=1).session
-        again = plan_for(ws, session)
+        again = plan_for(ws, session.track_key, session.car_key)
     finally:
         ws.close()
     assert again.version == 2 and again.cues[0].text == "Hairpin. Big stop." and again.cues[1].short

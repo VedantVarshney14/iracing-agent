@@ -90,10 +90,10 @@ def pushing_lap(coach, losses):
 def test_a_carried_focus_is_dropped_when_it_is_fine_now(coached):
     root, _ = coached
     coach = carried_coach(root, 2)
-    assert coach.focus == 2 and coach.pipeline.get(CueCaller).text(coach.plan.cue_for(2)).startswith("Focus. ")
+    assert coach.state.focus == 2 and coach.pipeline.get(CueCaller).text(coach.ctx.plan.cue_for(2)).startswith("Focus. ")
     assert pushing_lap(coach, {1: 0.0, 2: 0.02, 3: 0.0, 4: 0.0}) is None  # one lap: not judged yet
     assert pushing_lap(coach, {1: 0.0, 2: 0.03, 3: 0.0, 4: 0.0}) == "Turn 2 is fine now."
-    assert coach.focus is None
+    assert coach.state.focus is None
 
 
 def test_a_carried_focus_gives_way_to_a_bigger_loss(coached):
@@ -101,8 +101,8 @@ def test_a_carried_focus_gives_way_to_a_bigger_loss(coached):
     coach = carried_coach(root, 2)
     pushing_lap(coach, {1: 0.6, 2: 0.2, 3: 0.0, 4: 0.0})
     news = pushing_lap(coach, {1: 0.5, 2: 0.2, 3: 0.0, 4: 0.0})
-    assert coach.focus == 1 and news == "Focus now: Turn 1."
-    assert coach.focus_log[0]["replaced"] is True
+    assert coach.state.focus == 1 and news == "Focus now: Turn 1."
+    assert coach.state.focus_log[0]["replaced"] is True
 
 
 def test_coaching_api(coached, tmp_path):

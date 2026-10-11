@@ -76,8 +76,8 @@ def live_run(ctx: Ctx, replay: Path | None, speed: float, start_at: float | None
 
     def on_start(coach):
         rules = coach.rules.rules
-        click.echo(f"Coaching {coach.session.track_name} in {coach.session.car_name}: {len(coach.plan.cues)} cues, "
-                   f"following {coach.plan.ref_lap_id}." + (f" Rules: {', '.join(r.id for r in rules)}." if rules else "")
+        click.echo(f"Coaching {coach.ctx.session.track_name} in {coach.ctx.session.car_name}: {len(coach.ctx.plan.cues)} cues, "
+                   f"following {coach.ctx.plan.ref_lap_id}." + (f" Rules: {', '.join(r.id for r in rules)}." if rules else "")
                    + (" Sharing the radio with CrewChief." if coach.settings.crewchief else "")
                    + (f" Engineer: Claude Code session {engineer.session_id}." if engineer else ""))
         for event, line in shown.items():

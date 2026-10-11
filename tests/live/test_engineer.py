@@ -13,7 +13,6 @@ from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan
 from iagent.live.engineer import Engineer, debrief_prompt, rule_prompt
 from iagent.live.events import AskEngineer, DebriefGiven, EngineerReply
-from iagent.live.run import own_best
 from iagent.live.session import LiveSessions
 from iagent.live.speech import Arbiter, CapturedVoice
 from iagent.testing.ibt_writer import write_ibt
@@ -176,7 +175,7 @@ def drive(root, reply_after_s: float | None, settings: Settings):
         kinds = [LapKind.CLEAN, LapKind.CLEAN, LapKind.CLEAN, LapKind.SLOW, LapKind.CLEAN]
         src = SyntheticSource(n_laps=len(kinds), kinds=kinds, seed=11, start_m=2900.0)
         coach = LiveCoach(src.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(CapturedVoice()),
-                          settings, own_best=own_best(ws, TRACK, CAR), engineer=engineer)
+                          settings, own_best=ws.best_lap(TRACK, CAR), engineer=engineer)
     finally:
         ws.close()
     asked, said, words = [], [], []
@@ -194,14 +193,14 @@ def test_the_cool_down_debrief_is_in_the_coachs_words_when_they_come_in_time(roo
     assert asked and asked[0][0]["fallback"] and "topics" in asked[0][0]
     assert said and said[0]["by"] == "engineer" and said[0]["text"] == WORDS
     assert words[0]["status"] == "used"
-    spoken = [s.text for s in coach.arbiter.voice.spoken if s.kind == "debrief"]
+    spoken = [s.text for s in coach.ctx.arbiter.voice.spoken if s.kind == "debrief"]
     assert " ".join(spoken) == WORDS and len(spoken) >= 1
 
 
 def test_without_a_reply_in_time_the_coach_uses_its_own_words(root):
     coach, asked, said, _ = drive(root, None, Settings(learning_laps=1, engineer_wait_s=5.0))
     assert asked and said and said[0]["by"] == "template"
-    late = [s for s in coach.arbiter.voice.spoken if s.kind == "debrief"]
+    late = [s for s in coach.ctx.arbiter.voice.spoken if s.kind == "debrief"]
     slow_at = asked[0][2] - coach.settings.slowing_after_s
     assert late[0].at_s >= slow_at + coach.settings.debrief_after_s + 5.0 - 0.1  # it waited, then spoke
 
@@ -210,7 +209,7 @@ def test_a_reply_after_the_coachs_own_words_is_not_said_too(root):
     coach, asked, said, words = drive(root, 30.0, Settings(learning_laps=1, engineer_wait_s=5.0))
     assert said and said[0]["by"] == "template"
     assert words and words[0]["status"] == "too late"
-    assert WORDS not in [s.text for s in coach.arbiter.voice.spoken]
+    assert WORDS not in [s.text for s in coach.ctx.arbiter.voice.spoken]
 
 
 def test_a_live_session_has_one_engineer_from_radio_check_to_notes(root, tmp_path):

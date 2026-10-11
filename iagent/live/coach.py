@@ -24,44 +24,50 @@ New behaviour is a new event, event handler, gate or rule: nothing in this file 
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
 import pandas as pd
 
 from iagent.analysis.corners import CornerMap
-from iagent.live.handlers import HANDLERS, CornerResult, CueCaller, Focus, Speaking
-from iagent.live.cues import CuePlan
+from iagent.live.cues import CuePlan, plan_for
 from iagent.live.events import Event, SessionEnd
+from iagent.live.handlers import HANDLERS, CornerResult, CueCaller, Speaking
 from iagent.live.pipeline import EventHandler, Pipeline
 from iagent.live.rules import Rule, RuleEngine
 from iagent.live.settings import Settings
+from iagent.live.speech import Arbiter, Voice
 from iagent.live.state import CoachState
-from iagent.live.speech import Arbiter
 from iagent.telemetry.frames import Frame
 from iagent.telemetry.session import SessionInfo
+from iagent.workspace import Workspace
 
 __all__ = ["CornerResult", "LiveCoach", "Settings"]
 
 
 @dataclass
 class Context:
-    """What every event handler may read: the session, the plan, the corner map, the reference lap."""
+    """What every event handler may read: the session, the cue plan, the corner map, the reference
+    lap, the voice, and the engineer if there is one."""
 
     session: SessionInfo
     plan: CuePlan
     cmap: CornerMap
-    ref_d: np.ndarray
-    ref_t: np.ndarray
+    ref_d: np.ndarray  # the reference lap: distance (m) ...
+    ref_t: np.ndarray  # ... and elapsed time (s) at each point
     arbiter: Arbiter
-    own_best: pd.DataFrame | None = None
-    carried_focus: int | None = None
+    own_best: pd.DataFrame | None = None  # the driver's best lap here: the pace that counts as pushing
+    carried_focus: int | None = None  # a focus planned in an earlier session
     rules: list[Rule] | None = None  # the agent's
     engineer: object | None = None  # iagent.live.engineer.Engineer: the session's conversation
     radio_context: Callable[[], dict] | None = None  # what the engineer is told about the session
 
 
 class LiveCoach:
+    """The pipeline with the coach's event handlers, the rules and speech. `state` is what it
+    knows, `ctx` what it was given, `rules` its rule engine."""
+
     def __init__(self, session: SessionInfo, plan: CuePlan, cmap: CornerMap, ref_grid: pd.DataFrame,
                  arbiter: Arbiter, settings: Settings | None = None, own_best: pd.DataFrame | None = None,
                  carried_focus: int | None = None, rules: list[Rule] | None = None, engineer=None,
@@ -74,9 +80,41 @@ class LiveCoach:
         self.settings = settings or Settings()
         self.pipeline = Pipeline(self.ctx, self.settings, [*HANDLERS, *handlers, RuleEngine, Speaking])
 
+    @classmethod
+    def load(cls, root: Path, session: SessionInfo, voice: Voice, settings: Settings | None = None,
+             rules: list[Rule] | None = None, ref_id: str | None = None, carried_focus: int | None = None,
+             engineer=None, radio_context: Callable[[], dict] | None = None,
+             exclude_session: str | None = None) -> "LiveCoach":
+        """A coach for SESSION from the workspace at ROOT: its cue plan (built on first use), corner
+        map, reference lap and the driver's best lap (leaving out EXCLUDE_SESSION, for backtests)."""
+        track, car = session.track_key, session.car_key
+        ws = Workspace(root)
+        try:
+            plan = plan_for(ws, track, car, ref_id)
+            cmap = ws.corner_map(track)
+            ref_grid = ws.load(plan.ref_lap_id)
+            own_best = ws.best_lap(track, car, exclude_session)
+        finally:
+            ws.close()
+        return cls(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own_best,
+                   carried_focus=carried_focus, rules=rules, engineer=engineer, radio_context=radio_context)
+
+    @property
+    def state(self) -> CoachState:
+        return self.pipeline.state
+
+    @property
+    def rules(self) -> RuleEngine:
+        return self.pipeline.get(RuleEngine)
+
+    def wanted(self, cue) -> bool:
+        """Would this cue be said on its next approach (if the driver is pushing)?"""
+        return self.pipeline.get(CueCaller).wanted(cue) if self.state.pushing else self.state.learning
+
     # --- driving it ----------------------------------------------------------------------------
 
     def push(self, frame: Frame) -> None:
+        """One telemetry frame through the pipeline."""
         self.pipeline.push(frame)
 
     def post(self, event: Event) -> None:
@@ -84,6 +122,7 @@ class LiveCoach:
         self.pipeline.post(event)
 
     def on(self, event: type[Event] | str, fn: Callable[[Event], None]) -> None:
+        """Call FN with every EVENT (a class or a name; "*" for all), after the handlers."""
         self.pipeline.on(event, fn)
 
     def finish(self, now: float) -> None:
@@ -91,62 +130,8 @@ class LiveCoach:
         queued play out (for replays and tests)."""
         self.pipeline.emit(SessionEnd())
         self.pipeline.run()
-        end, t = now + 30.0, now
-        while self.arbiter.queue and t < end:
-            self.arbiter.tick(t)
+        arbiter, end, t = self.ctx.arbiter, now + 30.0, now
+        while arbiter.queue and t < end:
+            arbiter.tick(t)
             t += 0.1
         self.pipeline.run()
-
-    # --- what it knows -------------------------------------------------------------------------
-
-    @property
-    def state(self) -> CoachState:
-        return self.pipeline.state
-
-    @property
-    def session(self) -> SessionInfo:
-        return self.ctx.session
-
-    @property
-    def plan(self) -> CuePlan:
-        return self.ctx.plan
-
-    @property
-    def cmap(self) -> CornerMap:
-        return self.ctx.cmap
-
-    @property
-    def arbiter(self) -> Arbiter:
-        return self.ctx.arbiter
-
-    @property
-    def length(self) -> float:
-        return self.ctx.plan.length_m
-
-    @property
-    def rules(self) -> RuleEngine:
-        return self.pipeline.get(RuleEngine)
-
-    @property
-    def laps(self) -> int:
-        return self.state.lap
-
-    @property
-    def mode(self) -> str:
-        return self.state.mode
-
-    @property
-    def focus(self) -> int | None:
-        return self.state.focus
-
-    @property
-    def focus_log(self) -> list[dict]:
-        return self.state.focus_log
-
-    def focus_entry(self) -> dict | None:
-        return self.pipeline.get(Focus)._entry()
-
-    def wanted(self, cue) -> bool:
-        """Would this cue be said on its next approach (if the driver is pushing)?"""
-        caller = self.pipeline.get(CueCaller)
-        return caller.wanted(cue) if self.state.pushing else self.state.learning
