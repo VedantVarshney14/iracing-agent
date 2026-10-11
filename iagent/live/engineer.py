@@ -77,6 +77,21 @@ Turn = Callable[
 ]  # (prompt, session id, resume, schema) -> (reply, exists)
 
 
+@dataclass
+class TurnRecord:
+    """How one request went: the words for the driver, and for the debug log what the engineer was
+    shown, what it replied, and how long it waited and took."""
+
+    kind: str
+    words: str | None
+    outcome: str  # "answered", "nothing to say", "too late" or "failed"
+    prompt: str | None = None  # None: it never got a turn
+    reply: dict | None = None  # the structured reply, as it came
+    resumed: bool = False  # the conversation already existed
+    waited_s: float = 0.0  # from asked to the turn starting (or being dropped)
+    took_s: float = 0.0
+
+
 @dataclass(order=True)
 class _Request:
     """A queued turn: ordered by priority, then by when it was asked."""
@@ -87,7 +102,8 @@ class _Request:
     prompt: str = field(compare=False)
     schema: dict = field(compare=False)
     context: dict = field(compare=False)
-    on_reply: Callable[[str | None], None] = field(compare=False)
+    on_reply: Callable[[TurnRecord], None] = field(compare=False)
+    asked: float = field(compare=False)
     deadline: float = field(compare=False)
 
 
@@ -143,12 +159,12 @@ class Engineer:
         kind: str,
         payload: dict,
         context: dict,
-        on_reply: Callable[[str | None], None],
+        on_reply: Callable[[TurnRecord], None],
         min_gap_s: float = 0.0,
     ) -> bool:
-        """Queue a turn of KIND (a key of TURNS) made from PAYLOAD; ON_REPLY gets the words (None:
-        nothing to say, too late, or it failed). False if one of this kind is already waiting or
-        running (questions always queue), or the last was under MIN_GAP_S ago."""
+        """Queue a turn of KIND (a key of TURNS) made from PAYLOAD; ON_REPLY gets how it went (its
+        `words` are None: nothing to say, too late, or it failed). False if one of this kind is
+        already waiting or running (questions always queue), or the last was under MIN_GAP_S ago."""
         spec = TURNS[kind]
         now = time.monotonic()
         with self._cv:
@@ -170,6 +186,7 @@ class Engineer:
                     spec.schema,
                     context,
                     on_reply,
+                    now,
                     now + spec.wait_s,
                 ),
             )
@@ -197,7 +214,7 @@ class Engineer:
 
     def _work(self) -> None:
         """The engineer's thread: take the most important request; if it's still worth answering,
-        take the turn with what was heard since the last one; hand back the words (or None).
+        take the turn with what was heard since the last one; hand back how it went.
         """
         while True:
             with self._cv:
@@ -207,25 +224,27 @@ class Engineer:
                     return
                 req = heapq.heappop(self._queue)
                 heard, self._heard = self._heard, []
-            reply = None
             if time.monotonic() <= req.deadline:
-                reply = self._take_turn(req, heard)
+                record = self._take_turn(req, heard)
             else:
                 logger.info(
                     "Engineer: dropped a %s request, too late to be useful", req.kind
+                )
+                record = TurnRecord(
+                    req.kind, None, "too late", waited_s=time.monotonic() - req.asked
                 )
                 with self._cv:
                     self._heard = heard + self._heard  # still news next turn
             with self._cv:
                 self._busy.discard(req.kind)
             try:
-                req.on_reply(reply)
+                req.on_reply(record)
             except Exception:
                 logger.exception("Engineer: reply handler failed")
 
-    def _take_turn(self, req: _Request, heard: list[str]) -> str | None:
-        """One turn: what was heard on the radio, the session, then the request; returns the words
-        from the structured reply, or None if the turn failed."""
+    def _take_turn(self, req: _Request, heard: list[str]) -> TurnRecord:
+        """One turn: what was heard on the radio, the session, then the request; returns how it
+        went, with the words from the structured reply."""
         parts = []
         if heard:
             parts.append(
@@ -234,16 +253,24 @@ class Engineer:
         if req.context:
             parts.append("<session>\n" + _context(req.context) + "\n</session>")
         parts.append(req.prompt)
+        prompt, resumed, start = "\n\n".join(parts), self._exists, time.monotonic()
+        record = TurnRecord(
+            req.kind, None, "failed", prompt, resumed=resumed, waited_s=start - req.asked
+        )
         try:
-            reply, exists = self._turn(
-                "\n\n".join(parts), self.session_id, self._exists, req.schema
-            )
+            reply, exists = self._turn(prompt, self.session_id, resumed, req.schema)
         except Exception:
             logger.exception("Engineer: the turn failed")
-            return None
+            record.took_s = time.monotonic() - start
+            return record
+        record.took_s = time.monotonic() - start
         self._exists = self._exists or exists
         self.turns += 1
-        return TURNS[req.kind].words(reply) if isinstance(reply, dict) else None
+        if isinstance(reply, dict):
+            record.reply = reply
+            record.words = TURNS[req.kind].words(reply)
+            record.outcome = "answered" if record.words else "nothing to say"
+        return record
 
 
 def _context(ctx: dict) -> str:

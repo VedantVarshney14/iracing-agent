@@ -36,8 +36,8 @@ def doc(
 @dataclass(kw_only=True)
 class Event:
     """Base of every event. `name` is how rules and the session log refer to it; `log` puts it in
-    the session log; `judged` marks events about driving, which rules with `pushing_only` ignore
-    while the driver isn't pushing."""
+    the session log (every event but frames and ticks goes in the debug log); `judged` marks events
+    about driving, which rules with `pushing_only` ignore while the driver isn't pushing."""
 
     name: ClassVar[str] = ""
     log: ClassVar[bool] = False
@@ -70,6 +70,10 @@ class Event:
     def variable_docs(cls) -> dict[str, str]:
         """What a rule on this event can read (beyond the shared state)."""
         return cls.field_docs()
+
+    def logged(self) -> bool:
+        """Whether this one goes in the session log (`log`, unless the event decides per instance)."""
+        return self.log
 
     def public(self) -> dict[str, Any]:
         """The fields worth logging: everything but internal objects."""
@@ -414,11 +418,13 @@ class Line(Event):
 
 @dataclass(kw_only=True)
 class RuleFired(Event):
-    """A rule fired, or a limit held it back."""
+    """A rule fired, or a limit held it back. The coach's own rules (group builtin) fire at every
+    cue and corner: those go in the debug log only."""
 
     name: ClassVar[str] = "rule"
     log: ClassVar[bool] = True
     rule: str = doc("the rule", "")
+    group: str = doc('"agent" or "builtin" (the coach\'s own)', "agent")
     result: str = doc('"fired" or "limited"', "")
     why: str | None = doc("the limit that held it")
     trigger: str = doc("the event it fired on", "")
@@ -427,6 +433,9 @@ class RuleFired(Event):
     lap: int = doc("laps counted", 0)
     lap_no: int = doc("line crossings", 0)
     lap_dist: float | None = doc("where (m)")
+
+    def logged(self) -> bool:
+        return self.group != "builtin"
 
 
 # --- from the driver and the browser (posted from other threads) -------------------------------
@@ -506,3 +515,20 @@ class EngineerReply(Event):
     rule: str | None = doc("as asked")
     stretch: int | None = doc("as asked")
     status: str | None = doc('for a debrief: "used", "too late" or "none"')
+
+
+@dataclass(kw_only=True)
+class EngineerTurn(Event):
+    """How a request to the engineer went, posted just before its `EngineerReply`: the exact prompt
+    it was shown, the structured reply as it came, and the timing. For the debug log."""
+
+    name: ClassVar[str] = "engineer_turn"
+    kind: str = doc("what for: briefing, question, rule, debrief, wrap_up", "")
+    rule: str | None = doc("the rule that asked, for kind rule")
+    asked_at: float | None = doc("when it was asked (session time)")
+    outcome: str = doc('"answered", "nothing to say", "too late" or "failed"', "")
+    prompt: str | None = doc("what the engineer was shown, or none (it never got a turn)")
+    reply: dict | None = doc("the structured reply, as it came")
+    resumed: bool = doc("the session's conversation already existed", False)
+    waited_s: float = doc("from asked to the turn starting (or being dropped)", 0.0)
+    took_s: float = doc("how long the turn took", 0.0)

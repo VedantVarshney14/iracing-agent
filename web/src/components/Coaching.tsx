@@ -6,6 +6,7 @@ import { useWidth } from "../geometry";
 import type { AdviceOutcome, FocusOutcome, LiveEvent, LiveStatus, SessionLap, SessionReport, SessionRow, SystemInfo, Verdict } from "../types";
 import { renderText } from "./Chat";
 import { ACTIVE, Running, StartForm } from "./CoachControls";
+import { DebugView } from "./DebugView";
 
 type Open = (track: string, car: string, lap: string, ref: string, corner?: number) => void;
 
@@ -18,6 +19,7 @@ export function Coaching({ system, onOpenLap }: { system: SystemInfo | null; onO
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0); // bumped after asking for a debrief, to follow it
+  const [view, setView] = useState<"review" | "debug">(new URLSearchParams(window.location.search).get("view") === "debug" ? "debug" : "review");
   const running = live != null && ACTIVE.has(live.state);
   const liveId = useRef<string | null>(null);
 
@@ -81,6 +83,13 @@ export function Coaching({ system, onOpenLap }: { system: SystemInfo | null; onO
     };
   }, [selected, running, reload]);
 
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (view === "debug") q.set("view", "debug");
+    else q.delete("view");
+    window.history.replaceState(null, "", `?${q}`);
+  }, [view]);
+
   return (
     <div className="coaching">
       {running && <Running status={live!} onError={setError} />}
@@ -106,11 +115,19 @@ export function Coaching({ system, onOpenLap }: { system: SystemInfo | null; onO
         </aside>
 
         <main className="session-main">
+          {selected && (
+            <div className="segmented view-switch" role="group" aria-label="View">
+              <button type="button" aria-pressed={view === "review"} onClick={() => setView("review")}>Review</button>
+              <button type="button" aria-pressed={view === "debug"} onClick={() => setView("debug")}>Debug: the whole loop</button>
+            </div>
+          )}
+          {view === "debug" && selected ? <DebugView key={selected} id={selected} live={running && selected === liveId.current} /> : <>
           {error && <div className="error" role="alert">{error}</div>}
           {report ? <SessionView key={report.id} report={report} live={running && report.id === liveId.current} onOpenLap={onOpenLap}
             onChanged={() => setReload((n) => n + 1)} /> : (
             !error && <p className="muted placeholder">{sessions.length ? "Loading…" : ""}</p>
           )}
+          </>}
         </main>
       </div>
     </div>

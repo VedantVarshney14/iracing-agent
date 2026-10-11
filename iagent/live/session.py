@@ -5,7 +5,9 @@ The coach runs on its own thread. Everything it does is logged as events (lines 
 dropped and why, laps, focus changes, the driver's questions and the answers), kept in memory for
 the page and appended to `sessions/live/<id>.jsonl` in the workspace for review afterwards.
 Everything the coach does is an event in its pipeline; the session log is a listener that writes
-the ones defined as logged. Anything the browser asks of the running coach (say an answer, change
+the ones defined as logged. The debug log (`sessions/live/debug/<id>.jsonl`) has the whole loop:
+the session log, and every other event but frames and ticks (each rule firing with the values it
+saw, each engineer turn with the exact prompt and reply), for working on the coach itself. Anything the browser asks of the running coach (say an answer, change
 the focus) is posted to the pipeline as an event, handled on the coach's thread at the next frame,
 so the coach itself needs no locking; so are the engineer's replies.
 
@@ -24,6 +26,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 from iagent.live.coach import LiveCoach, Settings
+from iagent.live.debug_log import DebugLog, append, debug_log_path
 from iagent.live.run import run
 from iagent.live.events import AskEngineer, EngineerReply, Say, SetFocus
 from iagent.live.speech import CapturedVoice, Voice
@@ -93,6 +96,7 @@ class LiveSessions:
         self._stop = threading.Event()
         self._events: list[dict] = []
         self._log_path: Path | None = None
+        self._debug: DebugLog | None = None
         self.coach: LiveCoach | None = None
         self.state = (
             "idle"  # idle, starting, waiting (for iRacing), running, stopping, error
@@ -126,6 +130,7 @@ class LiveSessions:
             self._log_path = (
                 self.workspace / "sessions" / "live" / f"{self.session_id}.jsonl"
             )
+            self._debug = DebugLog(debug_log_path(self.workspace, self.session_id))
             self.state = "starting"
             self._thread = threading.Thread(
                 target=self._run, name="live-coach", daemon=True
@@ -363,9 +368,12 @@ class LiveSessions:
         )
 
     def _event(self, e) -> None:
-        """The pipeline's events that are defined as logged go in the session log."""
-        if e.log:
+        """The pipeline's events that are defined as logged go in the session log; the rest (but
+        frames and ticks) in the debug log only."""
+        if e.logged():
             self._log({"type": e.name, "at": e.at, **e.public()})
+        elif self._debug is not None:
+            self._debug.event(e)
         if (
             isinstance(e, EngineerReply) and e.kind == "question"
         ):  # shown with the question on the page
@@ -380,13 +388,9 @@ class LiveSessions:
             **event,
         }
         self._events.append(event)
-        if self._log_path is not None:
-            try:
-                self._log_path.parent.mkdir(parents=True, exist_ok=True)
-                with self._log_path.open("a") as f:
-                    f.write(json.dumps(event) + "\n")
-            except OSError:
-                logger.exception("Couldn't write the session log")
+        append(self._log_path, json.dumps(event))
+        if self._debug is not None:
+            self._debug.write(event)
         return event
 
     def _now(self) -> float | None:
