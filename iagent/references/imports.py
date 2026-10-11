@@ -22,6 +22,8 @@ NO_TOKEN = (
 
 
 def client_from_env() -> g61.Garage61Client:
+    """A Garage61 client with the token from the environment or token file; WorkspaceError
+    explaining setup if there's none."""
     token = g61.find_token()
     if not token:
         raise WorkspaceError(NO_TOKEN)
@@ -141,7 +143,7 @@ def import_lap(ws: Workspace, client: g61.Garage61Client, gid: str) -> dict:
         lap = g61.csv_to_lap(csv_text, session, meta.get("lapTime"), meta.get("lapNumber"))
     except ValueError as e:
         raise WorkspaceError(str(e)) from e
-    rec = ws.refs(create=True).save(lap, "garage61")
+    rec = ws.refs(create=True).save(lap)
     path = ws.meta_path(rec.lap_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(summary, indent=2) + "\n")

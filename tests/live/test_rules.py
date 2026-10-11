@@ -4,13 +4,12 @@ import pytest
 from click.testing import CliRunner
 
 from iagent.cli import cli
-from iagent.laps.recorder import record
-from iagent.laps.store import ParquetLapStore
-from iagent.live import rulebook
+from iagent.live.rules import backtest as rule_backtest
+from iagent.live.rules import store as rulebook
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.cues import build_plan
-from iagent.live.expr import Expr, ExprError, Template
-from iagent.live.rules import Rule, RuleEngine, RuleError, describe
+from iagent.live.rules.expr import Expr, ExprError, Template
+from iagent.live.rules import Rule, RuleError, describe, rule_schema
 from iagent.live.session import LiveSessions
 from iagent.live.speech import Arbiter, CapturedVoice
 from iagent.testing.ibt_writer import write_ibt
@@ -20,16 +19,11 @@ from iagent.workspace import Workspace
 TRACK, CAR = "synthetic", "synthcar"
 
 
-@pytest.fixture
-def root(tmp_path):
-    store = ParquetLapStore(tmp_path / "ws")
-    record(SyntheticSource(n_laps=4, seed=1), store, "synthetic")
-    store.close()
-    return tmp_path / "ws"
-
-
 def rule(**raw) -> Rule:
-    return Rule.from_dict({"id": "r", "track": TRACK, "action": {"say": "Hello."}, **raw})
+    return Rule.from_dict({"id": "r", "track": TRACK, "actions": [{"say": "Hello."}], **raw})
+
+
+EXIT = {"event": "corner_exit"}  # every corner
 
 
 def drive(root, rules, source=None, settings=None):
@@ -38,11 +32,11 @@ def drive(root, rules, source=None, settings=None):
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)
-        engine = RuleEngine(rules)
         coach = LiveCoach(source.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id),
-                          Arbiter(CapturedVoice()), settings or Settings(learning_laps=1), rules=engine)
+                          Arbiter(CapturedVoice()), settings or Settings(learning_laps=1), rules=rules)
     finally:
         ws.close()
+    engine = coach.rules
     frames = list(source.frames())
     coach._frames_seen = []
     for f in frames:
@@ -90,25 +84,32 @@ def test_templates_format_holes_and_stay_silent_on_missing_values():
 
 def test_rules_are_checked_when_added_with_messages_that_say_what_to_fix():
     with pytest.raises(RuleError, match="unknown variable.*brake_dif_m"):
-        rule(when={"corner_exit": 1}, **{"if": "brake_dif_m < -10"})
-    with pytest.raises(RuleError, match="exactly one trigger"):
-        rule(when={"corner_exit": 1, "lap": "complete"})
-    with pytest.raises(RuleError, match="priority"):
-        Rule.from_dict({"id": "r", "when": {"lap": "complete"}, "action": {"say": "x", "priority": "loud"}})
-    with pytest.raises(RuleError, match="Unknown field"):
-        rule(when={"lap": "complete"}, then={})
+        rule(when={"event": "corner_exit", "corner": 1}, **{"if": "brake_dif_m < -10"})
+    with pytest.raises(RuleError, match="when.event is one of"):
+        rule(when={"event": "corner_exitt"})
+    with pytest.raises(RuleError, match="when.corner"):  # corners are the map's numbers, not names to guess at
+        rule(when={"event": "corner_exit", "corner": "Turn 1"})
+    with pytest.raises(RuleError, match="actions.0"):
+        rule(when={"event": "lap"}, actions=[{"say": "x", "priority": "loud"}])
+    with pytest.raises(RuleError, match="then"):
+        rule(when={"event": "lap"}, then={})
     with pytest.raises(RuleError, match="lap_time"):  # a lap variable isn't there at a corner exit
-        rule(when={"corner_exit": 1}, action={"say": "{lap_time}"})
-    r = rule(when={"at": "T2 apex", "offset_m": -50}, **{"if": "speed_kph > 100"}, limits={"cooldown_laps": 1})
+        rule(when=EXIT, actions=[{"say": "{lap_time}"}])
+    with pytest.raises(RuleError, match="when.at"):
+        rule(when={"event": "approach", "at": "T2 apex"})
+    r = rule(when={"event": "approach", "at": {"corner": 2, "point": "apex"}, "offset_m": -50},
+             **{"if": "speed_kph > 100"}, limits={"cooldown_laps": 1})
     assert Rule.from_dict(r.to_dict()).fingerprint == r.fingerprint
-    assert r.fingerprint != rule(when={"at": "T2 apex", "offset_m": -40}, **{"if": "speed_kph > 100"},
-                                 limits={"cooldown_laps": 1}).fingerprint
-    assert set(describe()["triggers"]) >= {"at", "corner_exit", "lap", "pit", "condition", "every_laps"}
+    assert r.fingerprint != rule(when={"event": "approach", "at": {"corner": 2, "point": "apex"}, "offset_m": -40},
+                                 **{"if": "speed_kph > 100"}, limits={"cooldown_laps": 1}).fingerprint
+    corner = next(w for w in rule_schema()["properties"]["when"]["oneOf"] if w["properties"]["event"]["const"] == "corner_exit")
+    assert corner["properties"]["corner"]["anyOf"][0] == {"type": "integer"}  # typed from the event's field
+    assert set(describe()["events"]) >= {"approach", "corner_exit", "lap", "pit", "frame", "tick", "pace", "focus"}
 
 
 def test_a_corner_exit_rule_sees_the_same_numbers_as_the_coach(root):
-    r = rule(when={"corner_exit": "T1"}, action={"log": "{name} {brake_m} vs {ref_brake_m}: {brake_diff_m}"},
-             pushing_only=False)
+    r = rule(when={"event": "corner_exit", "corner": 1},
+             actions=[{"log": "{name} {brake_m} vs {ref_brake_m}: {brake_diff_m}"}], pushing_only=False)
     coach, engine = drive(root, [r])
     fires = fired(engine)
     assert len(fires) >= 3  # once per lap past T1
@@ -119,10 +120,10 @@ def test_a_corner_exit_rule_sees_the_same_numbers_as_the_coach(root):
 
 
 def test_conditions_in_a_row_and_limits(root):
-    always = {"corner_exit": "any"}
+    always = EXIT
     _, engine = drive(root, [rule(when=always, pushing_only=False, **{"if": "corner == 2"})])
     assert {f["values"]["corner"] for f in fired(engine)} == {2}
-    _, engine = drive(root, [rule(when={"corner_exit": 2}, pushing_only=False, in_a_row=2)])
+    _, engine = drive(root, [rule(when={"event": "corner_exit", "corner": [2]}, pushing_only=False, in_a_row=2)])
     n_exits = engine.stats["r"].occurrences
     assert len(fired(engine)) == n_exits // 2  # every second time: the streak restarts after firing
     _, engine = drive(root, [rule(when=always, pushing_only=False, limits={"max_per_lap": 1})])
@@ -133,97 +134,97 @@ def test_conditions_in_a_row_and_limits(root):
 
 
 def test_a_position_rule_finishes_before_its_point_once_per_pass(root):
-    r = rule(when={"at": "T3", "lead_s": 0.5}, action={"say": "Three. Stay off the kerb."})
+    r = rule(when={"event": "approach", "at": {"corner": 3}, "lead_s": 0.5}, actions=[{"say": "Three. Stay off the kerb."}])
     coach, engine = drive(root, [r], settings=Settings(learning_laps=0, summary=False))
-    target = coach.plan.cue_for(3).target_m
+    target = coach.ctx.plan.cue_for(3).target_m
     fires = fired(engine)
     assert len(fires) == len({f["lap_no"] for f in fires}) >= 3
-    said = [s for s in coach.arbiter.voice.spoken if s.text == "Three. Stay off the kerb."]
+    said = [s for s in coach.ctx.arbiter.voice.spoken if s.text == "Three. Stay off the kerb."]
     assert said
     for s in said:
         f = next(f for f in coach._frames_seen if f.session_time >= s.at_s)
-        to_target = (target - f.get("LapDist")) % coach.length
+        to_target = (target - f.get("LapDist")) % coach.ctx.plan.length_m
         assert to_target / f.get("Speed") >= len(s.text) / 14.0 + 0.25  # it can be said in time
 
 
 def test_lap_pit_and_schedule_triggers(root):
     rules = [
-        Rule.from_dict({"id": "best", "when": {"lap": "complete"}, "if": "new_best",
-                        "action": {"wake": "new best {lap_time:.3f}"}}),
-        Rule.from_dict({"id": "pit-in", "when": {"pit": "entry"}, "action": {"log": "in"}}),
-        Rule.from_dict({"id": "pit-out", "when": {"pit": "exit"}, "action": {"log": "out"}}),
-        Rule.from_dict({"id": "every2", "when": {"every_laps": 2}, "action": {"log": "lap {lap}"}}),
-        Rule.from_dict({"id": "hello", "when": {"session_start": True}, "action": {"say": "Let's go."}}),
-        Rule.from_dict({"id": "fast", "when": {"condition": "speed_kph > 150", "for_s": 1.0, "rearm_s": 3.0},
-                        "pushing_only": False, "action": {"log": "fast"}, "limits": {"max_per_lap": 1}}),
+        Rule.from_dict({"id": "best", "when": {"event": "lap"}, "if": "new_best",
+                        "actions": [{"ask_engineer": "new best {lap_time:.3f}"}]}),
+        Rule.from_dict({"id": "pit-in", "when": {"event": "pit", "pit": "entry"}, "actions": [{"log": "in"}]}),
+        Rule.from_dict({"id": "pit-out", "when": {"event": "pit", "pit": "exit"}, "actions": [{"log": "out"}]}),
+        Rule.from_dict({"id": "every2", "when": {"event": "lap", "where": "lap % 2 == 0"}, "actions": [{"log": "lap {lap}"}]}),
+        Rule.from_dict({"id": "hello", "when": {"event": "session_start"}, "actions": [{"say": "Let's go."}]}),
+        Rule.from_dict({"id": "fast", "when": {"event": "frame", "edge": "speed_kph > 150", "for_s": 1.0, "rearm_s": 3.0},
+                        "pushing_only": False, "actions": [{"log": "fast"}], "limits": {"max_per_lap": 1}}),
     ]
     kinds = [LapKind.OUT_LAP, LapKind.CLEAN, LapKind.CLEAN, LapKind.CLEAN, LapKind.PIT_IN]
     coach, engine = drive(root, rules, SyntheticSource(n_laps=5, kinds=kinds, seed=3))
     assert len(fired(engine, "pit-in")) == 1
     assert fired(engine, "pit-out")[0]["lap_no"] == 0  # leaving the pits on the out lap
     assert [f["values"]["lap"] for f in fired(engine, "every2")] == [2]  # three counted laps: the out lap doesn't count
-    assert len(fired(engine, "hello")) == 1 and coach.arbiter.voice.spoken[0].text == "Let's go."
-    assert fired(engine, "best") and all(f["actions"][0]["wake"].startswith("new best") for f in fired(engine, "best"))
+    assert len(fired(engine, "hello")) == 1 and "Let's go." in [s.text for s in coach.ctx.arbiter.voice.spoken]
+    assert fired(engine, "best") and all(f["actions"][0]["ask_engineer"].startswith("new best") for f in fired(engine, "best"))
     fast = fired(engine, "fast")
     assert 1 <= len(fast) <= 5 and all(f["values"]["speed_kph"] > 150 for f in fast)
 
 
 def test_rules_ignore_laps_and_corners_when_not_pushing(root):
-    r = rule(when={"corner_exit": "any"}, action={"log": "x"})
+    r = rule(when=EXIT, actions=[{"log": "x"}])
     _, engine = drive(root, [r], SyntheticSource(n_laps=3, kinds=[LapKind.OUT_LAP, LapKind.CLEAN, LapKind.CLEAN], seed=5))
     st = engine.stats["r"]
     assert st.skipped > 0 and st.fired == st.occurrences - st.skipped
 
 
 def test_rules_for_another_track_or_unknown_corners_are_left_out(root):
-    other = Rule.from_dict({"id": "other", "track": "spa", "when": {"lap": "complete"}, "action": {"log": "x"}})
-    ghost = rule(id="ghost", when={"corner_exit": "T12"})
-    coach, engine = drive(root, [other, ghost, rule(when={"lap": "complete"})],
+    other = Rule.from_dict({"id": "other", "track": "spa", "when": {"event": "lap"}, "actions": [{"log": "x"}]})
+    ghost = rule(id="ghost", when={"event": "corner_exit", "corner": 12})
+    coach, engine = drive(root, [other, ghost, rule(when={"event": "lap"})],
                           SyntheticSource(n_laps=2, seed=7, start_m=2900.0))
     assert [r.id for r in engine.rules] == ["r"] and "ghost" in engine.errors[0]
 
 
-# --- the rulebook --------------------------------------------------------------------------------
+# --- rules on disk, and backtests ---------------------------------------------------------------
 
 def test_rules_are_drafts_until_backtested_and_activated(root):
-    raw = {"id": "t1-early", "track": TRACK, "when": {"corner_exit": "Turn 1"}, "if": "brake_diff_m < -3",
-           "action": {"say": "{name}: braked {round5(-brake_diff_m)} metres early."}}
+    raw = {"id": "t1-early", "track": TRACK, "when": {"event": "corner_exit", "corner": 1}, "if": "brake_diff_m < -3",
+           "actions": [{"say": "{name}: braked {round5(-brake_diff_m)} metres early."}]}
     r, path = rulebook.add_rule(root, raw)
     assert path == root / "rules" / TRACK / "t1-early.json" and r.status == "draft"
     with pytest.raises(RuleError, match="exists"):
         rulebook.add_rule(root, raw)
     with pytest.raises(RuleError, match="Backtest"):
         rulebook.set_status(root, "t1-early", "active")
-    report = rulebook.backtest(root, [r], TRACK, CAR)
+    report = rule_backtest.backtest(root, [r], TRACK, CAR)
     result = report["rules"]["t1-early"]
     assert report["sessions"] == ["synthetic-1"] and result["laps"] >= 3
-    rulebook.record_backtest(root, r, result)
+    rule_backtest.record_backtest(root, r, result)
     assert rulebook.set_status(root, "t1-early", "active").status == "active"
     assert [x.id for x in rulebook.load_rules(root, TRACK, CAR, "active")] == ["t1-early"]
     edited, _ = rulebook.add_rule(root, {**raw, "if": "brake_diff_m < -8"}, replace=True)
     assert edited.status == "draft"  # changed: off until backtested again
     with pytest.raises(RuleError, match="Backtest"):
         rulebook.set_status(root, "t1-early", "active")
-    with pytest.raises(RuleError, match="No corner"):
-        rulebook.add_rule(root, {**raw, "id": "nope", "when": {"corner_exit": "Eau Rouge"}})
+    with pytest.raises(RuleError, match="no corner 9 on synthetic"):
+        rulebook.add_rule(root, {**raw, "id": "nope", "when": {"event": "corner_exit", "corner": 9}})
 
 
 def test_rules_for_every_track_live_apart_and_load_everywhere(root):
-    rulebook.add_rule(root, {"id": "pb", "when": {"lap": "complete"}, "if": "new_best", "action": {"say": "New best."}})
+    rulebook.add_rule(root, {"id": "pb", "when": {"event": "lap"}, "if": "new_best", "actions": [{"say": "New best."}]})
     assert (root / "rules" / "_any" / "pb.json").exists()
     assert [r.id for r in rulebook.load_rules(root, "spa")] == ["pb"]
     with pytest.raises(RuleError, match="needs a track"):
-        rulebook.add_rule(root, {"id": "c", "when": {"corner_exit": "T1"}, "action": {"say": "x"}})
+        rulebook.add_rule(root, {"id": "c", "when": {"event": "corner_exit", "corner": 1}, "actions": [{"say": "x"}]})
 
 
 def test_rules_cli(root):
     runner = CliRunner()
     args = ["--workspace", str(root), "rules"]
-    rule_json = json.dumps({"id": "lap-call", "when": {"lap": "complete"},
-                            "action": {"say": "{say_time(lap_time)}.", "priority": "summary"}})
+    rule_json = json.dumps({"id": "lap-call", "when": {"event": "lap"},
+                            "actions": [{"say": "{say_time(lap_time)}.", "priority": "summary"}]})
     out = runner.invoke(cli, [*args, "add", rule_json, "--track", TRACK])
     assert out.exit_code == 0, out.output
-    bad = runner.invoke(cli, [*args, "add", '{"id": "x", "when": {"lap": "complete"}, "if": "lapp > 1", "action": {"log": "x"}}'])
+    bad = runner.invoke(cli, [*args, "add", '{"id": "x", "when": {"event": "lap"}, "if": "lapp > 1", "actions": [{"log": "x"}]}'])
     assert bad.exit_code != 0 and "unknown variable" in bad.output
     out = runner.invoke(cli, [*args, "activate", "lap-call"])
     assert out.exit_code != 0 and "Backtest" in out.output
@@ -233,13 +234,16 @@ def test_rules_cli(root):
     assert runner.invoke(cli, [*args, "activate", "lap-call"]).exit_code == 0
     listed = runner.invoke(cli, [*args, "list"])
     assert "lap-call" in listed.output and "active" in listed.output
-    assert runner.invoke(cli, [*args, "vars", "--trigger", "corner_exit"]).output.count("brake_diff_m") == 1
+    out = runner.invoke(cli, [*args, "vars", "--event", "corner_exit"]).output
+    assert "  brake_diff_m " in out and "ref_min_speed_kph" in out
+    schema = json.loads(runner.invoke(cli, [*args, "schema"]).output)
+    assert schema["required"] == ["id", "when", "actions"]
     assert runner.invoke(cli, [*args, "remove", "lap-call"]).exit_code == 0
 
 
 def test_a_live_session_uses_active_rules_and_logs_them(root, tmp_path):
-    rulebook.add_rule(root, {"id": "lap-call", "track": TRACK, "when": {"lap": "complete"},
-                             "action": [{"say": "Rule says {say_time(lap_time)}."}, {"wake": "lap {lap} done"}]})
+    rulebook.add_rule(root, {"id": "lap-call", "track": TRACK, "when": {"event": "lap"},
+                             "actions": [{"say": "Rule says {say_time(lap_time)}."}, {"ask_engineer": "lap {lap} done"}]})
     rulebook.set_status(root, "lap-call", "active", force=True)
     src = SyntheticSource(n_laps=3, seed=9, start_m=2900.0)
     (tmp_path / "rec").mkdir()
@@ -251,7 +255,9 @@ def test_a_live_session_uses_active_rules_and_logs_them(root, tmp_path):
     running = next(e for e in events if e["type"] == "status" and e["state"] == "running")
     assert running["rules"] == ["lap-call"]
     assert [e for e in events if e["type"] == "rule" and e["result"] == "fired"]
-    assert [e["message"] for e in events if e["type"] == "wake"][:1] == ["lap 1 done"]
+    fired = [e for e in events if e["type"] == "rule" and e["result"] == "fired"]
+    assert fired[0]["actions"][1]["ask_engineer"] == "lap 1 done"
+    assert [e["rule"] for e in events if e["type"] == "ask_engineer" and e["kind"] == "rule"][:1] == ["lap-call"]
     lines = [e for e in events if e["type"] == "line" and e.get("rule") == "lap-call"]
     assert lines and lines[0]["kind"] == "rule"
 
@@ -260,7 +266,7 @@ def test_rules_changed_mid_session_are_picked_up(root):
     from iagent.live.run import reload_rules
 
     coach, engine = drive(root, [], SyntheticSource(n_laps=1, seed=7, start_m=2900.0))
-    rulebook.add_rule(root, {"id": "pb", "when": {"lap": "complete"}, "action": {"log": "x"}})
+    rulebook.add_rule(root, {"id": "pb", "when": {"event": "lap"}, "actions": [{"log": "x"}]})
     before = rulebook.signature(root)
     reload_rules(root, coach)
     assert engine.rules == []  # a draft isn't live

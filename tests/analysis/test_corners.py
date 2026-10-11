@@ -19,6 +19,8 @@ from iagent.testing.synthetic import DEFAULT_TRACK, PICKUP_M, SyntheticCorner, S
 
 
 def _laps(tmp_path, track=DEFAULT_TRACK, n_laps=5, **kw):
+    """Synthetic laps on TRACK recorded to a store: the representative ones, their grids, and the
+    generator's ground truth."""
     source = SyntheticSource(track=track, n_laps=n_laps, seed=3, **kw)
     store = ParquetLapStore(tmp_path)
     recs = representative(record(source, store, "synthetic"))
@@ -87,6 +89,7 @@ def test_consistency_reflects_brake_jitter(tmp_path):
 
 
 def consistency_of(path, **kw):
+    """Per-corner consistency across eight synthetic laps made with KW (e.g. more brake jitter)."""
     recs, grids, _ = _laps(path, n_laps=8, **kw)
     cmap = derive_corner_map(grids, "synthetic", "synthcar", [r.lap_id for r in recs])
     return consistency([corner_metrics(g, r.lap_time, cmap) for r, g in zip(recs, grids)])

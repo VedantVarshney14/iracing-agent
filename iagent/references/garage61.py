@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from iagent.analysis.position import has_position
-from iagent.laps.segment import REASON_INCOMPLETE, REASON_PIT_ROAD, Lap
+from iagent.laps.lap import REASON_INCOMPLETE, REASON_PIT_ROAD, Lap
 from iagent.telemetry.frames import SURFACE_OFF_TRACK, SURFACE_ON_TRACK
 from iagent.telemetry.session import SessionInfo
 
@@ -33,6 +33,8 @@ _POSITION_OFF_TRACK = 4
 
 
 class Garage61Error(RuntimeError):
+    """Garage61 refused or failed a request, with a message saying what to do about it."""
+
     pass
 
 
@@ -76,6 +78,9 @@ def save_token(token: str, path: Path | None = None) -> Path:
 
 
 class Garage61Client:
+    """Garage61's API with a personal token: the account, teams, tracks and cars, lap search,
+    telemetry CSVs and ghost files."""
+
     def __init__(self, token: str, base_url: str = BASE_URL, transport: httpx.BaseTransport | None = None):
         self._http = httpx.Client(
             base_url=base_url,
@@ -88,6 +93,8 @@ class Garage61Client:
         self._http.close()
 
     def _get(self, path: str, params: dict | None = None) -> httpx.Response:
+        """GET PATH with PARAMS (leaving out None); Garage61Error with a helpful message for a
+        rejected token, the rate limit or any other error."""
         resp = self._http.get(path, params={k: v for k, v in (params or {}).items() if v is not None})
         if resp.status_code == 401:
             raise Garage61Error("Garage61 rejected the token (401). Check GARAGE61_TOKEN.")
@@ -215,13 +222,13 @@ def csv_to_lap(text: str, session: SessionInfo, lap_time: float | None, sim_lap:
     if pct[0] > 0.01 or pct[-1] < 0.99:
         reasons.append(REASON_INCOMPLETE)
 
-    return Lap(
-        session=session,
-        seq=0,
-        frames=frames,
-        start_time=0.0,
-        end_time=end if REASON_INCOMPLETE not in reasons else None,
-        reasons=reasons,
+    return Lap.in_session(
+        session,
+        0,
+        lap_time=end if REASON_INCOMPLETE not in reasons else None,
+        reasons=tuple(reasons),
         sim_lap=sim_lap,
         off_track_s=off_track_s,
+        source="garage61",
+        frames=frames,
     )

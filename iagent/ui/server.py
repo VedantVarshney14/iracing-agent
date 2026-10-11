@@ -29,13 +29,13 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from iagent.laps.watch import TelemetryWatcher, default_telemetry_dir, ingest_file
 from iagent.live import report as session_report
 from iagent.live.cues import load_next_plan, load_plan, save_next_plan, save_plan
-from iagent.live.narrator import clean
 from iagent.live.session import LiveSessions, SessionError, recordings
 from iagent.references import garage61 as g61
 from iagent.references import ghosts
 from iagent.references import imports
 from iagent.ui import review
-from iagent.ui.coach import CoachRuns
+from iagent.agent import ClaudeCode
+from iagent.ui.chat import chat as chat_turn
 from iagent.workspace import Workspace, WorkspaceError
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -56,7 +56,7 @@ npm --prefix web run build</pre>
 def create_app(
     workspace: Path,
     static_dir: Path = STATIC_DIR,
-    coach: CoachRuns | None = None,
+    agent: ClaudeCode | None = None,
     garage61: Callable[[], g61.Garage61Client] = imports.client_from_env,
     watcher: TelemetryWatcher | None = None,
     lapfiles: Path | None = None,
@@ -64,11 +64,14 @@ def create_app(
     token_file: Path | None = None,
     live: LiveSessions | None = None,
 ) -> Starlette:
-    coach = coach or CoachRuns(workspace)
+    """The `iagent ui` app over the workspace: the lap library and review, the chat, Garage61, ghost
+    files, the telemetry watcher and live coaching. Arguments other than WORKSPACE let tests swap
+    in fakes."""
+    agent = agent or ClaudeCode(workspace)  # the coach agent: the chat, the engineer, debriefs
     if live is None:
-        from iagent.live.narrator import Narrator, ask_with
+        from iagent.live.engineer import Engineer
 
-        live = LiveSessions(workspace, narrator=Narrator(ask_with(coach)))
+        live = LiveSessions(workspace, engineer=lambda: Engineer.over(agent))
     debriefing: set[str] = set()  # sessions whose debrief the coach is writing
     ghost_dir = (workspace / "reference" / "ghosts").resolve()
     g61_account: dict = {}  # Garage61's answer about the token, asked once
@@ -171,7 +174,7 @@ def create_app(
             "lapfiles_found": lap_dir.is_dir(),
             "telemetry": telemetry_status(),
             "garage61": {"token": has_token()},
-            "coach": {"found": shutil.which(coach.claude) is not None, "command": coach.claude},
+            "coach": {"found": shutil.which(agent.claude) is not None, "command": agent.claude},
         })
 
     async def ingest(request: Request) -> JSONResponse:
@@ -269,12 +272,12 @@ def create_app(
         message = (body.get("message") or "").strip()
         if not message:
             return JSONResponse({"error": "message is required"}, status_code=400)
-        events = coach.run(message, body.get("context") or {}, body.get("session_id") or None)
-        return StreamingResponse(events, media_type="application/x-ndjson")
+        events = chat_turn(agent, message, body.get("context") or {}, body.get("session_id") or None)
+        return StreamingResponse((json.dumps(e) + "\n" for e in events), media_type="application/x-ndjson")
 
     async def chat_stop(request: Request) -> JSONResponse:
         body = await request.json()
-        return JSONResponse({"stopped": coach.stop(body.get("run_id", ""))})
+        return JSONResponse({"stopped": agent.stop(body.get("run_id", ""))})
 
     # --- the live coach ---------------------------------------------------------------------
 
@@ -310,32 +313,15 @@ def create_app(
         return JSONResponse({"ok": True})
 
     async def live_ask(request: Request) -> JSONResponse:
-        """A typed question: logged now, answered by the coach (`claude -p`) in the background,
-        and the answer spoken on the next straight."""
+        """A typed question for the session's engineer: logged now, answered in its conversation in
+        the background, and the answer spoken on the next straight."""
         text = str((await request.json()).get("text") or "").strip()
         if not text:
             return JSONResponse({"error": "text is required"}, status_code=400)
+        if live.coach is None or live.engineer is None:
+            return JSONResponse({"error": "No live session with an engineer to ask."}, status_code=409)
         live.note_driver(text)
-        context = live.context()
-
-        def answer() -> None:
-            parts, error = [], None
-            for line in coach.run(text, context, None):
-                event = json.loads(line)
-                if event["type"] == "text_start":
-                    parts = []  # keep the final block: the answer, not the narration before tools
-                elif event["type"] == "text":
-                    parts.append(event["text"])
-                elif event["type"] == "error":
-                    error = event["message"]
-            reply = clean("".join(parts)) or ""
-            if reply:
-                live.note_answer(reply)
-                live.say(reply)
-            else:
-                live.note_answer(f"(No answer: {error or 'the coach said nothing'})")
-
-        threading.Thread(target=answer, name="live-ask", daemon=True).start()
+        live.ask(text)
         return JSONResponse({"ok": True})
 
     # --- coached sessions, afterwards ------------------------------------------------------
@@ -362,7 +348,8 @@ def create_app(
         sid = str((await request.json()).get("id") or "")
         ws = Workspace(workspace)
         try:
-            lines = session_report.context_lines(session_report.session_report(ws, sid))
+            report = session_report.session_report(ws, sid)
+            lines = session_report.context_lines(report)
         except WorkspaceError as e:
             return JSONResponse({"error": str(e)}, status_code=404)
         finally:
@@ -373,12 +360,13 @@ def create_app(
         prompt = ("Write a short debrief of this coaching session for the driver: two short paragraphs, plain "
                   "text, under 90 words. What worked, what still costs the most, and the one thing to focus on "
                   "next session. Use the numbers given; don't run commands unless something is missing.")
+        # The session's engineer writes it, continuing its conversation (it was there); else a new one.
+        engineer = report.get("engineer")
 
         def write() -> None:
             try:
                 parts, error = [], None
-                for line in coach.run(prompt, {"page": "session", "live": lines}, None):
-                    event = json.loads(line)
+                for event in chat_turn(agent, prompt, {"page": "session", "live": lines}, engineer):
                     if event["type"] == "text_start":
                         parts = []
                     elif event["type"] == "text":
@@ -462,6 +450,8 @@ class RequireClientHeader:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Refuse a request that changes something unless it carries the X-Iagent header (which a
+        page on another site can't send without asking)."""
         if scope["type"] == "http" and scope["method"] not in ("GET", "HEAD"):
             if not any(k.decode("latin-1").lower() == CLIENT_HEADER for k, _ in scope["headers"]):
                 response = JSONResponse({"error": "Missing X-Iagent header."}, status_code=403)

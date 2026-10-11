@@ -6,6 +6,7 @@ from iagent.laps.store import ParquetLapStore
 
 @pytest.fixture
 def store(tmp_path):
+    """An empty lap store in a temporary folder."""
     s = ParquetLapStore(tmp_path)
     yield s
     s.close()
@@ -68,6 +69,26 @@ def test_old_format_store_is_refused(tmp_path):
     db.close()
     with pytest.raises(RuntimeError, match="older format"):
         ParquetLapStore(tmp_path)
+
+
+def test_v2_store_gains_track_length_and_keeps_its_laps(tmp_path, clean_source):
+    import sqlite3
+
+    store = ParquetLapStore(tmp_path)
+    record(clean_source, store, "synthetic")
+    store.close()
+    db = sqlite3.connect(tmp_path / "index.sqlite")  # back to v2: no track_length_m column
+    db.execute("ALTER TABLE laps DROP COLUMN track_length_m")
+    db.execute("PRAGMA user_version = 2")
+    db.commit()
+    db.close()
+
+    store = ParquetLapStore(tmp_path)
+    laps = store.list()
+    assert len(laps) == 4 and all(lap.track_length_m is None for lap in laps)
+    record(clean_source, store, "synthetic")  # re-ingesting fills it in
+    assert all(lap.track_length_m == clean_source.session.track_length_m for lap in store.list())
+    store.close()
 
 
 def test_files_are_laid_out_by_track_and_car_key(store, clean_source, tmp_path):

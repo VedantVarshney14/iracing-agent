@@ -1,83 +1,144 @@
-"""Wire a telemetry source, the cue plan, the active rules and a voice into a running live coach."""
+"""Running the live coach: where frames come from (iRacing's shared memory on the sim PC, or a
+recording replayed in real time) and the loop that feeds them to a coach.
+
+The replay is how the live coach is developed and heard away from the sim: the same frames, at
+the speed they were recorded (or faster).
+"""
 
 import logging
+import time
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Sequence
 
 from iagent.live.coach import LiveCoach, Settings
-from iagent.live.cues import PLAN_VERSION, CuePlan, build_plan, load_plan, save_plan, use_next_plan
-from iagent.live.rulebook import load_rules, signature
-from iagent.live.rules import RuleEngine
-from iagent.live.speech import Arbiter, Voice
-from iagent.telemetry.frames import Frame
-from iagent.telemetry.session import SessionInfo
-from iagent.workspace import Workspace, WorkspaceError
+from iagent.live.cues import use_next_plan
+from iagent.live.rules.store import load_rules, signature
+from iagent.live.speech import Voice
+from iagent.telemetry.frames import CORE_CHANNELS, Frame
+from iagent.telemetry.session import SessionInfo, parse_session_yaml
+
+# The live coach also wants the spotter state (cars alongside).
+LIVE_CHANNELS: tuple[str, ...] = tuple(c for c in CORE_CHANNELS if c not in ("Lat", "Lon")) + ("CarLeftRight",)
+
+
+def paced(frames: Iterator[Frame], speed: float = 1.0, start_at: float | None = None) -> Iterator[Frame]:
+    """Yield frames no faster than their session time allows (`speed` × real time).
+
+    `start_at` skips ahead (session seconds) without waiting, e.g. past the garage.
+    """
+    origin_session = origin_wall = None
+    for frame in frames:
+        if start_at is not None and frame.session_time < start_at:
+            continue
+        if origin_session is None:
+            origin_session, origin_wall = frame.session_time, time.monotonic()
+        wait = (frame.session_time - origin_session) / speed - (time.monotonic() - origin_wall)
+        if wait > 0:
+            time.sleep(wait)
+        yield frame
+
+
+class IrsdkSource:
+    """iRacing's live telemetry (Windows, sim running). Waits for the sim, then yields a frame
+    each time iRacing publishes one (60 Hz), until the sim closes or `stop()` is called.
+
+    Lat/Lon aren't in the live SDK (only in recordings); nothing live depends on them.
+    """
+
+    def __init__(self, channels: Sequence[str] = LIVE_CHANNELS, poll_hz: float = 120.0):
+        import irsdk
+
+        self._ir = irsdk.IRSDK()
+        self._channels = tuple(channels)
+        self._interval = 1.0 / poll_hz
+        self._session: SessionInfo | None = None
+        self._session_update = -1
+        self._stopped = False
+
+    def connect(self, timeout_s: float | None = None) -> bool:
+        """Wait for iRacing; True once connected."""
+        deadline = None if timeout_s is None else time.monotonic() + timeout_s
+        while not (self._ir.is_initialized and self._ir.is_connected):
+            if self._stopped or (deadline is not None and time.monotonic() > deadline):
+                return False
+            self._ir.startup()
+            if not self._ir.is_connected:
+                time.sleep(1.0)
+        return True
+
+    @property
+    def session(self) -> SessionInfo:
+        """The session info, re-read from iRacing when it changes."""
+        update = self._ir.session_info_update
+        if self._session is None or update != self._session_update:
+            header = self._ir._header
+            raw = bytes(self._ir._shared_mem[header.session_info_offset : header.session_info_offset + header.session_info_len])
+            self._session = parse_session_yaml(raw.rstrip(b"\x00").decode("latin-1"), session_id="live")
+            self._session_update = update
+        return self._session
+
+    def stop(self) -> None:
+        self._stopped = True
+
+    def frames(self) -> Iterator[Frame]:
+        """Frames from iRacing as they come (one per sim tick), until it disconnects or `stop` is
+        called."""
+        last_tick = None
+        while not self._stopped:
+            if not self._ir.is_connected:
+                return
+            values: dict[str, float] = {}
+            self._ir.freeze_var_buffer_latest()  # a consistent snapshot of one tick
+            try:
+                tick = self._ir["SessionTick"]
+                if tick != last_tick:
+                    last_tick = tick
+                    for name in self._channels:
+                        value = self._ir[name]
+                        if value is not None:
+                            values[name] = float(value)
+            finally:
+                self._ir.unfreeze_var_buffer_latest()
+            if "SessionTime" in values:
+                yield Frame(values["SessionTime"], values)
+            time.sleep(self._interval)
+
+    def close(self) -> None:
+        self._ir.shutdown()
+
 
 logger = logging.getLogger("iagent.live")
 
 
-def plan_for(ws: Workspace, session: SessionInfo, ref_id: str | None = None, rebuild: bool = False) -> CuePlan:
-    """The saved plan for this track and car, built (and saved) if there isn't one."""
-    plan = None if rebuild or ref_id else load_plan(ws.root, session.track_key, session.car_key)
-    if plan is not None and plan.version < PLAN_VERSION:  # older format: rebuild, keeping rewritten cues
-        try:
-            plan = build_plan(ws, session.track_key, session.car_key, plan.ref_lap_id)
-        except WorkspaceError:  # its reference lap is gone
-            plan = build_plan(ws, session.track_key, session.car_key)
-        save_plan(ws.root, plan)
-    if plan is None:
-        plan = build_plan(ws, session.track_key, session.car_key, ref_id)
-        path = save_plan(ws.root, plan)
-        logger.info("Cue plan for %s / %s from %s: %s", session.track_key, session.car_key, plan.ref_lap_id, path)
-    return plan
-
-
 def start_coach(root: Path, session: SessionInfo, voice: Voice, settings: Settings | None = None,
-                ref_id: str | None = None) -> LiveCoach:
-    ws = Workspace(root)
-    try:
-        plan = plan_for(ws, session, ref_id)
-        cmap = ws.corner_map(session.track_key)
-        ref_grid = ws.load(plan.ref_lap_id)
-        own = own_best(ws, session.track_key, session.car_key)
-    finally:
-        ws.close()
-    if hasattr(voice, "prepare"):
-        rendered = voice.prepare(c.text for c in plan.cues)
-        logger.info("Rendered %d cue(s)", rendered)
-    carried = use_next_plan(root, session.track_key, session.car_key)
-    if carried:
-        logger.info("Starting with the planned focus T%s (%s more session(s))", carried["focus"], carried["sessions_left"])
+                ref_id: str | None = None, engineer=None, radio_context=None) -> LiveCoach:
+    """A coach for a live (or replayed) session: the active rules, a focus planned last session,
+    and the cues rendered by the voice up front so none costs time at a brake point."""
     rules = load_rules(root, session.track_key, session.car_key, "active")
     if rules:
         logger.info("Active rules: %s", ", ".join(r.id for r in rules))
-    engine = RuleEngine(rules)
-    if hasattr(voice, "prepare"):  # cue-like rule lines with fixed text can be rendered now too
-        fixed = [a.template.text for r in rules for a in r.actions if a.kind == "say" and not a.template.names]
-        if fixed:
-            voice.prepare(fixed)
-    return LiveCoach(session, plan, cmap, ref_grid, Arbiter(voice), settings, own_best=own,
-                     carried_focus=carried["focus"] if carried else None, rules=engine)
+    carried = use_next_plan(root, session.track_key, session.car_key)
+    if carried:
+        logger.info("Starting with the planned focus T%s (%s more session(s))", carried["focus"], carried["sessions_left"])
+    coach = LiveCoach.load(root, session, voice, settings, rules, ref_id, carried["focus"] if carried else None,
+                           engineer, radio_context)
+    if hasattr(voice, "prepare"):  # cues, and rule lines with fixed text
+        fixed = [a.template.text for r in rules for a in r.actions if a.key == "say" and not a.template.names]
+        logger.info("Rendered %d line(s)", voice.prepare([c.text for c in coach.ctx.plan.cues] + fixed))
+    return coach
 
 
 def reload_rules(root: Path, coach: LiveCoach) -> None:
     """Pick up rules activated, changed or deactivated since the coach started."""
-    rules = load_rules(root, coach.session.track_key, coach.session.car_key, "active")
+    rules = load_rules(root, coach.ctx.session.track_key, coach.ctx.session.car_key, "active")
     coach.rules.replace(rules)
     logger.info("Rules reloaded: %s", ", ".join(r.id for r in coach.rules.rules) or "none active")
 
 
-def own_best(ws: Workspace, track: str, car: str):
-    """The driver's fastest valid lap here (the pace that counts as pushing), or None."""
-    if not (ws.root / "index.sqlite").exists():
-        return None
-    laps = [r for r in ws.store().list(track=track, car=car, valid_only=True) if r.lap_time]
-    return ws.load(min(laps, key=lambda r: r.lap_time).lap_id) if laps else None
-
-
 def run(root: Path, session_of: Callable[[], SessionInfo], frames: Iterator[Frame], voice: Voice,
         settings: Settings | None = None, ref_id: str | None = None,
-        on_start: Callable[[LiveCoach], None] | None = None) -> LiveCoach | None:
+        on_start: Callable[[LiveCoach], None] | None = None, engineer=None,
+        radio_context: Callable[[], dict] | None = None) -> LiveCoach | None:
     """Coach until the frames run out. A different track or car (a new session) restarts the
     coach with that combination's plan."""
     coach: LiveCoach | None = None
@@ -90,7 +151,7 @@ def run(root: Path, session_of: Callable[[], SessionInfo], frames: Iterator[Fram
             if (session.track_key, session.car_key) != key:
                 key = (session.track_key, session.car_key)
                 rules_sig = signature(root)
-                coach = start_coach(root, session, voice, settings, ref_id)
+                coach = start_coach(root, session, voice, settings, ref_id, engineer, radio_context)
                 if on_start:
                     on_start(coach)
             elif (sig := signature(root)) != rules_sig:

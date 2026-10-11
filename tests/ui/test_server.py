@@ -17,6 +17,7 @@ from iagent.workspace import WorkspaceError
 
 @pytest.fixture
 def workspace(tmp_path):
+    """A workspace with five synthetic laps: its folder, the source and the laps."""
     source = SyntheticSource(n_laps=5, seed=3)
     store = ParquetLapStore(tmp_path)
     records = record(source, store, "synthetic")
@@ -36,7 +37,7 @@ def add_reference(root, source, rec, driver: str):
     session = dataclasses.replace(source.session, session_id=f"g61-{driver.lower()}")
     lap = csv_to_lap(to_garage61_csv(raw, source.session.track_length_m), session, rec.lap_time)
     refs = ParquetLapStore(root / "reference")
-    saved = refs.save(lap, "garage61")
+    saved = refs.save(lap)
     refs.close()
     meta = root / "reference" / "meta" / f"{saved.lap_id}.json"
     meta.parent.mkdir(parents=True, exist_ok=True)
@@ -232,6 +233,7 @@ def test_only_local_pages_can_post(workspace):
 
 
 def ibt_bytes(tmp_path, name="synthcar_synthetic 2026-10-04 15-00-00.ibt", laps=3) -> tuple[str, bytes]:
+    """A synthetic recording's name and contents, as the browser would upload them."""
     from iagent.testing.ibt_writer import write_ibt
 
     source = SyntheticSource(n_laps=laps, seed=4)
@@ -307,10 +309,10 @@ def test_garage61_token_can_be_added_from_the_ui(workspace, tmp_path):
 
 
 def test_system_reports_whether_the_coach_can_run(workspace, tmp_path):
-    from iagent.ui.coach import CoachRuns
+    from iagent.agent import ClaudeCode
 
     root, _, _ = workspace
-    missing = ui_client(create_app(root, coach=CoachRuns(root, claude=str(tmp_path / "no-claude"))))
+    missing = ui_client(create_app(root, agent=ClaudeCode(root, claude=str(tmp_path / "no-claude"))))
     assert missing.get("/api/system").json()["coach"]["found"] is False
-    present = ui_client(create_app(root, coach=CoachRuns(root, claude=sys.executable)))
+    present = ui_client(create_app(root, agent=ClaudeCode(root, claude=sys.executable)))
     assert present.get("/api/system").json()["coach"]["found"] is True

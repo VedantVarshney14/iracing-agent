@@ -17,12 +17,15 @@ _PRINTABLE = re.compile(rb"[ -~]{3,}")
 
 @dataclass(frozen=True)
 class GhostInfo:
+    """What an iRacing ghost lap file says about itself: driver, car and track."""
+
     driver: str | None
     car_path: str | None
     track_path: str | None  # e.g. "okayama\\full"
 
 
 def read_info(data: bytes) -> GhostInfo:
+    """The driver, car path and track path from a .blap file's header. ValueError if it isn't one."""
     if not data.startswith(MAGIC):
         raise ValueError("Not an iRacing ghost lap (.blap) file.")
     strings = [m.group().decode("ascii") for m in _PRINTABLE.finditer(data[:4096])]

@@ -61,6 +61,7 @@ class IbtSource:
 
     @property
     def session(self) -> SessionInfo:
+        """The recording's session info, read once."""
         if self._session is None:
             ibt = irsdk.IBT()
             ibt.open(str(self._path))
@@ -71,6 +72,8 @@ class IbtSource:
         return self._session
 
     def frames(self) -> Iterator[Frame]:
+        """Every sample in the recording, in order, as frames with the asked-for channels it has.
+        ValueError if it lacks a required one."""
         ibt = irsdk.IBT()
         ibt.open(str(self._path))
         try:

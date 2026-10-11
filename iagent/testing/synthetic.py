@@ -37,6 +37,9 @@ ORIGIN = (46.0, 8.0)  # lat/lon the circuit is placed at; arbitrary, nothing dep
 
 @dataclass(frozen=True)
 class SyntheticCorner:
+    """A corner of the synthetic track: where braking starts and the apex, the apex speed and the
+    direction."""
+
     name: str
     apex_m: float
     brake_m: float  # nominal distance at which braking starts
@@ -46,6 +49,8 @@ class SyntheticCorner:
 
 @dataclass(frozen=True)
 class SyntheticTrack:
+    """A made-up track with known corners, for tests with exact answers."""
+
     name: str
     length_m: float
     corners: tuple[SyntheticCorner, ...]
@@ -64,6 +69,9 @@ DEFAULT_TRACK = SyntheticTrack(
 
 
 class LapKind(str, Enum):
+    """How a synthetic lap is driven, to test validity flags and pace: clean, off track, into or out
+    of the pits, reset, or slow."""
+
     CLEAN = "clean"
     OFF_TRACK = "off_track"  # excursion mid-lap
     PIT_IN = "pit_in"  # lap ends on pit road
@@ -87,6 +95,9 @@ class LapTruth:
 
 @dataclass
 class _Profile:
+    """One synthetic lap on a distance grid: speed and inputs, accelerations, elapsed time and
+    position."""
+
     d: np.ndarray
     v: np.ndarray
     brake: np.ndarray
@@ -211,6 +222,8 @@ class SyntheticSource:
         return self._session
 
     def frames(self) -> Iterator[Frame]:
+        """Frames for every lap in order, each lap a slightly different drive (seeded jitter in
+        brake points and apex speeds), recording each lap's exact time in `truth`."""
         rng = random.Random(self._seed)
         length = self._track.length_m
         clock = 0.0  # session time of the next frame
@@ -271,6 +284,8 @@ class SyntheticSource:
         yield self._frame(len(self._kinds), LapKind.CLEAN, profile, t_next * V_MAX, clock)
 
     def _frame(self, lap_idx: int, kind: LapKind, p: _Profile, d: float, clock: float) -> Frame:
+        """One frame at distance D of lap LAP_IDX, with the channels its kind calls for (off track,
+        pit road, a reset)."""
         length = self._track.length_m
         surface = SURFACE_ON_TRACK
         on_pit = 0.0

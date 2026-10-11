@@ -11,23 +11,32 @@ from pathlib import Path
 import pandas as pd
 
 from iagent.analysis.corners import CornerMap, derive_corner_map, load_map, save_map
+from iagent.laps.lap import Lap
 from iagent.laps.pace import group_of, representative
-from iagent.laps.store import LapRecord, ParquetLapStore
+from iagent.laps.store import ParquetLapStore
 
 logger = logging.getLogger("iagent.workspace")
 
 
 class WorkspaceError(Exception):
+    """Something the workspace doesn't have or can't do: an unknown lap, no lap store yet, laps that
+    can't be compared."""
+
     pass
 
 
 class Workspace:
+    """The driver's data: the lap stores (their own and reference laps), corner maps and reference
+    lap details. Shared by the CLI and the UI."""
+
     def __init__(self, root: Path):
         self.root = root
         self._store: ParquetLapStore | None = None
         self._refs: ParquetLapStore | None = None
 
     def store(self, create: bool = False) -> ParquetLapStore:
+        """The driver's lap store. WorkspaceError if there isn't one yet (unless CREATE) or it's in
+        an older format."""
         if self._store is None:
             if not create and not (self.root / "index.sqlite").exists():
                 raise WorkspaceError(
@@ -49,11 +58,12 @@ class Workspace:
         return self._refs
 
     def close(self) -> None:
+        """Close the lap stores."""
         for store in (self._store, self._refs):
             if store is not None:
                 store.close()
 
-    def find(self, lap_id: str) -> LapRecord:
+    def find(self, lap_id: str) -> Lap:
         """A lap by id: the driver's own laps first, then reference laps."""
         for store in (self.store(), self.refs()):
             if store is not None:
@@ -74,7 +84,7 @@ class Workspace:
                 raise
             return refs.load(lap_id)
 
-    def reference(self, rec: LapRecord, ref_id: str | None) -> LapRecord:
+    def reference(self, rec: Lap, ref_id: str | None) -> Lap:
         """REF_ID's record, or the fastest other valid lap on the same track and car."""
         if ref_id is None:
             candidates = [r for r in self.store().list(track=rec.track_key, car=rec.car_key, valid_only=True)
@@ -119,6 +129,15 @@ class Workspace:
             return derive_corner_map(grids, track, car, [r.lap_id for r in reps])
         except ValueError as e:
             raise WorkspaceError(str(e)) from e
+
+    def best_lap(self, track: str, car: str, exclude_session: str | None = None) -> pd.DataFrame | None:
+        """The driver's fastest valid lap on this track and car (gridded), or None. A backtest
+        leaves out the session it replays (EXCLUDE_SESSION): that lap hadn't happened yet."""
+        if not (self.root / "index.sqlite").exists():
+            return None
+        laps = [r for r in self.store().list(track=track, car=car, valid_only=True)
+                if r.lap_time and r.session_id != exclude_session]
+        return self.store().load(min(laps, key=lambda r: r.lap_time).lap_id) if laps else None
 
     def meta_path(self, lap_id: str) -> Path:
         return self.root / "reference" / "meta" / f"{lap_id}.json"

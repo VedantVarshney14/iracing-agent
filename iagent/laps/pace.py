@@ -2,18 +2,18 @@
 
 from typing import Sequence
 
-from iagent.laps.store import LapRecord
+from iagent.laps.lap import Lap
 
 DEFAULT_WITHIN = 0.05  # 5% of the best lap
 
 Group = tuple[str, str]  # (track_key, car_key)
 
 
-def group_of(record: LapRecord) -> Group:
+def group_of(record: Lap) -> Group:
     return (record.track_key, record.car_key)
 
 
-def best_times(records: Sequence[LapRecord]) -> dict[Group, float]:
+def best_times(records: Sequence[Lap]) -> dict[Group, float]:
     """Best valid lap time per track and car. Laps from different groups are never compared."""
     best: dict[Group, float] = {}
     for r in records:
@@ -23,7 +23,7 @@ def best_times(records: Sequence[LapRecord]) -> dict[Group, float]:
     return best
 
 
-def best_time(records: Sequence[LapRecord]) -> float | None:
+def best_time(records: Sequence[Lap]) -> float | None:
     """Best valid lap time, for records from a single track and car."""
     times = best_times(records)
     if len(times) > 1:
@@ -31,7 +31,7 @@ def best_time(records: Sequence[LapRecord]) -> float | None:
     return next(iter(times.values()), None)
 
 
-def representative(records: Sequence[LapRecord], within: float = DEFAULT_WITHIN) -> list[LapRecord]:
+def representative(records: Sequence[Lap], within: float = DEFAULT_WITHIN) -> list[Lap]:
     """Valid laps whose time is within `within` (a fraction) of the best valid lap for the same
     track and car.
 

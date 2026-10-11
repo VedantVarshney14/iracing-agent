@@ -25,6 +25,8 @@ Vars = Mapping[str, Any]
 
 
 class ExprError(ValueError):
+    """An expression that can't be parsed, or uses something the language doesn't allow."""
+
     pass
 
 
@@ -86,6 +88,8 @@ class Expr:
         self._fn = self._compile(tree.body)
 
     def __call__(self, env: Vars) -> Any:
+        """The value with ENV's variables; a type error (e.g. a name compared with a number) counts
+        as a missing value: None."""
         try:
             return self._fn(env)
         except (TypeError, ZeroDivisionError, ValueError, OverflowError):
@@ -95,6 +99,9 @@ class Expr:
         return f"Expr({self.text!r})"
 
     def _compile(self, node: ast.AST) -> Callable[[Vars], Any]:
+        """A closure computing NODE from the variables, for the allowed syntax only (constants,
+        names, arithmetic, and/or/not, comparisons, conditionals and the listed functions). A
+        missing operand gives None."""
         if isinstance(node, ast.Constant):
             if not isinstance(node.value, (int, float, str, bool, type(None))):
                 raise ExprError(f"Unsupported value {node.value!r} in {self.text!r}.")
@@ -166,6 +173,8 @@ class Expr:
         raise ExprError(f"Unsupported syntax {ast.unparse(node)!r} in {self.text!r}.")
 
     def _compare(self, node: ast.Compare) -> Callable[[Vars], Any]:
+        """A closure for a (possibly chained) comparison: false when either side is missing, except
+        for == and !=."""
         first = self._compile(node.left)
         steps = []
         for op, right in zip(node.ops, node.comparators):
@@ -244,6 +253,8 @@ class Template:
             self.parts.append("".join(literal))
 
     def render(self, env: Vars) -> str | None:
+        """The text with each {expression} filled in (floats rounded unless a format is given), or
+        None if any value is missing: a line with a hole in it isn't said."""
         out = []
         for part in self.parts:
             if isinstance(part, str):

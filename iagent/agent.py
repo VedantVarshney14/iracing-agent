@@ -1,22 +1,26 @@
-"""The coach chat behind the web UI: one `claude -p` run per message, resumed by session id, its
-stream-json output turned into a few simple events for the browser.
+"""The coach agent's runner: the driver's own Claude Code, headless.
 
-No API keys or per-token billing: this drives the driver's own Claude Code (a Claude
-subscription, or a local model via ANTHROPIC_BASE_URL), exactly like the headless coach.
+No API keys or per-token billing: `claude -p` with the coach plugin (a Claude subscription, or a
+local model via ANTHROPIC_BASE_URL), allowed to run `iagent` and read and write the workspace.
+Its stream-json output is turned into a few simple events:
 
-Events (one JSON object per line):
-- {"type": "run", "run_id"}             first, so the browser can stop the run
-- {"type": "session", "session_id"}     the conversation to resume next time
+- {"type": "run", "run_id"}             first, so a caller can stop the run
+- {"type": "session", "session_id"}     the conversation, to resume next time
 - {"type": "text_start"}                a new block of the coach's text begins
 - {"type": "text", "text"}              more of that text
 - {"type": "tool", "id", "command"}     the coach ran a command (shown, not trusted)
 - {"type": "ui", "action"}              `iagent ui show` succeeded: highlight this on screen
+- {"type": "structured", "data"}        the reply, as the turn's JSON Schema asked (if one was given)
 - {"type": "done", "session_id", "is_error"}
 - {"type": "error", "message"}
+
+Used by the lap review's chat (`iagent.ui.chat`) and the live session's engineer
+(`iagent.live.engineer`), each with its own system prompt and conversation.
 """
 
 import json
 import os
+from abc import ABC, abstractmethod
 import shutil
 import subprocess
 import sys
@@ -24,7 +28,7 @@ import tempfile
 import threading
 import uuid
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
 import iagent
 
@@ -32,49 +36,27 @@ RUN_TIMEOUT_S = 300
 COACH_PLUGIN = Path(iagent.__file__).resolve().parents[1] / "coach"
 ALLOWED_TOOLS = ["Bash(iagent *)", "Read", "Glob", "Grep", "Write", "Edit", "Skill"]
 
-SYSTEM_PROMPT = """\
-You are the driver's coach inside the iRacing Coach lap review screen. The driver sees a track map,
-a corner-by-corner table and telemetry traces of their lap against a ghost lap. Each message starts
-with a <screen> block saying what is on screen: the lap, the ghost, the selected corners and any
-zoomed distance range. Use the `iagent` CLI (see the telemetry skill) for every number; never guess.
 
-Point at what you talk about: run `iagent ui show` with `--corner N` (repeatable), `--from M --to M`
-(metres) to zoom the traces, `--view corner` to open the corner view (both racing lines, the line
-offset and the corner's traces) for the first --corner, `--view lap` to go back to the whole lap, or
-`--lap ID --ref ID` to switch laps. Do this whenever you discuss a specific corner or stretch.
+class Agent(ABC):
+    """An agent harness the coach runs in: one turn of a conversation at a time. Claude Code is
+    the one we use; another harness (Codex, OpenCode, Goose) is another subclass, the same few
+    lines with a different command."""
 
-Keep replies short: a few sentences, numbers with units, and one thing to work on."""
+    @abstractmethod
+    def turn(self, prompt: str, system_prompt: str, session_id: str | None = None,
+             new_session: bool = False, schema: dict | None = None) -> Iterator[dict]:
+        """One turn, as events (see the module docstring), starting with {"type": "run", "run_id"}.
+        SESSION_ID continues that conversation, or starts it with that id when NEW_SESSION.
+        SCHEMA (a JSON Schema) makes the reply structured: a {"type": "structured"} event."""
 
-
-def screen_context(ctx: dict) -> str:
-    """The <screen> block sent with each message, from the browser's view of the review."""
-    lines = []
-    if ctx.get("page") == "corner":
-        lines.append("view: corner view (racing lines, line offset and traces for one corner)")
-    if ctx.get("page") == "session":
-        lines.append("view: review of a coached session (after it, not while driving). This page has no map or "
-                     "traces to point at: don't run `iagent ui show`. Answer in a few short paragraphs.")
-    if ctx.get("page") == "live":
-        lines.append("view: live session. The driver is on track and hears your reply spoken: answer in at most "
-                     "two short sentences, plain words, no markdown, no lists.")
-    if ctx.get("track"):
-        lines.append(f"track: {ctx['track']}  car: {ctx.get('car', '')}")
-    if ctx.get("lap"):
-        lines.append(f"lap: {ctx['lap']}")
-    if ctx.get("ref"):
-        lines.append(f"ghost: {ctx['ref']}" + (f" ({ctx['ref_driver']})" if ctx.get("ref_driver") else ""))
-    if ctx.get("corners"):
-        lines.append("selected corners: " + ", ".join(f"T{c}" for c in ctx["corners"]))
-    if ctx.get("range"):
-        a, b = ctx["range"]
-        lines.append(f"zoomed to: {a:.0f}-{b:.0f} m")
-    for line in ctx.get("live") or []:
-        lines.append(line)
-    return "<screen>\n" + "\n".join(lines) + "\n</screen>"
+    @abstractmethod
+    def stop(self, run_id: str) -> bool:
+        """Stop a running turn."""
 
 
-class CoachRuns:
-    """Running coach processes, so the browser can stop one."""
+class ClaudeCode(Agent):
+    """The driver's own Claude Code, run headless (`claude -p`) with the coach plugin, on the
+    workspace. `--session-id` starts a conversation with a given id, `--resume` continues it."""
 
     def __init__(self, workspace: Path, claude: str | None = None):
         self.workspace = workspace.resolve()
@@ -92,16 +74,22 @@ class CoachRuns:
         proc.kill()
         return True
 
-    def command(self, session_id: str | None) -> list[str]:
+    def command(self, system_prompt: str, session_id: str | None = None, new_session: bool = False,
+                schema: dict | None = None) -> list[str]:
+        """The `claude -p` command line for a turn: streamed JSON, the system prompt, the coach
+        plugin and its allowed tools, the conversation (new or resumed), and a JSON Schema for a
+        structured reply."""
         cmd = [self.claude, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-               "--append-system-prompt", SYSTEM_PROMPT, "--permission-mode", "acceptEdits",
+               "--append-system-prompt", system_prompt, "--permission-mode", "acceptEdits",
                "--allowedTools", *ALLOWED_TOOLS]
         if COACH_PLUGIN.is_dir():
             cmd += ["--plugin-dir", str(COACH_PLUGIN)]
         if model := os.environ.get("IAGENT_COACH_MODEL"):
             cmd += ["--model", model]
         if session_id:
-            cmd += ["--resume", session_id]
+            cmd += ["--session-id" if new_session else "--resume", session_id]
+        if schema is not None:
+            cmd += ["--json-schema", json.dumps(schema)]
         return cmd
 
     def env(self) -> dict[str, str]:
@@ -111,24 +99,23 @@ class CoachRuns:
         env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
         return env
 
-    def run(self, message: str, context: dict, session_id: str | None) -> Iterator[str]:
-        """Stream one coach turn as JSON lines (a sync generator: Starlette runs it in a thread)."""
+    def turn(self, prompt: str, system_prompt: str, session_id: str | None = None,
+             new_session: bool = False, schema: dict | None = None) -> Iterator[dict]:
         run_id = uuid.uuid4().hex
-        yield _line({"type": "run", "run_id": run_id})
+        yield {"type": "run", "run_id": run_id}
         if shutil.which(self.claude) is None:
-            yield _line({"type": "error", "message": f"Couldn't find `{self.claude}`. Install Claude Code, or set "
-                         "IAGENT_CLAUDE to its path."})
+            yield {"type": "error", "message": f"Couldn't find `{self.claude}`. Install Claude Code, or set "
+                   "IAGENT_CLAUDE to its path."}
             return
-        prompt = f"{screen_context(context)}\n\n{message}"
         errors = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")  # never blocks the run
         try:
             proc = subprocess.Popen(
-                self.command(session_id), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors,
+                self.command(system_prompt, session_id, new_session, schema), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors,
                 text=True, encoding="utf-8", errors="replace", env=self.env(), cwd=self.workspace.parent,
             )
         except OSError as e:
             errors.close()
-            yield _line({"type": "error", "message": f"Couldn't start the coach: {e}"})
+            yield {"type": "error", "message": f"Couldn't start the coach: {e}"}
             return
         with self._lock:
             self._procs[run_id] = proc
@@ -139,14 +126,13 @@ class CoachRuns:
             proc.stdin.close()
             parser = StreamParser()
             for raw in proc.stdout:
-                for event in parser.feed(raw):
-                    yield _line(event)
+                yield from parser.feed(raw)
             proc.wait()
             if not parser.finished:
                 errors.seek(0)
                 err = errors.read().strip()
                 stopped = run_id in self._stopped
-                yield _line({"type": "error", "message": "Stopped." if stopped else (err[-500:] or "The coach exited early.")})
+                yield {"type": "error", "message": "Stopped." if stopped else (err[-500:] or "The coach exited early.")}
         finally:
             timer.cancel()
             with self._lock:
@@ -165,6 +151,8 @@ class StreamParser:
         self._ui_calls: set[str] = set()  # tool_use ids that ran `iagent ui show`
 
     def feed(self, raw: str) -> list[dict]:
+        """One line of `claude -p`'s stream-json output, as the simple events in this module's
+        docstring (none for lines that don't matter)."""
         raw = raw.strip()
         if not raw:
             return []
@@ -205,7 +193,10 @@ class StreamParser:
             return out
         if kind == "result":
             self.finished = True
-            return [{"type": "done", "session_id": msg.get("session_id"), "is_error": bool(msg.get("is_error"))}]
+            out = []
+            if msg.get("structured_output") is not None:
+                out.append({"type": "structured", "data": msg["structured_output"]})
+            return [*out, {"type": "done", "session_id": msg.get("session_id"), "is_error": bool(msg.get("is_error"))}]
         return []
 
 
@@ -224,5 +215,17 @@ def _ui_action(content) -> dict | None:
     return None
 
 
-def _line(event: dict) -> str:
-    return json.dumps(event) + "\n"
+def structured(events: Iterable[dict]) -> dict | None:
+    """The turn's structured reply (when it was asked for with a schema)."""
+    return next((e["data"] for e in events if e["type"] == "structured"), None)
+
+
+def final_text(events: Iterable[dict]) -> str | None:
+    """The coach's last block of text in a turn (the answer, not the narration before its tool calls)."""
+    parts: list[str] = []
+    for event in events:
+        if event["type"] == "text_start":
+            parts = []
+        elif event["type"] == "text":
+            parts.append(event["text"])
+    return "".join(parts).strip() or None

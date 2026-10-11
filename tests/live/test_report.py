@@ -7,6 +7,7 @@ from iagent.laps.recorder import record
 from iagent.laps.store import ParquetLapStore
 from iagent.live import report
 from iagent.live.coach import CornerResult, LiveCoach, Settings
+from iagent.live.handlers import CueCaller, Focus
 from iagent.live.cues import build_plan, load_next_plan, save_next_plan, use_next_plan
 from iagent.live.session import LiveSessions
 from iagent.live.speech import Arbiter, CapturedVoice
@@ -14,10 +15,10 @@ from iagent.telemetry.ibt import IbtSource
 from iagent.testing.ibt_writer import write_ibt
 from iagent.testing.synthetic import SyntheticSource
 from iagent.testing.web import ui_client
-from iagent.ui.coach import CoachRuns
+from iagent.agent import ClaudeCode
 from iagent.ui.server import create_app
 from iagent.workspace import Workspace
-from tests.ui.test_coach import TURN
+from tests.ui.test_chat import TURN
 
 TRACK, CAR = "synthetic", "synthcar"
 
@@ -72,6 +73,7 @@ def test_a_planned_focus_lasts_a_set_number_of_sessions(tmp_path):
 
 
 def carried_coach(root, corner):
+    """A coach starting with a focus on CORNER carried over from last session."""
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)
@@ -82,17 +84,17 @@ def carried_coach(root, corner):
 
 
 def pushing_lap(coach, losses):
-    coach._laps_done += 1
-    return coach._update_focus([CornerResult(c, d, None, None, d >= 0.08) for c, d in losses.items()])
+    coach.state.lap += 1
+    return coach.pipeline.get(Focus).update([CornerResult(c, d, None, None, d >= 0.08) for c, d in losses.items()])
 
 
 def test_a_carried_focus_is_dropped_when_it_is_fine_now(coached):
     root, _ = coached
     coach = carried_coach(root, 2)
-    assert coach.focus == 2 and coach._cue_text(coach.plan.cue_for(2)).startswith("Focus. ")
+    assert coach.state.focus == 2 and coach.pipeline.get(CueCaller).text(coach.ctx.plan.cue_for(2)).startswith("Focus. ")
     assert pushing_lap(coach, {1: 0.0, 2: 0.02, 3: 0.0, 4: 0.0}) is None  # one lap: not judged yet
     assert pushing_lap(coach, {1: 0.0, 2: 0.03, 3: 0.0, 4: 0.0}) == "Turn 2 is fine now."
-    assert coach.focus is None
+    assert coach.state.focus is None
 
 
 def test_a_carried_focus_gives_way_to_a_bigger_loss(coached):
@@ -100,8 +102,8 @@ def test_a_carried_focus_gives_way_to_a_bigger_loss(coached):
     coach = carried_coach(root, 2)
     pushing_lap(coach, {1: 0.6, 2: 0.2, 3: 0.0, 4: 0.0})
     news = pushing_lap(coach, {1: 0.5, 2: 0.2, 3: 0.0, 4: 0.0})
-    assert coach.focus == 1 and news == "Focus now: Turn 1."
-    assert coach.focus_log[0]["replaced"] is True
+    assert coach.state.focus == 1 and news == "Focus now: Turn 1."
+    assert coach.state.focus_log[0]["replaced"] is True
 
 
 def test_coaching_api(coached, tmp_path):
@@ -111,7 +113,7 @@ def test_coaching_api(coached, tmp_path):
     claude = tmp_path / "claude"
     claude.write_text(f"#!{sys.executable}\nimport sys\nsys.stdin.read()\nsys.stdout.write({''.join(TURN)!r})\n")
     claude.chmod(0o755)
-    web = ui_client(create_app(root, static_dir=tmp_path / "no-build", coach=CoachRuns(root, claude=str(claude))))
+    web = ui_client(create_app(root, static_dir=tmp_path / "no-build", agent=ClaudeCode(root, claude=str(claude))))
 
     assert web.get("/api/coaching/sessions").json()[0]["id"] == sid
     out = web.get("/api/coaching/session", params={"id": sid}).json()

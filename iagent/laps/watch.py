@@ -41,6 +41,7 @@ def saved_telemetry_dir(workspace: Path) -> Path | None:
 
 
 def save_telemetry_dir(workspace: Path, folder: Path) -> None:
+    """Remember FOLDER as where iRacing writes telemetry, in the workspace settings."""
     path = settings_path(workspace)
     settings = json.loads(path.read_text()) if path.exists() else {}
     settings["telemetry_dir"] = str(folder)
@@ -82,6 +83,9 @@ def default_telemetry_dir() -> Path:
 
 
 class TelemetryWatcher:
+    """Watches iRacing's telemetry folder and ingests each new recording once it has stopped
+    growing; remembers what it has ingested."""
+
     def __init__(self, workspace: Path, folder: Path, interval_s: float = 10.0, settle_s: float = 15.0):
         self.workspace = workspace
         self.folder = folder
@@ -111,6 +115,7 @@ class TelemetryWatcher:
             }
 
     def start(self) -> None:
+        """Start watching on a background thread."""
         if self._thread is None:
             self._thread = threading.Thread(target=self._run, name="telemetry-watch", daemon=True)
             self._thread.start()
@@ -134,6 +139,8 @@ class TelemetryWatcher:
         return found + self.scan()
 
     def _run(self) -> None:
+        """The watch thread: scan every `interval_s` until stopped; a failed scan is logged and
+        reported, not fatal."""
         while not self._stop.is_set():
             try:
                 self.scan()
@@ -149,6 +156,8 @@ class TelemetryWatcher:
             return self._scan(now)
 
     def _scan(self, now: float | None) -> list[str]:
+        """Ingest recordings that are new or changed and have settled (same size for `settle_s`);
+        returns their names."""
         if not self.folder.is_dir():
             return []
         now = time.time() if now is None else now
@@ -184,6 +193,7 @@ class TelemetryWatcher:
         return ingested
 
     def _save(self) -> None:
+        """Save what has been ingested, so a restart doesn't ingest it again."""
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
             self._state_path.write_text(json.dumps(self._done, indent=1))

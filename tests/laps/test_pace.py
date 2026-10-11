@@ -8,6 +8,7 @@ from iagent.testing.synthetic import LapKind, SLOW_FACTOR, SyntheticSource
 
 @pytest.fixture
 def records(tmp_path):
+    """Seven recorded laps of every kind (clean, off track, slow, pit, reset)."""
     source = SyntheticSource(
         n_laps=7,
         kinds=[LapKind.CLEAN, LapKind.CLEAN, LapKind.OFF_TRACK, LapKind.SLOW,

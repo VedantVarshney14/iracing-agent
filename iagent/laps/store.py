@@ -1,43 +1,31 @@
 """Lap storage. Callers use the `LapStore` protocol; Parquet+SQLite is one implementation."""
 
 import sqlite3
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
 import pandas as pd
 
+from iagent.laps.lap import Lap
+from iagent.laps.pace import representative
 from iagent.laps.resample import resample_to_distance
-from iagent.laps.segment import Lap
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3  # v3 added track_length_m
 _COLUMNS = (
-    "lap_id", "session_id", "track_key", "car_key", "track", "car", "seq", "sim_lap", "lap_time",
-    "complete", "valid", "reasons", "source", "off_track_s", "path", "created_at",
+    "lap_id", "session_id", "track_key", "car_key", "track", "car", "track_length_m", "seq", "sim_lap",
+    "lap_time", "complete", "valid", "reasons", "source", "off_track_s", "path", "created_at",
 )
-
-
-@dataclass(frozen=True)
-class LapRecord:
-    lap_id: str
-    session_id: str
-    track_key: str  # grouping key, e.g. "spa-2024-up" (see SessionInfo.track_key)
-    car_key: str  # grouping key, e.g. "formulair04"
-    track: str  # display name
-    car: str  # display name
-    seq: int
-    sim_lap: int | None
-    lap_time: float | None
-    complete: bool
-    valid: bool
-    reasons: tuple[str, ...]
-    source: str
-    off_track_s: float = 0.0
+_LAP_COLUMNS = _COLUMNS[:15]  # the ones that make a `Lap`
 
 
 class LapStore(Protocol):
-    def save(self, lap: Lap, source: str = "unknown") -> LapRecord: ...
+    """Where laps are kept: save a segmented lap, list laps (with filters), load a lap's samples.
+    The format is the implementation's business."""
+
+    def save(self, lap: Lap) -> Lap:
+        """Stores a lap with its `frames`; returns it without them."""
+        ...
 
     def list(
         self,
@@ -46,10 +34,10 @@ class LapStore(Protocol):
         session_id: str | None = None,
         valid_only: bool = False,
         within_best: float | None = None,
-    ) -> list[LapRecord]:
-        """`track`/`car` match the grouping keys. `within_best` keeps only representative laps:
-        valid and within that fraction (e.g. 0.05) of the best valid lap for the same track and
-        car among the other filter matches."""
+    ) -> list[Lap]:
+        """Laps without their samples. `track`/`car` match the grouping keys. `within_best` keeps
+        only representative laps: valid and within that fraction (e.g. 0.05) of the best valid lap
+        for the same track and car among the other filter matches."""
         ...
 
     def load(self, lap_id: str, grid: bool = True) -> pd.DataFrame:
@@ -73,7 +61,9 @@ class ParquetLapStore:
         has_table = self._db.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'laps'"
         ).fetchone()
-        if has_table and version != SCHEMA_VERSION:
+        if has_table and version == 2:
+            self._db.execute("ALTER TABLE laps ADD COLUMN track_length_m REAL")
+        elif has_table and version != SCHEMA_VERSION:
             self._db.close()
             raise RuntimeError(
                 f"{self._root} holds a lap store in an older format (v{version}, need "
@@ -82,50 +72,36 @@ class ParquetLapStore:
         self._db.execute(
             """CREATE TABLE IF NOT EXISTS laps (
                 lap_id TEXT PRIMARY KEY, session_id TEXT, track_key TEXT, car_key TEXT,
-                track TEXT, car TEXT, seq INTEGER, sim_lap INTEGER, lap_time REAL,
+                track TEXT, car TEXT, track_length_m REAL, seq INTEGER, sim_lap INTEGER, lap_time REAL,
                 complete INTEGER, valid INTEGER, reasons TEXT, source TEXT, off_track_s REAL,
                 path TEXT, created_at TEXT)"""
         )
         self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         self._db.commit()
 
-    def save(self, lap: Lap, source: str = "unknown") -> LapRecord:
-        base = self._root / "laps" / lap.session.track_key / lap.session.car_key
+    def save(self, lap: Lap) -> Lap:
+        """Write the lap's raw samples and its 1 m grid, and index it."""
+        if lap.frames is None:
+            raise ValueError(f"Lap {lap.lap_id} has no samples to save.")
+        base = self._root / "laps" / lap.track_key / lap.car_key
         base.mkdir(parents=True, exist_ok=True)
         raw_path = base / f"{lap.lap_id}.parquet"
         lap.frames.to_parquet(raw_path, index=False)
         resample_to_distance(lap, self._grid_step).to_parquet(
             base / f"{lap.lap_id}.grid.parquet", index=False
         )
-
-        record = LapRecord(
-            lap_id=lap.lap_id,
-            session_id=lap.session.session_id,
-            track_key=lap.session.track_key,
-            car_key=lap.session.car_key,
-            track=lap.session.track_name,
-            car=lap.session.car_name,
-            seq=lap.seq,
-            sim_lap=lap.sim_lap,
-            lap_time=lap.lap_time,
-            complete=lap.complete,
-            valid=lap.valid,
-            reasons=tuple(lap.reasons),
-            source=source,
-            off_track_s=lap.off_track_s,
-        )
         self._db.execute(
             f"INSERT OR REPLACE INTO laps ({', '.join(_COLUMNS)}) "
             f"VALUES ({', '.join('?' * len(_COLUMNS))})",
             (
-                record.lap_id, record.session_id, record.track_key, record.car_key, record.track,
-                record.car, record.seq, record.sim_lap, record.lap_time, int(record.complete),
-                int(record.valid), ",".join(record.reasons), source, record.off_track_s,
+                lap.lap_id, lap.session_id, lap.track_key, lap.car_key, lap.track, lap.car,
+                lap.track_length_m, lap.seq, lap.sim_lap, lap.lap_time, int(lap.complete),
+                int(lap.valid), ",".join(lap.reasons), lap.source, lap.off_track_s,
                 str(raw_path.relative_to(self._root)), datetime.now(timezone.utc).isoformat(),
             ),
         )
         self._db.commit()
-        return record
+        return lap.without_frames()
 
     def list(
         self,
@@ -134,7 +110,8 @@ class ParquetLapStore:
         session_id: str | None = None,
         valid_only: bool = False,
         within_best: float | None = None,
-    ) -> list[LapRecord]:
+    ) -> list[Lap]:
+        """Laps from the index, filtered, in track, car, session and lap order."""
         where, args = [], []
         for column, value in (("track_key", track), ("car_key", car), ("session_id", session_id)):
             if value is not None:
@@ -142,25 +119,17 @@ class ParquetLapStore:
                 args.append(value)
         if valid_only:
             where.append("valid = 1")
-        query = f"SELECT {', '.join(_COLUMNS[:14])} FROM laps"
+        query = f"SELECT {', '.join(_LAP_COLUMNS)} FROM laps"
         if where:
             query += " WHERE " + " AND ".join(where)
         query += " ORDER BY track_key, car_key, session_id, seq"
-        records = [
-            LapRecord(
-                lap_id=r[0], session_id=r[1], track_key=r[2], car_key=r[3], track=r[4], car=r[5],
-                seq=r[6], sim_lap=r[7], lap_time=r[8], complete=bool(r[9]), valid=bool(r[10]),
-                reasons=tuple(x for x in r[11].split(",") if x), source=r[12], off_track_s=r[13],
-            )
-            for r in self._db.execute(query, args)
-        ]
+        laps = [_lap(dict(zip(_LAP_COLUMNS, row))) for row in self._db.execute(query, args)]
         if within_best is not None:
-            from iagent.laps.pace import representative  # pace imports LapRecord from here
-
-            records = representative(records, within_best)
-        return records
+            laps = representative(laps, within_best)
+        return laps
 
     def load(self, lap_id: str, grid: bool = True) -> pd.DataFrame:
+        """A lap's samples: on the 1 m grid, or raw. KeyError for an unknown lap."""
         row = self._db.execute("SELECT path FROM laps WHERE lap_id = ?", (lap_id,)).fetchone()
         if row is None:
             raise KeyError(f"Unknown lap {lap_id!r}")
@@ -171,3 +140,10 @@ class ParquetLapStore:
 
     def close(self) -> None:
         self._db.close()
+
+
+def _lap(row: dict) -> Lap:
+    """`complete` and `valid` are columns only to filter on; a `Lap` derives them from `reasons`."""
+    del row["complete"], row["valid"]
+    row["reasons"] = tuple(x for x in row["reasons"].split(",") if x)
+    return Lap(**row)

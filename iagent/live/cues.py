@@ -12,12 +12,13 @@ lap. Rewriting a cue's text without giving a short form drops the template's sho
 """
 
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 from iagent.analysis.corners import Corner, CornerMap, corner_metrics
-from iagent.laps.store import LapRecord
+from iagent.laps.lap import Lap
 from iagent.workspace import Workspace, WorkspaceError
 
 BEFORE_TURN_IN_M = 30  # a no-brake corner's cue ends this far before the corner starts
@@ -25,12 +26,17 @@ MERGE_GAP_M = 150  # a corner this close after the previous one's exit is cued t
 MERGE_MAX = 2  # corners per cue: longer cues come too late
 HARD_BRAKE, MEDIUM_BRAKE = 0.8, 0.5  # reference brake pressure (0-1)
 LIFT_THROTTLE = 0.6  # a no-brake corner whose throttle dips below this is a lift
+logger = logging.getLogger("iagent.live")
+
 PLAN_VERSION = 2  # 2: cues have short forms
 GEARS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth", 7: "seventh", 8: "eighth"}
 
 
 @dataclass
 class Cue:
+    """One corner cue: the corners it covers, the point it's timed to (the reference brake point, or
+    just before turn-in), its words, and a short form for once it's been heard."""
+
     corner: int  # the first corner it covers
     corners: list[int]  # every corner it covers (a chicane is one cue)
     target_m: float
@@ -41,6 +47,9 @@ class Cue:
 
 @dataclass
 class CuePlan:
+    """The corner cues for a track and car, built from a reference lap, with that lap's corner
+    metrics for judging each corner after it."""
+
     track_key: str
     car_key: str
     ref_lap_id: str
@@ -56,6 +65,7 @@ class CuePlan:
 
     @classmethod
     def from_json(cls, text: str) -> "CuePlan":
+        """A plan from its saved JSON; a plan from before short forms reads as version 1."""
         raw = json.loads(text)
         raw.setdefault("version", 1)  # before short forms
         raw["cues"] = [Cue(**c) for c in raw["cues"]]
@@ -75,13 +85,14 @@ def load_plan(root: Path, track_key: str, car_key: str) -> CuePlan | None:
 
 
 def save_plan(root: Path, plan: CuePlan) -> Path:
+    """Write the plan to the workspace; returns its path."""
     path = plan_path(root, plan.track_key, plan.car_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(plan.to_json() + "\n")
     return path
 
 
-def reference_lap(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> LapRecord:
+def reference_lap(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> Lap:
     """The lap cues follow: REF_ID, else the fastest valid Garage61 lap, else the driver's best."""
     if ref_id:
         rec = ws.find(ref_id)
@@ -99,6 +110,8 @@ def reference_lap(ws: Workspace, track: str, car: str, ref_id: str | None = None
 
 
 def build_plan(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> CuePlan:
+    """A new plan from the reference lap (REF_ID, or the default): a cue per corner from its
+    metrics, close corners merged into one cue, and cues someone rewrote kept."""
     ref = reference_lap(ws, track, car, ref_id)
     cmap = ws.corner_map(track)
     metrics = corner_metrics(ws.load(ref.lap_id), ref.lap_time, cmap)
@@ -110,6 +123,8 @@ def build_plan(ws: Workspace, track: str, car: str, ref_id: str | None = None) -
 
 
 def approach_cue(c: Corner, m: dict) -> Cue:
+    """A corner's cue from the reference lap's metrics: its name and direction, then how to brake
+    (hard, medium or light, and the gear), or flat or a lift for a corner without braking."""
     name = c.name or f"Turn {c.id}"
     side = "left" if c.direction == "L" else "right"
     gear = GEARS.get(m.get("min_gear") or 0)
@@ -179,6 +194,23 @@ def save_next_plan(root: Path, track_key: str, car_key: str, focus: int, note: s
 def load_next_plan(root: Path, track_key: str, car_key: str) -> dict | None:
     path = next_plan_path(root, track_key, car_key)
     return json.loads(path.read_text()) if path.exists() else None
+
+
+def plan_for(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> CuePlan:
+    """The saved plan for this track and car, built (and saved) if there isn't one or REF_ID asks
+    for a different reference lap; a plan in an older format is rebuilt, keeping rewritten cues."""
+    plan = None if ref_id else load_plan(ws.root, track, car)
+    if plan is not None and plan.version < PLAN_VERSION:  # older format: rebuild, keeping rewritten cues
+        try:
+            plan = build_plan(ws, track, car, plan.ref_lap_id)
+        except WorkspaceError:  # its reference lap is gone
+            plan = build_plan(ws, track, car)
+        save_plan(ws.root, plan)
+    if plan is None:
+        plan = build_plan(ws, track, car, ref_id)
+        path = save_plan(ws.root, plan)
+        logger.info("Cue plan for %s / %s from %s: %s", track, car, plan.ref_lap_id, path)
+    return plan
 
 
 def use_next_plan(root: Path, track_key: str, car_key: str) -> dict | None:

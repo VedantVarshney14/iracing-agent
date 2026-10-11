@@ -10,9 +10,18 @@ version (the why and the how, not just the what), said instead when the driver i
 there's room before the next corner; on a push lap only the short one is.
 """
 
+import hashlib
+import logging
+import queue
 import sys
+import threading
+import wave
 from dataclasses import dataclass, field
-from typing import Callable, Protocol
+from pathlib import Path
+from typing import Callable, Iterable, Protocol
+
+import numpy as np
+
 
 # Lower is more important.
 APPROACH = 0  # a cue for the corner ahead: time-critical
@@ -29,6 +38,9 @@ def estimate_duration(text: str) -> float:
 
 @dataclass
 class Utterance:
+    """A line for the arbiter: its words, priority and kind, when it stops being worth saying, and a
+    longer version for when there's time."""
+
     text: str
     priority: int
     kind: str  # "approach", "feedback", "summary", "focus", "answer", "rule"
@@ -46,6 +58,9 @@ class Utterance:
 
 
 class Voice(Protocol):
+    """What the arbiter speaks through: Pocket TTS on the rig, printed or captured in tests and
+    replays."""
+
     def duration(self, text: str) -> float | None:
         """Exact length when the audio is already rendered, else None."""
 
@@ -58,6 +73,8 @@ class Voice(Protocol):
 
 @dataclass
 class Spoken:
+    """A line a voice spoke, for tests and replays: when, what, and whether it was cut off."""
+
     at_s: float
     text: str
     kind: str
@@ -86,6 +103,7 @@ class PrintVoice(CapturedVoice):
     """Prints each line with the session time: a voice for the terminal."""
 
     def play(self, utterance: Utterance, now: float) -> None:
+        """Print the line with its session time and kind."""
         super().play(utterance, now)
         minutes, seconds = divmod(round(now, 2), 60)
         print(f"[{int(minutes):02d}:{seconds:05.2f}] {utterance.kind:<8} {utterance.text}", file=sys.stdout, flush=True)
@@ -96,6 +114,10 @@ Event = Callable[[str, Utterance, float], None]
 
 
 class Arbiter:
+    """Owns the audio: one line at a time, the most important first, a quiet gap between lines,
+    nothing said once expired, and a corner cue cuts off anything less urgent. `on_event` hears
+    what happens to each line."""
+
     def __init__(self, voice: Voice, quiet_gap_s: float = 0.6, on_event: Event | None = None):
         self.voice = voice
         self.quiet_gap_s = quiet_gap_s
@@ -110,6 +132,7 @@ class Arbiter:
         return list(self._queue)
 
     def say(self, utterance: Utterance) -> None:
+        """Queue a line (its length looked up from the voice if the audio is already rendered)."""
         if utterance.duration_s is None:
             utterance.duration_s = self.voice.duration(utterance.text)
         self._queue.append(utterance)
@@ -118,7 +141,7 @@ class Arbiter:
         return now < self._busy_until
 
     def tick(self, now: float, hold: bool = False, free_for_s: float = float("inf"),
-             long_ok: bool = False) -> Utterance | None:
+             long_ok: bool = False, hold_why: str = "a car was alongside") -> Utterance | None:
         """Start the next utterance if the channel is free.
 
         Args:
@@ -135,7 +158,7 @@ class Arbiter:
         if not self._queue:
             return None
         if hold:
-            self._note("a car was alongside")
+            self._note(hold_why)
             return None
         if self.speaking(now):
             urgent = any(u.priority == APPROACH for u in self._queue)
@@ -162,6 +185,7 @@ class Arbiter:
         return None
 
     def clear(self, kinds: tuple[str, ...] | None = None, now: float = 0.0, why: str | None = None) -> None:
+        """Drop queued lines of KINDS (all of them if None), noting WHY for the log."""
         keep = [u for u in self._queue if kinds is not None and u.kind not in kinds]
         for u in self._queue:
             if u not in keep:
@@ -176,3 +200,152 @@ class Arbiter:
     def _emit(self, what: str, u: Utterance, now: float) -> None:
         if self.on_event is not None:
             self.on_event(what, u, now)
+
+
+# --- Pocket TTS --------------------------------------------------------------------------------
+#
+# Speech through Pocket TTS (Kyutai, ~100M parameters, CPU, ~2 threads).
+#
+# Cue texts known before the session are rendered to WAV files up front (cached by voice and
+# text), so playing one costs nothing and its exact length is known when timing the cue. Anything
+# else (feedback, summaries, later answers) is streamed: first audio after ~50-200 ms.
+#
+# Optional dependency: `uv sync --extra voice` (pocket-tts, which brings PyTorch, and sounddevice).
+
+logger = logging.getLogger("iagent.voice")
+
+DEFAULT_VOICE = "alba"
+BLOCK = 2048  # frames per write: big blocks and a high-latency stream ride out a busy coach loop
+PRIME_S = 0.3  # streamed speech: buffer this much before starting, so the stream never runs dry
+
+
+class PocketVoice:
+    """Pocket TTS on the CPU: known lines rendered to cached WAVs up front, anything else streamed;
+    audio is written from its own thread so the coach loop never waits."""
+
+    def __init__(self, cache_dir: Path, voice: str = DEFAULT_VOICE, threads: int = 2, device: int | str | None = None):
+        try:
+            import sounddevice
+            import torch
+            from pocket_tts import TTSModel
+        except ImportError as e:
+            raise RuntimeError("Speech needs the voice extra: `uv sync --extra voice`.") from e
+        torch.set_num_threads(threads)  # leave the rest of the CPU to the sim
+        self._sd = sounddevice
+        self._device = device
+        self._model = TTSModel.load_model()
+        self._voice = self._model.get_state_for_audio_prompt(voice)
+        self.sample_rate = self._model.sample_rate
+        self._cache = cache_dir / _safe(voice)
+        self._cache.mkdir(parents=True, exist_ok=True)
+        self._voice_name = voice
+        self._durations: dict[str, float] = {}
+        self.underruns = 0  # audio blocks that arrived late (heard as crackles)
+        self._cut = threading.Event()
+        self._jobs: queue.Queue[str | None] = queue.Queue()
+        self._worker = threading.Thread(target=self._run, name="voice", daemon=True)
+        self._worker.start()
+
+    # --- the Voice protocol ----------------------------------------------------------------
+
+    def duration(self, text: str) -> float | None:
+        """The line's exact length if its audio is already rendered (cached), else None."""
+        if text in self._durations:
+            return self._durations[text]
+        path = self._path(text)
+        if path.exists():
+            with wave.open(str(path)) as w:
+                self._durations[text] = w.getnframes() / w.getframerate()
+            return self._durations[text]
+        return None
+
+    def play(self, utterance: Utterance, now: float) -> None:
+        self._jobs.put(utterance.text)
+
+    def stop(self) -> None:
+        self._cut.set()
+
+    # --- rendering and playback --------------------------------------------------------------
+
+    def prepare(self, texts: Iterable[str]) -> int:
+        """Render texts that aren't cached yet; returns how many were rendered."""
+        n = 0
+        for text in dict.fromkeys(texts):
+            if self.duration(text) is None:
+                audio = self._model.generate_audio(self._voice, text).numpy()
+                self._write(self._path(text), audio)
+                self._durations[text] = len(audio) / self.sample_rate
+                n += 1
+        return n
+
+    def close(self) -> None:
+        """Finish speaking and stop the audio thread; warns if the audio crackled."""
+        self._jobs.put(None)
+        self._worker.join(timeout=10)
+        if self.underruns:
+            logger.warning("%d audio underrun(s): speech may have crackled", self.underruns)
+
+    def _run(self) -> None:
+        """The audio thread: speak each line, from its cached WAV or streamed from the model; an
+        error is logged, never raised."""
+        while (text := self._jobs.get()) is not None:
+            self._cut.clear()
+            try:
+                path = self._path(text)
+                if path.exists():
+                    self._write_out([_read(path)])
+                else:
+                    self._write_out(chunk.numpy() for chunk in self._model.generate_audio_stream(self._voice, text))
+            except Exception:  # never take the coach down over audio
+                logger.exception("Couldn't speak %r", text)
+
+    def _write_out(self, chunks: Iterable[np.ndarray]) -> None:
+        """Play audio with blocking writes from this thread (no Python callback to starve)."""
+        pending = np.zeros(0, dtype=np.float32)
+        prime = int(PRIME_S * self.sample_rate)
+        started = False
+        with self._sd.OutputStream(samplerate=self.sample_rate, channels=1, dtype="float32", device=self._device,
+                                   blocksize=BLOCK, latency="high") as out:
+            for chunk in chunks:
+                if self._cut.is_set():
+                    return
+                pending = np.concatenate([pending, np.asarray(chunk, dtype=np.float32).reshape(-1)])
+                if not started and len(pending) < prime:
+                    continue
+                started = True
+                while len(pending) >= BLOCK:
+                    if self._cut.is_set():
+                        return
+                    self._block(out, pending[:BLOCK])
+                    pending = pending[BLOCK:]
+            pending = np.concatenate([pending, np.zeros(BLOCK - len(pending) % BLOCK, dtype=np.float32)])
+            for i in range(0, len(pending), BLOCK):
+                if self._cut.is_set():
+                    return
+                self._block(out, pending[i : i + BLOCK])
+            out.write(np.zeros((BLOCK * 2, 1), dtype=np.float32))  # let the last block drain before closing
+
+    def _block(self, out, block: np.ndarray) -> None:
+        if out.write(block.reshape(-1, 1)):
+            self.underruns += 1
+
+    def _path(self, text: str) -> Path:
+        return self._cache / (hashlib.sha1(text.encode()).hexdigest()[:16] + ".wav")
+
+    def _write(self, path: Path, audio: np.ndarray) -> None:
+        """Save AUDIO as a 16-bit mono WAV at PATH."""
+        pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(self.sample_rate)
+            w.writeframes(pcm.tobytes())
+
+
+def _read(path: Path) -> np.ndarray:
+    with wave.open(str(path)) as w:
+        return np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32767
+
+
+def _safe(name: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in Path(name).stem)

@@ -1,49 +1,10 @@
 """Lap segmentation: turn a stream of frames into laps with exact times and validity flags."""
 
-from dataclasses import dataclass, field
-
 import pandas as pd
 
+from iagent.laps.lap import REASON_DISCONTINUITY, REASON_INCOMPLETE, REASON_PIT_ROAD, Lap
 from iagent.telemetry.frames import Frame, SURFACE_OFF_TRACK
 from iagent.telemetry.session import SessionInfo
-
-# Structural reasons a lap can't be used at all. A lap is `valid` only if it has none.
-# Off-track time is deliberately *not* one: a brief clip of the kerb is normal, and whether a lap
-# is representative is a question of pace (see `iagent.laps.pace`), not of track-surface flags.
-REASON_INCOMPLETE = "incomplete"  # didn't both start and end on a start/finish crossing
-REASON_PIT_ROAD = "pit_road"
-REASON_DISCONTINUITY = "discontinuity"  # position jumped (reset / tow / rewind)
-
-
-@dataclass
-class Lap:
-    session: SessionInfo
-    seq: int  # 0-based order within the session
-    frames: pd.DataFrame  # raw samples; includes `lap_time_s` and `LapDist` columns
-    start_time: float | None  # session time of the start/finish crossing that began the lap
-    end_time: float | None
-    reasons: list[str] = field(default_factory=list)
-    sim_lap: int | None = None  # iRacing's own `Lap` counter, when the channel exists
-    off_track_s: float = 0.0  # time with the car off the track surface (information only)
-
-    @property
-    def complete(self) -> bool:
-        return REASON_INCOMPLETE not in self.reasons
-
-    @property
-    def valid(self) -> bool:
-        return not self.reasons
-
-    @property
-    def lap_time(self) -> float | None:
-        """Exact time (interpolated across the crossing frames). Only defined for complete laps."""
-        if self.start_time is None or self.end_time is None or not self.complete:
-            return None
-        return self.end_time - self.start_time
-
-    @property
-    def lap_id(self) -> str:
-        return f"{self.session.session_id}-L{self.seq:03d}"
 
 
 class LapSegmenter:
@@ -60,8 +21,10 @@ class LapSegmenter:
         wrap_low: float = 0.1,
         jump: float = 0.1,
         min_tail_frames: int = 60,
+        source: str = "unknown",
     ):
         self._session = session
+        self._source = source
         self._wrap_high = wrap_high
         self._wrap_low = wrap_low
         self._jump = jump
@@ -74,6 +37,8 @@ class LapSegmenter:
         self._seq = 0
 
     def push(self, frame: Frame) -> Lap | None:
+        """Take the next frame; returns the finished lap when this frame crosses the line. Frames
+        outside the world (garage, loading) are skipped."""
         pct = frame.get("LapDistPct")
         if pct is None:
             raise ValueError("Frame has no LapDistPct; cannot segment laps.")
@@ -110,6 +75,8 @@ class LapSegmenter:
         return self._finish(end_time=None)
 
     def _finish(self, end_time: float | None) -> Lap | None:
+        """Make the lap from the frames so far, ending at END_TIME (None: not on a crossing), with
+        its reasons, time off track and the sim's lap number."""
         if not self._rows:
             return None
         df = pd.DataFrame(self._rows)
@@ -131,15 +98,18 @@ class LapSegmenter:
             off_track_s = off_frames * float(df["SessionTime"].diff().median())
 
         sim_lap = int(df["Lap"].median()) if "Lap" in df else None
-        lap = Lap(
-            session=self._session,
-            seq=self._seq,
-            frames=df,
-            start_time=self._start_time,
-            end_time=end_time,
-            reasons=reasons,
+        lap_time = None
+        if self._start_time is not None and end_time is not None:
+            lap_time = end_time - self._start_time
+        lap = Lap.in_session(
+            self._session,
+            self._seq,
+            lap_time=lap_time,
+            reasons=tuple(reasons),
             sim_lap=sim_lap,
             off_track_s=off_track_s,
+            source=self._source,
+            frames=df,
         )
         self._seq += 1
         self._rows = []

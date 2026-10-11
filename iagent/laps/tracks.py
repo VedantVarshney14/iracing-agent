@@ -21,6 +21,8 @@ def load_track_info(workspace: Path, track_key: str) -> dict | None:
 
 
 def update_track_info(workspace: Path, session: SessionInfo) -> dict:
+    """Record the session's track (ids, names, length) and car in `track.json`, keeping cars seen
+    before; returns the info."""
     info = load_track_info(workspace, session.track_key) or {"cars": {}}
     info.update({
         "track_key": session.track_key,

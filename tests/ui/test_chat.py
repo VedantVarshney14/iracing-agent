@@ -6,7 +6,8 @@ from click.testing import CliRunner
 
 from iagent.cli import cli
 from iagent.testing.web import ui_client
-from iagent.ui.coach import CoachRuns, StreamParser, screen_context
+from iagent.agent import ClaudeCode, StreamParser
+from iagent.ui.chat import screen_context
 from iagent.ui.server import create_app
 
 SESSION = "99190549-5e16-467e-855e-6f8b5b9107da"
@@ -101,7 +102,7 @@ def fake_claude(tmp_path):
 
 def test_chat_streams_a_coach_turn(tmp_path, fake_claude):
     script, record = fake_claude
-    app = create_app(tmp_path, static_dir=tmp_path / "no-build", coach=CoachRuns(tmp_path, claude=str(script)))
+    app = create_app(tmp_path, static_dir=tmp_path / "no-build", agent=ClaudeCode(tmp_path, claude=str(script)))
     body = {"message": "Where do I lose time?", "session_id": SESSION, "context": {"lap": "L2", "corners": [9]}}
     with ui_client(app).stream("POST", "/api/chat", json=body) as res:
         events = [json.loads(line) for line in res.iter_lines() if line]
@@ -117,7 +118,7 @@ def test_chat_streams_a_coach_turn(tmp_path, fake_claude):
 
 
 def test_chat_explains_a_missing_claude(tmp_path):
-    app = create_app(tmp_path, static_dir=tmp_path / "no-build", coach=CoachRuns(tmp_path, claude="no-such-claude"))
+    app = create_app(tmp_path, static_dir=tmp_path / "no-build", agent=ClaudeCode(tmp_path, claude="no-such-claude"))
     with ui_client(app).stream("POST", "/api/chat", json={"message": "hi"}) as res:
         events = [json.loads(line) for line in res.iter_lines() if line]
     assert events[-1]["type"] == "error" and "IAGENT_CLAUDE" in events[-1]["message"]
