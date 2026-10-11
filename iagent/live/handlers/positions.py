@@ -20,11 +20,16 @@ HORIZON_S = 30.0  # points further away than this aren't considered yet
 
 @dataclass
 class _Point:
+    """A watched point on track, armed until its `Approach` is emitted on this pass."""
+
     watch: Watch
     armed: bool = True
 
 
 class Positions(EventHandler):
+    """Timed points on track: cues and rules `Watch` a point, and get an `Approach` early enough for
+    a line to finish before the car gets there."""
+
     def start(self):
         self._points: dict[str, _Point] = {}
 
@@ -38,6 +43,8 @@ class Positions(EventHandler):
 
     @on(Frame)
     def approach(self, e: Frame):
+        """Emit `Approach` for each point whose line must start now (at the current speed), and keep
+        `next_cue_s`, how long until the next one must start, so other speech can fit around it."""
         st, due = self.state, float("inf")
         if not st.on_track:
             st.next_cue_s = due
@@ -70,6 +77,7 @@ class Positions(EventHandler):
         st.next_cue_s = due
 
     def _ref_time(self, a: float, b: float) -> float:
+        """How long the reference lap took from A to B (metres), wrapping across the line."""
         ref_d, ref_t = self.ctx.ref_d, self.ctx.ref_t
         lap = self.ctx.plan.ref_lap_time or float(ref_t[-1])
         return float((np.interp(b, ref_d, ref_t) - np.interp(a, ref_d, ref_t)) % lap)

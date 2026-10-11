@@ -27,6 +27,7 @@ def rule_path(root: Path, rule: Rule) -> Path:
 
 
 def _files(root: Path) -> Iterator[Path]:
+    """Every rule file in the workspace, in a stable order."""
     base = rules_root(root)
     if base.is_dir():
         yield from sorted(base.glob("*/*.json"))
@@ -54,6 +55,7 @@ def load_rules(root: Path, track: str | None = None, car: str | None = None,
 
 
 def broken_rules(root: Path) -> list[tuple[Path, str]]:
+    """Rule files that don't parse or validate, with the reason for each."""
     out = []
     for path in _files(root):
         try:
@@ -64,6 +66,8 @@ def broken_rules(root: Path) -> list[tuple[Path, str]]:
 
 
 def find_rule(root: Path, rule_id: str) -> Rule:
+    """The rule with this id, whatever its track or status. RuleError if there's none or it doesn't
+    parse."""
     for path in _files(root):
         if path.stem == rule_id:
             try:
@@ -74,6 +78,8 @@ def find_rule(root: Path, rule_id: str) -> Rule:
 
 
 def save_rule(root: Path, rule: Rule) -> Path:
+    """Write the rule to its file, removing an older copy if it moved to another track (or to every
+    track)."""
     path = rule_path(root, rule)
     for other in _files(root):  # a rule moved to another track (or to every track)
         if other.stem == rule.id and other != path:
@@ -114,6 +120,8 @@ def add_rule(root: Path, raw: dict, replace: bool = False, by: str = "coach") ->
 
 
 def set_status(root: Path, rule_id: str, status: str, force: bool = False) -> Rule:
+    """Make the rule draft, active or archived. Activating needs a backtest of the rule as it is
+    now, unless FORCE."""
     rule = find_rule(root, rule_id)
     if status == "active" and not force:
         bt = rule.meta.get("backtest")
@@ -127,6 +135,7 @@ def set_status(root: Path, rule_id: str, status: str, force: bool = False) -> Ru
 
 
 def remove_rule(root: Path, rule_id: str) -> Path:
+    """Delete the rule's file; returns where it was."""
     rule = find_rule(root, rule_id)
     path = rule_path(root, rule)
     path.unlink()

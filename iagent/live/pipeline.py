@@ -42,6 +42,7 @@ Callback = Callable[[Event], None]
 
 
 def _event_classes(types: tuple) -> tuple[type[Event], ...]:
+    """TYPES, if every one is an `Event` class; a TypeError otherwise."""
     for t in types:
         if not (isinstance(t, type) and issubclass(t, Event)):
             raise TypeError(f"{t!r} is not an event: mark methods for Event classes (iagent.live.events).")
@@ -96,6 +97,9 @@ class EventHandler:
 
 
 class Pipeline:
+    """Runs events through the event handlers in order, one frame at a time, on the coach's thread;
+    other threads hand events in through its inbox."""
+
     def __init__(self, ctx, settings, handlers: list[type[EventHandler]]):
         self.ctx = ctx
         self.settings = settings
@@ -117,6 +121,8 @@ class Pipeline:
             h.start()
 
     def add(self, handler: EventHandler) -> EventHandler:
+        """Register HANDLER's marked methods. TypeError if it isn't an EventHandler or marks no
+        methods."""
         if not isinstance(handler, EventHandler):
             raise TypeError(f"{handler!r} is not an EventHandler.")
         marked = 0
@@ -149,6 +155,7 @@ class Pipeline:
         self._listeners[cls].append(self._in_order(fn))
 
     def _in_order(self, fn: Callback) -> tuple[int, Callback]:
+        """FN with the next registration number (handlers run in that order); forgets cached routes."""
         self._added += 1
         self._routes.clear()
         return self._added, fn
@@ -167,6 +174,8 @@ class Pipeline:
     # --- events --------------------------------------------------------------------------------
 
     def emit(self, event: E) -> E:
+        """Queue EVENT, stamped with the current session time; it's handled after the event being
+        handled now."""
         _check_defined(event)
         event.at = self.now
         self._queue.append(event)
@@ -178,6 +187,8 @@ class Pipeline:
         self._inbox.put(event)
 
     def push(self, frame: TelemetryFrame) -> None:
+        """One telemetry frame: handle what other threads posted, then the `Frame` and everything it
+        leads to, then `FrameDone` (speech)."""
         self.now = frame.session_time
         self.channels = dict(frame.values)
         self.run_inbox()
@@ -209,6 +220,8 @@ class Pipeline:
         return event
 
     def _handle(self, e: Event) -> None:
+        """Run E through its enrichers, then its handlers, then outside listeners (whose errors are
+        logged, never raised)."""
         enrichers, handlers, listeners = self._route(type(e))
         for fn in enrichers:
             fn(e)

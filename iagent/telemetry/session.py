@@ -10,6 +10,9 @@ def slug(text: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class SessionInfo:
+    """What a session is: the track (name, length, iRacing's ids and layout) and the car.
+    `track_key` and `car_key` group laps."""
+
     track_name: str  # display name, e.g. "Circuit de Spa-Francorchamps" (same for every layout)
     track_length_m: float
     car_name: str = "unknown"  # display name, e.g. "FIA F4"
@@ -32,6 +35,7 @@ class SessionInfo:
 
 
 def _first(pattern: str, text: str, flags: int = 0) -> str | None:
+    """The first capture of PATTERN in TEXT, unquoted, or None."""
     m = re.search(pattern, text, flags)
     value = m.group(1).strip().strip("'\"") if m else ""
     return value or None

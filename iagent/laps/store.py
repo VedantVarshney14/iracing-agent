@@ -20,6 +20,9 @@ _LAP_COLUMNS = _COLUMNS[:15]  # the ones that make a `Lap`
 
 
 class LapStore(Protocol):
+    """Where laps are kept: save a segmented lap, list laps (with filters), load a lap's samples.
+    The format is the implementation's business."""
+
     def save(self, lap: Lap) -> Lap:
         """Stores a lap with its `frames`; returns it without them."""
         ...
@@ -77,6 +80,7 @@ class ParquetLapStore:
         self._db.commit()
 
     def save(self, lap: Lap) -> Lap:
+        """Write the lap's raw samples and its 1 m grid, and index it."""
         if lap.frames is None:
             raise ValueError(f"Lap {lap.lap_id} has no samples to save.")
         base = self._root / "laps" / lap.track_key / lap.car_key
@@ -107,6 +111,7 @@ class ParquetLapStore:
         valid_only: bool = False,
         within_best: float | None = None,
     ) -> list[Lap]:
+        """Laps from the index, filtered, in track, car, session and lap order."""
         where, args = [], []
         for column, value in (("track_key", track), ("car_key", car), ("session_id", session_id)):
             if value is not None:
@@ -124,6 +129,7 @@ class ParquetLapStore:
         return laps
 
     def load(self, lap_id: str, grid: bool = True) -> pd.DataFrame:
+        """A lap's samples: on the 1 m grid, or raw. KeyError for an unknown lap."""
         row = self._db.execute("SELECT path FROM laps WHERE lap_id = ?", (lap_id,)).fetchone()
         if row is None:
             raise KeyError(f"Unknown lap {lap_id!r}")

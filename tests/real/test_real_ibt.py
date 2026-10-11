@@ -21,6 +21,7 @@ DATA = Path(__file__).parents[2] / "data" / "telemetry"
 
 
 def find(pattern: str) -> Path:
+    """The first real recording matching PATTERN; skips the test if there's none."""
     matches = sorted(glob.glob(str(DATA / pattern)))
     if not matches:
         pytest.skip(f"no recording matching {pattern!r} in {DATA}")
@@ -40,6 +41,7 @@ def sim_lap_times(path: Path) -> list[float]:
 
 
 def segment(path: Path):
+    """Every lap in a real recording, the trailing partial one included."""
     source = IbtSource(path)
     seg = LapSegmenter(source.session)
     laps = [lap for f in source.frames() if (lap := seg.push(f)) is not None]

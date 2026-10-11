@@ -41,6 +41,8 @@ def resample_to_distance(lap: Lap, step_m: float = 1.0) -> pd.DataFrame:
 
 
 def _nearest(grid: np.ndarray, dist: np.ndarray, values: np.ndarray, valid_range: bool) -> np.ndarray:
+    """VALUES at the sample nearest each grid point (for discrete channels); NaN outside the driven
+    range if VALID_RANGE."""
     idx = np.searchsorted(dist, grid)
     lo = np.clip(idx - 1, 0, len(dist) - 1)
     hi = np.clip(idx, 0, len(dist) - 1)

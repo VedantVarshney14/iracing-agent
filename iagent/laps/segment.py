@@ -37,6 +37,8 @@ class LapSegmenter:
         self._seq = 0
 
     def push(self, frame: Frame) -> Lap | None:
+        """Take the next frame; returns the finished lap when this frame crosses the line. Frames
+        outside the world (garage, loading) are skipped."""
         pct = frame.get("LapDistPct")
         if pct is None:
             raise ValueError("Frame has no LapDistPct; cannot segment laps.")
@@ -73,6 +75,8 @@ class LapSegmenter:
         return self._finish(end_time=None)
 
     def _finish(self, end_time: float | None) -> Lap | None:
+        """Make the lap from the frames so far, ending at END_TIME (None: not on a crossing), with
+        its reasons, time off track and the sim's lap number."""
         if not self._rows:
             return None
         df = pd.DataFrame(self._rows)

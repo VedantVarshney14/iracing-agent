@@ -14,7 +14,11 @@ from iagent.live.pipeline import EventHandler, enrich, on
 
 
 class Focus(EventHandler):
+    """The one thing to work on: picked from the last laps at pace once the learning laps are done,
+    dropped once it's sorted, set by the driver, or carried over from last session."""
+
     def start(self):
+        """Start with a focus carried over from last session, if there is one."""
         self.manual = False
         self.cue_losses: list[dict[int, float]] = []  # per lap at pace: cue -> time lost (s)
         self._carried = False
@@ -33,6 +37,7 @@ class Focus(EventHandler):
         return phrasing.cue_label([self.ctx.cmap.get(c).name for c in cue.corners], cue.corners)
 
     def _set(self, cue, manual: bool, extra: dict | None = None) -> dict | None:
+        """Make CUE the focus (None: no focus), noting it in `focus_log`; returns its entry."""
         st = self.state
         if cue is None:
             st.focus, st.focus_corners, st.focus_label = None, [], None
@@ -47,6 +52,8 @@ class Focus(EventHandler):
 
     @on(SetFocus)
     def set_by_driver(self, e: SetFocus):
+        """The driver chose a focus (or none) in the browser; an `Error` if no cue covers that
+        corner."""
         cue = self.ctx.plan.cue_for(e.corner) if e.corner is not None else None
         if e.corner is not None and cue is None:
             self.emit(Error(message=f"No cue covers T{e.corner}."))
@@ -56,6 +63,8 @@ class Focus(EventHandler):
 
     @enrich(Lap)
     def after_lap(self, e: Lap):
+        """After a lap at pace through most corners, update the focus and put any news to say on the
+        lap (`focus_news`)."""
         before = self.state.focus_entry()
         enough = len(e.results) >= max(1, len(self.ctx.cmap.corners) // 2)  # most corners at pace
         e.focus_news = self.update(e.results) if enough else None
@@ -124,6 +133,8 @@ class Focus(EventHandler):
         return None
 
     def pick(self) -> int | None:
+        """The cue that lost most over the last two laps at pace (at least `focus_min_s`, and not
+        already sorted this session), or None."""
         s = self.settings
         recent = self.cue_losses[-2:]
         done = {f["cue"] for f in self.state.focus_log if f["done_lap"] is not None}

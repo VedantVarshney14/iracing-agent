@@ -6,6 +6,7 @@ from iagent.telemetry.frames import Frame
 
 
 def segment(source):
+    """Every lap the segmenter makes from SOURCE, the trailing partial one included."""
     seg = LapSegmenter(source.session)
     laps = [lap for f in source.frames() if (lap := seg.push(f)) is not None]
     tail = seg.flush()

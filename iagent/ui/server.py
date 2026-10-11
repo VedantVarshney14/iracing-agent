@@ -64,6 +64,9 @@ def create_app(
     token_file: Path | None = None,
     live: LiveSessions | None = None,
 ) -> Starlette:
+    """The `iagent ui` app over the workspace: the lap library and review, the chat, Garage61, ghost
+    files, the telemetry watcher and live coaching. Arguments other than WORKSPACE let tests swap
+    in fakes."""
     agent = agent or ClaudeCode(workspace)  # the coach agent: the chat, the engineer, debriefs
     if live is None:
         from iagent.live.engineer import Engineer
@@ -447,6 +450,8 @@ class RequireClientHeader:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Refuse a request that changes something unless it carries the X-Iagent header (which a
+        page on another site can't send without asking)."""
         if scope["type"] == "http" and scope["method"] not in ("GET", "HEAD"):
             if not any(k.decode("latin-1").lower() == CLIENT_HEADER for k, _ in scope["headers"]):
                 response = JSONResponse({"error": "Missing X-Iagent header."}, status_code=403)

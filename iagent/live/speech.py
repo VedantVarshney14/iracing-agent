@@ -38,6 +38,9 @@ def estimate_duration(text: str) -> float:
 
 @dataclass
 class Utterance:
+    """A line for the arbiter: its words, priority and kind, when it stops being worth saying, and a
+    longer version for when there's time."""
+
     text: str
     priority: int
     kind: str  # "approach", "feedback", "summary", "focus", "answer", "rule"
@@ -55,6 +58,9 @@ class Utterance:
 
 
 class Voice(Protocol):
+    """What the arbiter speaks through: Pocket TTS on the rig, printed or captured in tests and
+    replays."""
+
     def duration(self, text: str) -> float | None:
         """Exact length when the audio is already rendered, else None."""
 
@@ -67,6 +73,8 @@ class Voice(Protocol):
 
 @dataclass
 class Spoken:
+    """A line a voice spoke, for tests and replays: when, what, and whether it was cut off."""
+
     at_s: float
     text: str
     kind: str
@@ -95,6 +103,7 @@ class PrintVoice(CapturedVoice):
     """Prints each line with the session time: a voice for the terminal."""
 
     def play(self, utterance: Utterance, now: float) -> None:
+        """Print the line with its session time and kind."""
         super().play(utterance, now)
         minutes, seconds = divmod(round(now, 2), 60)
         print(f"[{int(minutes):02d}:{seconds:05.2f}] {utterance.kind:<8} {utterance.text}", file=sys.stdout, flush=True)
@@ -105,6 +114,10 @@ Event = Callable[[str, Utterance, float], None]
 
 
 class Arbiter:
+    """Owns the audio: one line at a time, the most important first, a quiet gap between lines,
+    nothing said once expired, and a corner cue cuts off anything less urgent. `on_event` hears
+    what happens to each line."""
+
     def __init__(self, voice: Voice, quiet_gap_s: float = 0.6, on_event: Event | None = None):
         self.voice = voice
         self.quiet_gap_s = quiet_gap_s
@@ -119,6 +132,7 @@ class Arbiter:
         return list(self._queue)
 
     def say(self, utterance: Utterance) -> None:
+        """Queue a line (its length looked up from the voice if the audio is already rendered)."""
         if utterance.duration_s is None:
             utterance.duration_s = self.voice.duration(utterance.text)
         self._queue.append(utterance)
@@ -171,6 +185,7 @@ class Arbiter:
         return None
 
     def clear(self, kinds: tuple[str, ...] | None = None, now: float = 0.0, why: str | None = None) -> None:
+        """Drop queued lines of KINDS (all of them if None), noting WHY for the log."""
         keep = [u for u in self._queue if kinds is not None and u.kind not in kinds]
         for u in self._queue:
             if u not in keep:
@@ -205,6 +220,9 @@ PRIME_S = 0.3  # streamed speech: buffer this much before starting, so the strea
 
 
 class PocketVoice:
+    """Pocket TTS on the CPU: known lines rendered to cached WAVs up front, anything else streamed;
+    audio is written from its own thread so the coach loop never waits."""
+
     def __init__(self, cache_dir: Path, voice: str = DEFAULT_VOICE, threads: int = 2, device: int | str | None = None):
         try:
             import sounddevice
@@ -231,6 +249,7 @@ class PocketVoice:
     # --- the Voice protocol ----------------------------------------------------------------
 
     def duration(self, text: str) -> float | None:
+        """The line's exact length if its audio is already rendered (cached), else None."""
         if text in self._durations:
             return self._durations[text]
         path = self._path(text)
@@ -260,12 +279,15 @@ class PocketVoice:
         return n
 
     def close(self) -> None:
+        """Finish speaking and stop the audio thread; warns if the audio crackled."""
         self._jobs.put(None)
         self._worker.join(timeout=10)
         if self.underruns:
             logger.warning("%d audio underrun(s): speech may have crackled", self.underruns)
 
     def _run(self) -> None:
+        """The audio thread: speak each line, from its cached WAV or streamed from the model; an
+        error is logged, never raised."""
         while (text := self._jobs.get()) is not None:
             self._cut.clear()
             try:
@@ -311,6 +333,7 @@ class PocketVoice:
         return self._cache / (hashlib.sha1(text.encode()).hexdigest()[:16] + ".wav")
 
     def _write(self, path: Path, audio: np.ndarray) -> None:
+        """Save AUDIO as a 16-bit mono WAV at PATH."""
         pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
         with wave.open(str(path), "wb") as w:
             w.setnchannels(1)

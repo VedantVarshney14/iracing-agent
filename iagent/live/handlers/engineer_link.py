@@ -15,6 +15,8 @@ class EngineerLink(EventHandler):
 
     @on(AskEngineer)
     def ask(self, e: AskEngineer):
+        """Put the request to the engineer; its answer is posted back as an `EngineerReply`. If it
+        takes the request on, emit `EngineerAsked`."""
         engineer = self.ctx.engineer
         if engineer is None:
             return
@@ -30,12 +32,15 @@ class EngineerLink(EventHandler):
 
     @on(Line)
     def heard(self, e: Line):
+        """Tell the engineer a line went out on the radio (not its own words)."""
         if self.ctx.engineer is not None and e.status == "said" and e.kind != "engineer":  # not its own words
             minutes, seconds = divmod(e.at, 60)
             self.ctx.engineer.heard(f"[{int(minutes):02d}:{seconds:04.1f}] coach ({e.kind}): {e.text}")
 
     @on(Lap)
     def lap(self, e: Lap):
+        """Tell the engineer a lap was driven: its time, the gap to the reference, how it was driven
+        and where it lost most."""
         if self.ctx.engineer is None:
             return
         gap = f", {e.gap_s:+.2f} s vs the reference" if e.gap_s is not None else ""

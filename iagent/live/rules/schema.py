@@ -161,6 +161,9 @@ def variables(event: str) -> set[str]:
 
 @dataclass
 class Rule:
+    """A validated rule: its event and filters (`when`), condition, actions, limits, group and
+    status. The JSON on disk is `to_dict`."""
+
     id: str
     when: dict
     actions: list[Action]
@@ -184,6 +187,8 @@ class Rule:
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Rule":
+        """A rule from its JSON, validated against the schema, with its expressions compiled against
+        its event's variables. RuleError if it's not valid."""
         _validate(raw)
         when, rule_id = raw["when"], raw["id"]
         event = when["event"]
@@ -203,6 +208,7 @@ class Rule:
         )
 
     def to_dict(self) -> dict:
+        """The rule as JSON, leaving out settings that are at their defaults."""
         out: dict[str, Any] = {"id": self.id, "track": self.track, "car": self.car, "description": self.description,
                                "when": self.when}
         if self.condition is not None:

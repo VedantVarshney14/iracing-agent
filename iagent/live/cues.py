@@ -34,6 +34,9 @@ GEARS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth
 
 @dataclass
 class Cue:
+    """One corner cue: the corners it covers, the point it's timed to (the reference brake point, or
+    just before turn-in), its words, and a short form for once it's been heard."""
+
     corner: int  # the first corner it covers
     corners: list[int]  # every corner it covers (a chicane is one cue)
     target_m: float
@@ -44,6 +47,9 @@ class Cue:
 
 @dataclass
 class CuePlan:
+    """The corner cues for a track and car, built from a reference lap, with that lap's corner
+    metrics for judging each corner after it."""
+
     track_key: str
     car_key: str
     ref_lap_id: str
@@ -59,6 +65,7 @@ class CuePlan:
 
     @classmethod
     def from_json(cls, text: str) -> "CuePlan":
+        """A plan from its saved JSON; a plan from before short forms reads as version 1."""
         raw = json.loads(text)
         raw.setdefault("version", 1)  # before short forms
         raw["cues"] = [Cue(**c) for c in raw["cues"]]
@@ -78,6 +85,7 @@ def load_plan(root: Path, track_key: str, car_key: str) -> CuePlan | None:
 
 
 def save_plan(root: Path, plan: CuePlan) -> Path:
+    """Write the plan to the workspace; returns its path."""
     path = plan_path(root, plan.track_key, plan.car_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(plan.to_json() + "\n")
@@ -102,6 +110,8 @@ def reference_lap(ws: Workspace, track: str, car: str, ref_id: str | None = None
 
 
 def build_plan(ws: Workspace, track: str, car: str, ref_id: str | None = None) -> CuePlan:
+    """A new plan from the reference lap (REF_ID, or the default): a cue per corner from its
+    metrics, close corners merged into one cue, and cues someone rewrote kept."""
     ref = reference_lap(ws, track, car, ref_id)
     cmap = ws.corner_map(track)
     metrics = corner_metrics(ws.load(ref.lap_id), ref.lap_time, cmap)
@@ -113,6 +123,8 @@ def build_plan(ws: Workspace, track: str, car: str, ref_id: str | None = None) -
 
 
 def approach_cue(c: Corner, m: dict) -> Cue:
+    """A corner's cue from the reference lap's metrics: its name and direction, then how to brake
+    (hard, medium or light, and the gear), or flat or a lift for a corner without braking."""
     name = c.name or f"Turn {c.id}"
     side = "left" if c.direction == "L" else "right"
     gear = GEARS.get(m.get("min_gear") or 0)

@@ -3,8 +3,6 @@ import time
 
 import pytest
 
-from iagent.laps.recorder import record
-from iagent.laps.store import ParquetLapStore
 from iagent.live.coach import CornerResult, LiveCoach, Settings
 from iagent.live.handlers import CueCaller, Focus, Pace
 from iagent.live.events import SetFocus
@@ -22,21 +20,15 @@ TRACK, CAR = "synthetic", "synthcar"
 
 
 @pytest.fixture
-def root(tmp_path):
-    store = ParquetLapStore(tmp_path / "ws")
-    record(SyntheticSource(n_laps=4, seed=1), store, "synthetic")
-    store.close()
-    return tmp_path / "ws"
-
-
-@pytest.fixture
 def recording(tmp_path):
+    """A four-lap synthetic .ibt recording, named the way iRacing names them."""
     src = SyntheticSource(n_laps=4, seed=9, start_m=2900.0)
     (tmp_path / "rec").mkdir()
     return write_ibt(tmp_path / "rec" / "synthcar_synthetic 2026-10-10 10-00-00.ibt", src.session, src.frames())
 
 
 def coach_for(root, **settings) -> LiveCoach:
+    """A coach on the synthetic track with these settings."""
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)

@@ -73,6 +73,7 @@ def test_a_planned_focus_lasts_a_set_number_of_sessions(tmp_path):
 
 
 def carried_coach(root, corner):
+    """A coach starting with a focus on CORNER carried over from last session."""
     ws = Workspace(root)
     try:
         plan = build_plan(ws, TRACK, CAR)

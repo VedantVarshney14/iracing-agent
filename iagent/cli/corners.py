@@ -23,6 +23,7 @@ def _corner_dicts(cmap: CornerMap) -> list[dict]:
 
 
 def _print_map(cmap: CornerMap) -> None:
+    """The corner map as a table, with where each name came from."""
     click.echo(f"{cmap.track_key}: {len(cmap.corners)} corners (from {len(cmap.derived_from)} "
                f"{cmap.car_key} laps)")
     click.echo(f"{'corner':<24} {'dir':>3} {'entry':>6} {'apex':>6} {'exit':>6} {'min kph':>8}  name source")

@@ -37,6 +37,7 @@ def _with_brake_onsets(grid: pd.DataFrame) -> pd.DataFrame:
 
 
 def _first_brake_m(part: pd.DataFrame) -> float | None:
+    """Where braking first begins in this part of the lap (m), or None."""
     if "_brake_onset" not in part:
         return None
     onsets = part.loc[part["_brake_onset"], "LapDist"]

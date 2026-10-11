@@ -4,8 +4,6 @@ import pytest
 from click.testing import CliRunner
 
 from iagent.cli import cli
-from iagent.laps.recorder import record
-from iagent.laps.store import ParquetLapStore
 from iagent.live.rules import backtest as rule_backtest
 from iagent.live.rules import store as rulebook
 from iagent.live.coach import LiveCoach, Settings
@@ -19,14 +17,6 @@ from iagent.testing.synthetic import LapKind, SyntheticSource
 from iagent.workspace import Workspace
 
 TRACK, CAR = "synthetic", "synthcar"
-
-
-@pytest.fixture
-def root(tmp_path):
-    store = ParquetLapStore(tmp_path / "ws")
-    record(SyntheticSource(n_laps=4, seed=1), store, "synthetic")
-    store.close()
-    return tmp_path / "ws"
 
 
 def rule(**raw) -> Rule:

@@ -15,6 +15,9 @@ CAUSE_MEANINGS = {c.name: c.doc for c in phrasing.CAUSES}
 
 
 class Debrief(EventHandler):
+    """The cool-down debrief: asks the engineer for it as the driver slows, and when it's due says
+    the engineer's words if they came in time, else the template's."""
+
     def start(self):
         self.results: list[list] = []  # per counted lap: the corners at pace
         self._reset(None)
@@ -32,6 +35,7 @@ class Debrief(EventHandler):
 
     @on(Slowing)
     def ask(self, e: Slowing):
+        """As a slow stretch begins, ask the engineer for the debrief (if there's something to say)."""
         if not self.settings.debrief:
             return
         facts = self.facts()
@@ -45,6 +49,8 @@ class Debrief(EventHandler):
 
     @enrich(EngineerReply)
     def words(self, e: EngineerReply):
+        """Note the engineer's debrief: used if it's for this stretch and the driver is still slow,
+        else too late."""
         if e.kind != "debrief":
             return
         fits = e.stretch == self._stretch and self.state.mode == "tranquille" and not self._done
@@ -61,6 +67,8 @@ class Debrief(EventHandler):
 
     @on(Frame)
     def give(self, e: Frame):
+        """Once the debrief is due (and the engineer's words are in, or no longer worth waiting
+        for), say it a piece at a time and note it as given."""
         if self._due_at is None or self._done:
             return
         waiting = self._waiting and self._words is None and e.at < self._due_at + self.settings.engineer_wait_s
@@ -99,6 +107,7 @@ class Debrief(EventHandler):
         return out
 
     def lines(self) -> list[str]:
+        """The template debrief: the topics, consistency and lap times, in the coach's own phrasing."""
         if not self.settings.debrief or not [lap for lap in self.results if lap]:
             return []
         return phrasing.debrief_lines(self.topics(), self.state.lap_times, self.state.debriefs)

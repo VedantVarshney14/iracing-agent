@@ -17,6 +17,7 @@ from iagent.workspace import WorkspaceError
 
 @pytest.fixture
 def workspace(tmp_path):
+    """A workspace with five synthetic laps: its folder, the source and the laps."""
     source = SyntheticSource(n_laps=5, seed=3)
     store = ParquetLapStore(tmp_path)
     records = record(source, store, "synthetic")
@@ -232,6 +233,7 @@ def test_only_local_pages_can_post(workspace):
 
 
 def ibt_bytes(tmp_path, name="synthcar_synthetic 2026-10-04 15-00-00.ibt", laps=3) -> tuple[str, bytes]:
+    """A synthetic recording's name and contents, as the browser would upload them."""
     from iagent.testing.ibt_writer import write_ibt
 
     source = SyntheticSource(n_laps=laps, seed=4)

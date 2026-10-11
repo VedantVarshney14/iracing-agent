@@ -16,6 +16,8 @@ def _cue_rows(plan) -> list[dict]:
 
 
 def _print_plan(plan) -> None:
+    """The cue plan as a table: corners, where each cue is timed to, its words, who rewrote it, and
+    its short form."""
     click.echo(f"{plan.track_key} / {plan.car_key}, following {plan.ref_lap_id}")
     for c in plan.cues:
         corners = "+".join(f"T{i}" for i in c.corners)

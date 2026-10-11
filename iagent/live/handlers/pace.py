@@ -16,7 +16,11 @@ from iagent.live.pipeline import EventHandler, enrich, on
 
 
 class Pace(EventHandler):
+    """Whether the driver is pushing, judged by time over the last stretch against their best lap
+    (or the reference on a new track); slow stretches, how each lap was driven, and new bests."""
+
     def start(self):
+        """Judge pace against the driver's best lap here, or the reference until they have one."""
         ctx = self.ctx
         self.length = ctx.plan.length_m
         own = ctx.own_best
@@ -37,12 +41,16 @@ class Pace(EventHandler):
         self.state.best_lap = best
 
     def _new_lap(self):
+        """Start counting this lap's frames and slow stretches."""
         self._frames = 0
         self._pushing_frames = 0
         self._slow: list[list[float]] = []  # [from_m, to_m] stretches not pushing, this lap
 
     @on(Frame)
     def judge(self, e: Frame):
+        """Track distance run, and every few frames compare the last `pace_window_m` against the
+        pace lap to switch between pushing and tranquille; on a slow stretch, emit `Slowing` and
+        `CoolDown` as it goes on."""
         st = self.state
         if not st.on_track:
             return
@@ -91,6 +99,7 @@ class Pace(EventHandler):
         return (t1 - t0) / best
 
     def _set(self, mode: str, now: float, d: float) -> None:
+        """Switch to MODE: start or end a slow stretch, and emit `PaceChanged`."""
         st = self.state
         st.mode, st.pushing, st.slow_for_s, st.settled = mode, mode == "pushing", 0.0, False
         if mode == "tranquille":

@@ -39,6 +39,13 @@ with their working directory at the workspace's parent, which is the repo root b
 - Commands live in `iagent/cli/<group>.py`; shared output helpers in `iagent/cli/base.py`; a new
   group is registered in `iagent/cli/__init__.py`.
 
+## Code style
+
+- **Simple over clever.** Fewer concepts, files and layers; one name per idea, saying what it does.
+  Before adding a type, module or abstraction, check an existing one doesn't already cover it.
+- **Docstrings on every non-trivial class, function and method** (more than two statements), saying
+  what it is or does and anything a caller must know. `tests/test_docstrings.py` enforces it.
+
 ## Checking a change
 
 - `uv run pytest` (about a minute; no sim, network or model). `tests/real/` runs only with

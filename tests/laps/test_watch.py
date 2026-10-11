@@ -14,12 +14,14 @@ NAME = "synthcar_synthetic 2026-10-04 15-00-00.ibt"
 
 @pytest.fixture
 def folder(tmp_path):
+    """An empty telemetry folder."""
     path = tmp_path / "telemetry"
     path.mkdir()
     return path
 
 
 def recording(folder, name=NAME, laps=3):
+    """A finished .ibt recording of LAPS synthetic laps in FOLDER."""
     source = SyntheticSource(n_laps=laps, seed=4)
     path = write_ibt(folder / name, source.session, source.frames())
     os.utime(path, (1000.0, 1000.0))  # finished long ago, as far as the watcher's clock goes
@@ -27,6 +29,7 @@ def recording(folder, name=NAME, laps=3):
 
 
 def lap_count(root) -> int:
+    """How many laps the workspace's store holds."""
     store = ParquetLapStore(root)
     try:
         return len(store.list())

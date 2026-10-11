@@ -39,6 +39,7 @@ class Event:
     at: float = field(default=0.0, metadata={"doc": "session time (s)", "internal": True})
 
     def __init_subclass__(cls, **kwargs):
+        """Register a named event class in `EVENTS`, so rules, the log and the CLI find it by name."""
         super().__init_subclass__(**kwargs)
         if cls.__dict__.get("name"):
             if cls.name in EVENTS and EVENTS[cls.name].__qualname__ != cls.__qualname__:
@@ -238,6 +239,8 @@ class CornerExit(Event):
                 **{k: v[1] for k, v in DIFFS.items()}}
 
     def variables(self) -> dict[str, Any]:
+        """What a rule on a corner exit sees: the event's fields, this lap's metrics, the
+        reference's (`ref_*`) and the differences between them."""
         out = _named(self.public())
         out.update({k: self.metrics.get(k) for k in METRICS})
         out.update({f"ref_{k}": self.ref.get(k) for k in METRICS})

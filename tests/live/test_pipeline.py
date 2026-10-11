@@ -6,8 +6,6 @@ from typing import ClassVar
 
 import pytest
 
-from iagent.laps.recorder import record
-from iagent.laps.store import ParquetLapStore
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.handlers import speaking
 from iagent.live.handlers.speaking import Gate
@@ -47,15 +45,9 @@ class KerbStrike(Event):
     count: int = doc("kerb strikes so far", 0)
 
 
-@pytest.fixture
-def root(tmp_path):
-    store = ParquetLapStore(tmp_path / "ws")
-    record(SyntheticSource(n_laps=4, seed=1), store, "synthetic")
-    store.close()
-    return tmp_path / "ws"
-
-
 class Recorder(EventHandler):
+    """A test handler: marks every Pong as seen, and records the Pings and Pongs it handles."""
+
     def start(self):
         self.seen = []
 
@@ -158,6 +150,7 @@ class KerbDetector(EventHandler):
 
     @on(Frame)
     def jolt(self, e: Frame):
+        """Every 20 s at speed on track, pretend the car hit a kerb."""
         if self.state.on_track and (e.frame.get("Speed") or 0) > 40 and e.at - self._t > 20:  # stands in for a jolt
             self._t = e.at
             self.kerbs += 1

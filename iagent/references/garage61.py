@@ -33,6 +33,8 @@ _POSITION_OFF_TRACK = 4
 
 
 class Garage61Error(RuntimeError):
+    """Garage61 refused or failed a request, with a message saying what to do about it."""
+
     pass
 
 
@@ -76,6 +78,9 @@ def save_token(token: str, path: Path | None = None) -> Path:
 
 
 class Garage61Client:
+    """Garage61's API with a personal token: the account, teams, tracks and cars, lap search,
+    telemetry CSVs and ghost files."""
+
     def __init__(self, token: str, base_url: str = BASE_URL, transport: httpx.BaseTransport | None = None):
         self._http = httpx.Client(
             base_url=base_url,
@@ -88,6 +93,8 @@ class Garage61Client:
         self._http.close()
 
     def _get(self, path: str, params: dict | None = None) -> httpx.Response:
+        """GET PATH with PARAMS (leaving out None); Garage61Error with a helpful message for a
+        rejected token, the rate limit or any other error."""
         resp = self._http.get(path, params={k: v for k, v in (params or {}).items() if v is not None})
         if resp.status_code == 401:
             raise Garage61Error("Garage61 rejected the token (401). Check GARAGE61_TOKEN.")

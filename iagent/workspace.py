@@ -19,16 +19,24 @@ logger = logging.getLogger("iagent.workspace")
 
 
 class WorkspaceError(Exception):
+    """Something the workspace doesn't have or can't do: an unknown lap, no lap store yet, laps that
+    can't be compared."""
+
     pass
 
 
 class Workspace:
+    """The driver's data: the lap stores (their own and reference laps), corner maps and reference
+    lap details. Shared by the CLI and the UI."""
+
     def __init__(self, root: Path):
         self.root = root
         self._store: ParquetLapStore | None = None
         self._refs: ParquetLapStore | None = None
 
     def store(self, create: bool = False) -> ParquetLapStore:
+        """The driver's lap store. WorkspaceError if there isn't one yet (unless CREATE) or it's in
+        an older format."""
         if self._store is None:
             if not create and not (self.root / "index.sqlite").exists():
                 raise WorkspaceError(
@@ -50,6 +58,7 @@ class Workspace:
         return self._refs
 
     def close(self) -> None:
+        """Close the lap stores."""
         for store in (self._store, self._refs):
             if store is not None:
                 store.close()

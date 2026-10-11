@@ -10,8 +10,12 @@ from iagent.live.pipeline import EventHandler, enrich
 
 
 class Summary(EventHandler):
+    """Words for the lap summary at the line (`summary_text` on `Lap`); a built-in rule says them."""
+
     @enrich(Lap)
     def words(self, e: Lap):
+        """The lap time against the reference, the corner that lost most (unless it's the focus) and
+        any moment, leaving out lap times when CrewChief reads them."""
         if e.lap_time is None:
             return
         s, cmap = self.settings, self.ctx.cmap

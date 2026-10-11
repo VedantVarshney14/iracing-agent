@@ -22,6 +22,8 @@ NO_TOKEN = (
 
 
 def client_from_env() -> g61.Garage61Client:
+    """A Garage61 client with the token from the environment or token file; WorkspaceError
+    explaining setup if there's none."""
     token = g61.find_token()
     if not token:
         raise WorkspaceError(NO_TOKEN)

@@ -15,6 +15,8 @@ from iagent.live.pipeline import EventHandler, on
 
 @dataclass(frozen=True)
 class Gate:
+    """A reason to keep quiet: a condition over the shared state, and what it does while it holds."""
+
     name: str
     when: str  # an expression over the shared state (iagent.live.rules.expr)
     hold: bool = False  # nothing new is started
@@ -37,7 +39,12 @@ GATES = [
 ]
 
 class Speaking(EventHandler):
+    """Last in the pipeline: applies the gates and lets the arbiter speak, and reports every line
+    said, cut or dropped as a `Line`."""
+
     def start(self):
+        """Compile the gates, and have the arbiter report what happens to each line as a `Line`
+        event."""
         self._gates = [(g, Expr(g.when)) for g in GATES]
         self._active: set[str] = set()
         arbiter = self.ctx.arbiter
@@ -47,6 +54,8 @@ class Speaking(EventHandler):
 
     @on(FrameDone)
     def speak(self, e: FrameDone):
+        """After each frame: work out which gates hold (clearing lines they drop), then let the
+        arbiter start the next line if it may, with the time free before the next cue."""
         arbiter, now = self.ctx.arbiter, e.at
         hold = cues_only = long_ok = False
         why = ""

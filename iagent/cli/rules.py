@@ -28,6 +28,7 @@ def rules():
 
 
 def _read_rule(text: str) -> dict:
+    """A rule's JSON from the argument: inline, `@file`, or `-` for stdin."""
     if text == "-":
         text = click.get_text_stream("stdin").read()
     elif text.startswith("@"):
@@ -47,6 +48,7 @@ def _when(rule) -> str:
 
 
 def _bt_line(bt: dict | None, fingerprint: str) -> str:
+    """One line on a rule's last backtest, and whether it was of the rule as it is now."""
     if not bt:
         return "not backtested"
     stale = "" if bt.get("fingerprint") == fingerprint else " (before the last edit)"
@@ -220,6 +222,7 @@ def rules_backtest(ctx: Ctx, rule_ids: tuple[str, ...], car: str | None, track: 
 
 
 def _main_car(ctx: Ctx, track: str) -> str:
+    """The car with the most laps on TRACK."""
     counts: dict[str, int] = {}
     if (ctx.workspace / "index.sqlite").exists():
         for r in ctx.store().list(track=track):

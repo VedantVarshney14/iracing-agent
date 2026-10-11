@@ -5,6 +5,9 @@ from dataclasses import dataclass
 
 @dataclass
 class Settings:
+    """How the live coach behaves: what it says and how often, the thresholds it judges laps and
+    corners by, and its timings. Every field has a default."""
+
     learning_laps: int = 2  # laps with every corner cued
     lead_s: float = 0.8  # finish a cue this long before its target
     feedback_after_m: float = 60.0  # assess a corner this far past its exit

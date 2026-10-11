@@ -12,6 +12,8 @@ class Laps(EventHandler):
     to the new lap); a complete, clean one is followed by a counted `Lap`."""
 
     def start(self):
+        """Set up the lap segmenter and what the state knows from the start (learning laps,
+        reference time, track and car)."""
         self._segmenter = LapSegmenter(self.ctx.session)
         s, st = self.settings, self.state
         st.learning = s.learning_laps > 0
@@ -20,6 +22,8 @@ class Laps(EventHandler):
 
     @enrich(Frame)
     def segment(self, e: Frame):
+        """Feed the frame to the segmenter; a line crossing is dispatched at once, so this frame
+        counts in the new lap. Also keeps `after_line` (CrewChief's quiet time after the line)."""
         segment = self._segmenter.push(e.frame)
         if segment is not None:
             self.pipe.dispatch(Crossing(segment=segment, complete=segment.complete))
@@ -28,6 +32,8 @@ class Laps(EventHandler):
 
     @on(Crossing)
     def crossed(self, e: Crossing):
+        """Count the crossing; a complete, clean lap is also counted as a `Lap`, carrying what
+        handlers added at the line."""
         st = self.state
         st.laps_driven += 1
         st.line_at = e.at

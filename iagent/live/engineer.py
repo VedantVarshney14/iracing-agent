@@ -60,6 +60,8 @@ Turn = Callable[[str, str, bool, dict], tuple[dict | None, bool]]  # (prompt, se
 
 @dataclass(order=True)
 class _Request:
+    """A queued turn: ordered by priority, then by when it was asked."""
+
     priority: int
     seq: int
     kind: str = field(compare=False)
@@ -71,6 +73,9 @@ class _Request:
 
 
 class Engineer:
+    """The session's engineer: one conversation, turns taken one at a time on its own thread, most
+    important first. The coach never waits for it."""
+
     def __init__(self, turn: Turn, session_id: str | None = None):
         self.session_id = session_id or str(uuid.uuid4())
         self._turn = turn
@@ -143,6 +148,8 @@ class Engineer:
     # --- the conversation ----------------------------------------------------------------------
 
     def _work(self) -> None:
+        """The engineer's thread: take the most important request; if it's still worth answering,
+        take the turn with what was heard since the last one; hand back the words (or None)."""
         while True:
             with self._cv:
                 while not self._queue and not self._closed:
@@ -166,6 +173,8 @@ class Engineer:
                 logger.exception("Engineer: reply handler failed")
 
     def _take_turn(self, req: _Request, heard: list[str]) -> str | None:
+        """One turn: what was heard on the radio, the session, then the request; returns the words
+        from the structured reply, or None if the turn failed."""
         parts = []
         if heard:
             parts.append("<radio since your last turn>\n" + "\n".join(heard) + "\n</radio>")
@@ -183,6 +192,8 @@ class Engineer:
 
 
 def _context(ctx: dict) -> str:
+    """The session block for a turn: track, car, reference and the live lines, or the context as
+    JSON."""
     lines = []
     for key in ("track", "car", "ref"):
         if ctx.get(key):
@@ -194,6 +205,7 @@ def _context(ctx: dict) -> str:
 # --- what each kind of turn asks ------------------------------------------------------------------
 
 def briefing_prompt(f: dict) -> str:
+    """The briefing: read the notes and the plan, and give a radio check for the out lap."""
     lines = ["The session is starting: the driver is heading out. Before you say anything, read your notes for "
              f"this track if there are any (`{f['notes']}` in the workspace) and the plan below.",
              "", "<plan>", json.dumps(f, indent=1), "</plan>", "",
@@ -206,6 +218,8 @@ def briefing_prompt(f: dict) -> str:
 
 
 def debrief_prompt(f: dict) -> str:
+    """The cool-down debrief: the facts, the coach's own phrasing to fall back on, and how long it
+    may be."""
     lines = ["The driver is on a cool-down lap and can listen for about twenty seconds. Give them the debrief: what "
              "to work on next run and how, from the facts and what you've said before. Two to four short sentences, "
              "under 60 words. Mention at most two corners."]
@@ -218,6 +232,8 @@ def debrief_prompt(f: dict) -> str:
 
 
 def rule_prompt(rule: dict, state: dict) -> str:
+    """A rule asked the engineer: its message and the values it saw, how much the driver can take
+    now, and that it may change rules only if asked or clearly wrong."""
     pushing = state.get("mode") == "pushing"
     lines = [f"A rule you set has fired: {rule['id']}" + (f" ({rule['description']})" if rule.get("description") else "")
              + ".", f"Its message: {rule['message']}", f"Values it saw: {json.dumps(rule.get('values') or {})}",

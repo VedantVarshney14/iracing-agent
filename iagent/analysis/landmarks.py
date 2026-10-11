@@ -24,6 +24,8 @@ _GENERIC = re.compile(r"^turn\s*\d+$|^t\d+$", re.I)
 
 @dataclass(frozen=True)
 class Landmark:
+    """A named stretch of track from CrewChief's landmarks file, by lap distance."""
+
     name: str  # as published, e.g. "la_source"
     start_m: float
     end_m: float

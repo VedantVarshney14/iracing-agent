@@ -1,11 +1,7 @@
 import threading
 import time
 
-import pytest
-
 from iagent.agent import StreamParser, final_text, structured
-from iagent.laps.recorder import record
-from iagent.laps.store import ParquetLapStore
 from iagent.live import engineer as eng
 from iagent.live import phrasing
 from iagent.live.rules import store as rulebook
@@ -21,14 +17,6 @@ from iagent.workspace import Workspace
 
 TRACK, CAR = "synthetic", "synthcar"
 WORDS = "Nice laps. Turn 1 is the one: you're on the brakes a touch early. Try a few metres later next time."
-
-
-@pytest.fixture
-def root(tmp_path):
-    store = ParquetLapStore(tmp_path / "ws")
-    record(SyntheticSource(n_laps=4, seed=1), store, "synthetic")
-    store.close()
-    return tmp_path / "ws"
 
 
 def test_replies_are_structured_and_split_for_the_radio():
@@ -63,6 +51,8 @@ class Turns:
         self.started = threading.Event()  # set when the first turn begins
 
     def __call__(self, prompt, session_id, resume, schema):
+        """One turn: note what was asked, check it didn't overlap another, and answer after
+        `delay_s`."""
         self.started.set()
         self.running += 1
         self.overlapped |= self.running > 1
@@ -80,6 +70,7 @@ PAYLOADS = {"question": lambda t: {"text": t}, "briefing": lambda t: {"facts": {
 
 
 def ask(e: Engineer, kind, text="go", **kw):
+    """Ask the engineer for a turn of KIND; returns an event set on the reply, and the reply."""
     done = threading.Event()
     out = {}
 
@@ -150,6 +141,7 @@ class SlowEngineer:
         self.now = 0.0
 
     def request(self, kind, prompt, context, on_reply, min_gap_s=0.0):
+        """Take a debrief request (to answer later, on `tick`)."""
         if kind == "debrief":
             self.asked.append([kind, prompt, on_reply, self.now])
         return True
@@ -158,6 +150,7 @@ class SlowEngineer:
         pass
 
     def tick(self, now):
+        """At session time NOW, answer requests asked at least `reply_after_s` ago."""
         self.now = now
         for a in self.asked:
             if self.reply_after_s is not None and a[2] is not None and now >= a[3] + self.reply_after_s:

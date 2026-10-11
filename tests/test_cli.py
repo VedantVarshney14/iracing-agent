@@ -8,6 +8,7 @@ from iagent.cli import DEFAULT_WORKSPACE, cli
 
 @pytest.fixture
 def run(tmp_path):
+    """Run `iagent` on a temporary workspace; returns the result."""
     runner = CliRunner()
 
     def invoke(*args: str):
@@ -19,6 +20,7 @@ def run(tmp_path):
 
 @pytest.fixture
 def ingested(run):
+    """A workspace with six messy synthetic laps ingested."""
     result = run("ingest", "synthetic", "--laps", "6", "--messy")
     assert result.exit_code == 0, result.output
     return result

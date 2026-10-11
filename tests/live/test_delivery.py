@@ -2,10 +2,6 @@
 
 import json
 
-import pytest
-
-from iagent.laps.recorder import record
-from iagent.laps.store import ParquetLapStore
 from iagent.live import crewchief
 from iagent.live.coach import LiveCoach, Settings
 from iagent.live.handlers import History
@@ -19,14 +15,6 @@ from iagent.testing.synthetic import LapKind, SyntheticSource
 from iagent.workspace import Workspace
 
 TRACK, CAR = "synthetic", "synthcar"
-
-
-@pytest.fixture
-def root(tmp_path):
-    store = ParquetLapStore(tmp_path / "ws")
-    record(SyntheticSource(n_laps=4, seed=1), store, "synthetic")
-    store.close()
-    return tmp_path / "ws"
 
 
 def drive(root, kinds, settings, rules=None, seed=11):

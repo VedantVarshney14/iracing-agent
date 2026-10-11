@@ -13,6 +13,9 @@ from iagent.live.events import doc
 @dataclass(kw_only=True)
 class CoachState:
     # the clock and the car (the Clock and Track handlers)
+    """Everything the live coach knows during a session, in one typed object. Event handlers keep it
+    up to date; rules read every field by name."""
+
     time: float = doc("session time (s)", 0.0)
     since_start_s: float = doc("seconds since the coach started", 0.0)
     lap_dist: float | None = doc("distance from the line (m)")

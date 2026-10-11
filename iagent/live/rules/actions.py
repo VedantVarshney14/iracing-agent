@@ -21,10 +21,13 @@ ASK_MIN_GAP_S = 30.0  # rules ask the engineer at most this often (each ask is a
 
 
 class RuleError(ValueError):
+    """A rule that can't be used, with a message naming the rule and what's wrong with it."""
+
     pass
 
 
 def template(rule_id: str, text: Any, names: set[str]) -> Template:
+    """TEXT (a line with {expressions}) parsed for rule RULE_ID, using only NAMES."""
     try:
         t = Template(str(text))
     except ExprError as e:
@@ -34,6 +37,7 @@ def template(rule_id: str, text: Any, names: set[str]) -> Template:
 
 
 def expression(rule_id: str, text: Any, names: set[str]) -> Expr:
+    """TEXT (a condition or a number) parsed for rule RULE_ID, using only NAMES."""
     try:
         expr = Expr(str(text))
     except ExprError as e:
@@ -43,6 +47,7 @@ def expression(rule_id: str, text: Any, names: set[str]) -> Expr:
 
 
 def check_names(rule_id: str, used: set[str], names: set[str]) -> None:
+    """A RuleError if rule RULE_ID uses a variable its event doesn't provide."""
     unknown = sorted(used - names)
     if unknown:
         raise RuleError(f"{rule_id}: unknown variable(s) {', '.join(unknown)}. See `iagent rules vars` for what each "
@@ -78,6 +83,9 @@ class Action(ABC):
 
 
 class Say(Action):
+    """Say the rendered text through the speech arbiter, at a priority, with an optional longer
+    version for when there's time."""
+
     key, doc = "say", "say it (cue, feedback or summary priority; `long` for when there's time)"
     options = ("long", "priority", "kind", "expires_s")
 
@@ -99,6 +107,8 @@ class Say(Action):
         return super().names() | (self.longer.names if self.longer else set()) | self.kind.names
 
     def run(self, engine, rule, text, env, e):
+        """Hand the line to the arbiter, unless the rule's group has said enough (then report why it
+        was held). It expires at `expires_s`, at a cue's point, or after a default wait."""
         priority = PRIORITIES[self.priority]
         held = engine.group_held(rule, priority, e.at)
         if held:
@@ -120,9 +130,13 @@ class Say(Action):
 
 
 class Ask(Action):
+    """Ask the engineer about this rule firing: it may answer on the radio in its own words."""
+
     key, doc = "ask_engineer", "tell the engineer this: it may answer on the radio in its own words"
 
     def run(self, engine, rule, text, env, e):
+        """Emit an `AskEngineer` with the rule, its message, the values it saw and the driver's
+        state."""
         st = engine.state
         engine.emit(AskEngineer(kind="rule", rule=rule.id, min_gap_s=ASK_MIN_GAP_S, payload={
             "rule": {"id": rule.id, "description": rule.description, "message": text,
@@ -133,6 +147,8 @@ class Ask(Action):
 
 
 class Log(Action):
+    """Only note the firing in the session log."""
+
     key, doc = "log", "note it in the session log"
 
     def run(self, engine, rule, text, env, e):
@@ -143,6 +159,7 @@ ACTIONS: dict[str, type[Action]] = {a.key: a for a in (Say, Ask, Log)}
 
 
 def parse_action(rule_id: str, raw: Any, event: str, names: set[str]) -> Action:
+    """One action of rule RULE_ID from its JSON: exactly one of the `ACTIONS` keys."""
     if not isinstance(raw, dict):
         raise RuleError(f"{rule_id}: an action is an object like {{\"say\": \"...\"}}.")
     keys = [k for k in ACTIONS if k in raw]

@@ -68,6 +68,7 @@ class IrsdkSource:
 
     @property
     def session(self) -> SessionInfo:
+        """The session info, re-read from iRacing when it changes."""
         update = self._ir.session_info_update
         if self._session is None or update != self._session_update:
             header = self._ir._header
@@ -80,6 +81,8 @@ class IrsdkSource:
         self._stopped = True
 
     def frames(self) -> Iterator[Frame]:
+        """Frames from iRacing as they come (one per sim tick), until it disconnects or `stop` is
+        called."""
         last_tick = None
         while not self._stopped:
             if not self._ir.is_connected:

@@ -13,12 +13,18 @@ from iagent.live.pipeline import EventHandler, enrich, on
 
 
 class History(EventHandler):
+    """What's known about each corner across laps: which ones keep costing time, hints for their
+    cues next lap, and the feedback line after a corner (aware of what was said last time)."""
+
     def start(self):
         self._told: dict[int, tuple[str, int]] = {}  # corner -> (cause, lap) of the last feedback said
         self._advised: set[int] = set()  # corners with advice this lap
 
     @enrich(CornerExit)
     def feedback(self, e: CornerExit):
+        """Judge a corner exit at pace: note struggling corners and hints, emit `Advice`, and set
+        the corner's `feedback` (with a focus set, only for the focus or a bad corner; one line
+        per cue a lap)."""
         s, st = self.settings, self.state
         cue = self.ctx.plan.cue_for(e.corner)
         e.in_focus = cue is not None and cue.corner == st.focus
@@ -43,6 +49,8 @@ class History(EventHandler):
             e.feedback, e.feedback_long = self.line(e) or (None, None)
 
     def line(self, e: CornerExit) -> tuple[str, str | None] | None:
+        """The feedback for this corner: the advice (as a repeat if it's the same mistake as last
+        lap), "better" if last lap's mistake is fixed, or None."""
         lap = self.state.lap + 1
         told = self._told.get(e.corner)
         recent = told is not None and lap - told[1] <= 1

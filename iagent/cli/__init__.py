@@ -22,6 +22,7 @@ class _Cli(click.Group):
     errors."""
 
     def invoke(self, ctx: click.Context):
+        """Run the command, turning workspace and rule errors into clean CLI errors."""
         try:
             return super().invoke(ctx)
         except (WorkspaceError, RuleError) as e:

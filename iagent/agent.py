@@ -76,6 +76,9 @@ class ClaudeCode(Agent):
 
     def command(self, system_prompt: str, session_id: str | None = None, new_session: bool = False,
                 schema: dict | None = None) -> list[str]:
+        """The `claude -p` command line for a turn: streamed JSON, the system prompt, the coach
+        plugin and its allowed tools, the conversation (new or resumed), and a JSON Schema for a
+        structured reply."""
         cmd = [self.claude, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
                "--append-system-prompt", system_prompt, "--permission-mode", "acceptEdits",
                "--allowedTools", *ALLOWED_TOOLS]
@@ -148,6 +151,8 @@ class StreamParser:
         self._ui_calls: set[str] = set()  # tool_use ids that ran `iagent ui show`
 
     def feed(self, raw: str) -> list[dict]:
+        """One line of `claude -p`'s stream-json output, as the simple events in this module's
+        docstring (none for lines that don't matter)."""
         raw = raw.strip()
         if not raw:
             return []

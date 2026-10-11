@@ -15,7 +15,12 @@ from iagent.live.speech import Utterance
 
 
 class CueCaller(EventHandler):
+    """The corner cues: watches each cue's point, decides on each approach whether it's wanted and
+    in what words, and keeps track of what the driver has heard."""
+
     def start(self):
+        """Watch every cue's point; the cue's spoken length is asked for as the car gets near, so
+        it's timed at the current speed."""
         for cue in self.ctx.plan.cues:
             self.emit(Watch(id=f"cue:{cue.corner}", target_m=cue.target_m, lead_s=self.settings.lead_s,
                             speak=lambda cue=cue: self._speak(cue),
@@ -23,6 +28,9 @@ class CueCaller(EventHandler):
                                   "corner_name": phrasing.corner_name(self.ctx.cmap.get(cue.corner))}))
 
     def wanted(self, cue) -> bool:
+        """Whether the cue is worth saying now: only while pushing; every cue on the learning laps;
+        then the focus (and corners in big trouble or with a hint), or without a focus the
+        corners that went badly."""
         st = self.state
         if not st.pushing:
             return False
@@ -33,6 +41,8 @@ class CueCaller(EventHandler):
         return any(c in st.struggling or c in st.hints for c in cue.corners)
 
     def full(self, cue) -> bool:
+        """Whether to say the cue in full rather than its short form: until heard `learning_laps`
+        times, and always for a new focus."""
         st = self.state
         if not (self.settings.short_cues and cue.short):
             return True
@@ -41,6 +51,8 @@ class CueCaller(EventHandler):
         return st.cue_heard.get(cue.corner, 0) < max(1, self.settings.learning_laps)
 
     def text(self, cue) -> str:
+        """The cue's words: full or short, with last lap's hint for one of its corners, and "Focus."
+        first for a new focus."""
         st = self.state
         corner = next((c for c in cue.corners if c in st.hints), None)
         second = phrasing.corner_name(self.ctx.cmap.get(corner)) if corner not in (None, cue.corner) else None
@@ -48,6 +60,7 @@ class CueCaller(EventHandler):
         return f"Focus. {text}" if cue.corner == st.focus and not st.focus_heard else text
 
     def _speak(self, cue) -> float | None:
+        """How long the cue takes to say if it's wanted now (for timing its start), else None."""
         if not self.wanted(cue):
             return None
         text = self.text(cue)
@@ -55,12 +68,15 @@ class CueCaller(EventHandler):
 
     @enrich(Approach)
     def words(self, e: Approach):
+        """Put `wanted`, `text` and `full` on a cue's `Approach`, for the built-in cue rule."""
         cue = self.ctx.plan.cue_for(e.corner) if e.source == "cue" else None
         if cue is not None:
             e.wanted, e.text, e.full = self.wanted(cue), self.text(cue), self.full(cue)
 
     @on(Approach)
     def heard(self, e: Approach):
+        """A wanted cue was said: count it as heard, mark a new focus as heard, and use up its
+        corners' hints."""
         if e.source != "cue" or not e.wanted:
             return
         cue, st = self.ctx.plan.cue_for(e.corner), self.state
@@ -73,6 +89,8 @@ class CueCaller(EventHandler):
 
     @on(Frame)
     def inside(self, e: Frame):
+        """Keep `in_corner`: between a cue's point (100 m before its target) and its last corner's
+        exit."""
         d = self.state.lap_dist
         if d is None:
             return

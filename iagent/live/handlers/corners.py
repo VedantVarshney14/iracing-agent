@@ -21,6 +21,9 @@ ROW_CHANNELS = ("LapDist", "Speed", "Brake", "Throttle", "Gear", "PlayerTrackSur
 
 @dataclass
 class CornerResult:
+    """One corner on one lap: time lost to the reference, what to say after it and add to its cue
+    next lap, whether it's a struggle, its metrics and the cause of lost time."""
+
     corner: int
     delta_s: float
     advice: str | None  # said after the corner
@@ -33,17 +36,23 @@ class CornerResult:
 
 
 class Corners(EventHandler):
+    """Judges each corner just past its exit against the reference lap (`CornerExit`), and collects
+    the lap's corner results for the line."""
+
     def start(self):
         self._ref_metrics = {m["corner"]: m for m in self.ctx.plan.ref_metrics}
         self._new_lap()
 
     def _new_lap(self):
+        """Forget the last lap's samples and results."""
         self._rows: list[tuple[float, ...]] = []
         self._assessed: set[int] = set()
         self._results: list[CornerResult] = []
 
     @on(Frame)
     def watch(self, e: Frame):
+        """Keep this lap's samples; once the car is past a corner's exit (by `feedback_after_m`),
+        assess it and emit `CornerExit`. Only corners at pace count towards the lap."""
         st = self.state
         if not st.on_track:
             return
@@ -67,6 +76,9 @@ class Corners(EventHandler):
                 ref=self._ref_metrics.get(c.id) or {}, result=result))
 
     def assess(self, corner_id: int, d: float) -> CornerResult | None:
+        """The corner's metrics on this lap so far, time lost against the reference over its
+        segment, and the clearest cause with advice and a hint; None if the corner wasn't all
+        driven or has no reference."""
         c = self.ctx.cmap.get(corner_id)
         ref = self._ref_metrics.get(corner_id)
         lo = max(0.0, c.segment_start_m - 60.0)
@@ -109,12 +121,14 @@ class Corners(EventHandler):
 
     @enrich(Crossing)
     def lap_corners(self, e: Crossing):
+        """Put the lap's corner results on the line crossing, and start the next lap."""
         e.results = self._results
         e.corners = [{"corner": r.corner, "delta_s": r.delta_s} for r in self._results]
         self._new_lap()
 
     @enrich(Lap)
     def worst(self, e: Lap):
+        """Put the corner that lost the most (incidents aside) on the lap."""
         s = self.settings
         worst = max((r for r in e.results if r.delta_s <= s.incident_s), key=lambda r: r.delta_s, default=None)
         if worst is not None:

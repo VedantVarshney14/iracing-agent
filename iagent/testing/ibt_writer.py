@@ -59,6 +59,8 @@ def write_ibt(
     channels: Iterable[str] = CORE_CHANNELS,
     tick_rate: int = 60,
 ) -> Path:
+    """Write FRAMES as an .ibt file iRacing's reader (and ours) can open, with the session info in
+    its header; returns the path."""
     frames = list(frames)
     names = [c for c in channels if c in frames[0].values]
     codes = [_CHANNEL_CODES.get(n, "f") for n in names]

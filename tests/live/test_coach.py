@@ -19,6 +19,7 @@ TRACK, CAR = "synthetic", "synthcar"
 
 @pytest.fixture
 def ws(tmp_path):
+    """A workspace with four synthetic laps."""
     store = ParquetLapStore(tmp_path)
     record(SyntheticSource(n_laps=4, seed=1), store, "synthetic")
     store.close()
@@ -70,6 +71,7 @@ class Where(CapturedVoice):
 
 
 def drive(ws, source, settings=None):
+    """Replay SOURCE through a coach, noting where on track and at what speed each line was spoken."""
     plan = build_plan(ws, TRACK, CAR)
     voice = Where()
     coach = LiveCoach(source.session, plan, ws.corner_map(TRACK), ws.load(plan.ref_lap_id), Arbiter(voice), settings)
@@ -135,6 +137,7 @@ def test_a_new_track_is_mapped_from_reference_laps(tmp_path):
 
 
 def advice(name, mine, ref, delta):
+    """What the coach would say after a corner with these metrics, and the hint for its cue."""
     cause, amount = phrasing.cause_of(mine, ref, delta, Settings())
     texts = phrasing.advice(name, cause, amount, ref, mine)
     return texts["advice"], texts["hint"]

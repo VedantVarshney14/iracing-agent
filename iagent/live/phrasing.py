@@ -56,6 +56,8 @@ def _lift(ref: dict) -> bool:
 
 
 class OffTrack(Cause):
+    """Ran off track in the corner: tidy the entry."""
+
     name, doc, any_loss = "off", "ran off track (amount: metres off)", True
 
     def detect(self, m, r, d, s):
@@ -73,6 +75,8 @@ class OffTrack(Cause):
 
 
 class EarlyBrake(Cause):
+    """Braked earlier than the reference: move the brake point later."""
+
     name, doc = "early_brake", "braked earlier than the reference (amount: metres)"
 
     def detect(self, m, r, d, s):
@@ -95,6 +99,9 @@ class EarlyBrake(Cause):
 
 
 class LateBrake(Cause):
+    """Braked later than the reference and was slower through the corner: the late stop cost the
+    exit."""
+
     name, doc = "late_brake", "braked later and lost the exit (amount: metres)"
 
     def detect(self, m, r, d, s):
@@ -116,6 +123,8 @@ class LateBrake(Cause):
 
 
 class NoBrakeNeeded(Cause):
+    """Braked where the reference only lifts or stays flat."""
+
     name, doc = "no_brake_needed", "braked where the reference doesn't"
 
     def detect(self, m, r, d, s):
@@ -134,6 +143,8 @@ class NoBrakeNeeded(Cause):
 
 
 class SlowApex(Cause):
+    """Slower than the reference at the apex: carry more speed in."""
+
     name, doc = "slow_apex", "slower at the apex (amount: km/h)"
 
     def detect(self, m, r, d, s):
@@ -152,6 +163,8 @@ class SlowApex(Cause):
 
 
 class LateThrottle(Cause):
+    """Back on full throttle later than the reference."""
+
     name, doc = "late_throttle", "full throttle later than the reference (amount: metres)"
 
     def detect(self, m, r, d, s):
@@ -194,6 +207,8 @@ def advice(name: str, cause: Cause | None, amount: float | None, ref: dict, mine
 
 
 def longer(name: str, cause_name: str | None, amount, ref: dict, mine: dict, named: bool = True) -> str | None:
+    """The fuller explanation of a cause of lost time (by its name), for when the driver has time to
+    listen; None for no cause."""
     cause = CAUSE_BY_NAME.get(cause_name) if cause_name else None
     if cause is None:
         return None
@@ -270,6 +285,7 @@ def debrief_lines(topics: list[dict], lap_times: list[float], n: int) -> list[st
 
 
 def consistency(lap_times: list[float]) -> str | None:
+    """A line on how close the last three laps at pace were, or None with fewer than three."""
     times = lap_times[-3:]
     if len(times) < 3:
         return None

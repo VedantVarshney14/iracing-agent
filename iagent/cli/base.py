@@ -14,6 +14,8 @@ DEFAULT_WORKSPACE = Path(__file__).resolve().parents[2] / "workspace"
 
 
 class Ctx(Workspace):
+    """The workspace, as every command gets it (`ctx.workspace` is its folder)."""
+
     @property
     def workspace(self) -> Path:
         return self.root
@@ -28,6 +30,8 @@ def fmt(v, spec: str) -> str:
 
 
 def lap_dict(lap: Lap, best: dict) -> dict:
+    """A lap as JSON for `--json` output, with how far it is off the best valid lap of its track and
+    car."""
     out = {f.name: getattr(lap, f.name) for f in dataclasses.fields(lap) if f.name != "frames"}
     out["reasons"] = list(lap.reasons)
     out["complete"], out["valid"] = lap.complete, lap.valid
@@ -37,6 +41,7 @@ def lap_dict(lap: Lap, best: dict) -> dict:
 
 
 def print_laps(laps: list[Lap], best: dict) -> None:
+    """Laps as a table: time, gap to the best, time off track, validity and why not."""
     width = max([len("lap")] + [len(r.lap_id) for r in laps])
     click.echo(f"{'lap':<{width}} {'time':>9} {'vs best':>8} {'off(s)':>7}  {'valid':<5}  reasons")
     for r in laps:

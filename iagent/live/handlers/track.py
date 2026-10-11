@@ -8,11 +8,15 @@ CAR_ALONGSIDE = 2  # iRacing's CarLeftRight: 0 off, 1 clear, 2+ a car (or cars) 
 
 
 class Track(EventHandler):
+    """Where the car is: on track or not, its speed and distance, a car alongside, whether the lap
+    stayed clean, and pit road entries and exits."""
+
     def start(self):
         self._pit: bool | None = None
 
     @on(Frame)
     def where(self, e: Frame):
+        """Update the state from the frame; emit `Pit` on entering or leaving pit road."""
         f, st = e.frame, self.state
         surface = f.get("PlayerTrackSurface", SURFACE_ON_TRACK)
         speed = f.get("Speed")

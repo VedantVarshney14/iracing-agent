@@ -35,6 +35,9 @@ logger = logging.getLogger("iagent.live")
 
 @dataclass
 class Options:
+    """How the browser asked for a session to run: the source (iRacing or a replay), the reference
+    lap, the voice, and the coach's options."""
+
     source: str = "iracing"  # "iracing" or "replay"
     file: str | None = None  # replay: the .ibt
     start_at: float | None = None  # replay: session time to start from
@@ -56,10 +59,16 @@ WRAP_UP_WAIT_S = 120.0  # after the session, how long the engineer has to write 
 
 
 class SessionError(Exception):
+    """A session can't be started or controlled as asked (bad options, one already running, none
+    running)."""
+
     pass
 
 
 class LiveSessions:
+    """The live session run from the browser: at most one at a time, on its own thread, with its log
+    kept in memory and in `sessions/live/<id>.jsonl`."""
+
     def __init__(self, workspace: Path, voice_factory: Callable[[str], Voice] | None = None,
                  iracing: Callable[[], object] | None = None, engineer: Callable[[], object] | None = None):
         self.workspace = workspace
@@ -85,6 +94,8 @@ class LiveSessions:
     # --- control -------------------------------------------------------------------------------
 
     def start(self, raw: dict) -> dict:
+        """Start a session with these options (from the browser) on its own thread; returns its
+        status."""
         options = Options.from_dict(raw)
         if options.source not in ("iracing", "replay"):
             raise SessionError("source must be iracing or replay")
@@ -105,6 +116,7 @@ class LiveSessions:
         return self.status()
 
     def stop(self, wait_s: float = 5.0) -> dict:
+        """Stop the running session and wait up to WAIT_S for it to end; returns its status."""
         thread = self._thread
         if thread is not None and thread.is_alive():
             self.state = "stopping"
@@ -125,6 +137,7 @@ class LiveSessions:
             self.coach.post(Say(text=text, kind=kind))
 
     def set_focus(self, corner: int | None) -> None:
+        """Set the focus to the cue covering CORNER (None: no focus) in the running session."""
         if self.coach is None:
             raise SessionError("No session running.")
         self.coach.post(SetFocus(corner=corner))
@@ -146,6 +159,8 @@ class LiveSessions:
     # --- what the page reads -------------------------------------------------------------------
 
     def status(self) -> dict:
+        """What the Coaching tab shows: the session's state and, while it runs, the track,
+        reference, laps, pace, focus, cues and where the car is."""
         coach = self.coach
         out = {
             "state": self.state,
@@ -194,6 +209,8 @@ class LiveSessions:
     # --- the coach thread ----------------------------------------------------------------------
 
     def _run(self) -> None:
+        """The session thread: open the source, run the coach over its frames until it ends or is
+        stopped, then give the engineer time to write up its notes."""
         options = self.options
         try:
             voice = CapturedVoice() if options.voice == "silent" else self._voice(options.voice)
@@ -235,6 +252,7 @@ class LiveSessions:
         self.state = "idle"
 
     def _frames(self, frames: Iterator[Frame]) -> Iterator[Frame]:
+        """Pass frames through until the session is stopped, remembering the latest."""
         for frame in frames:
             if self._stop.is_set():
                 return
@@ -242,6 +260,8 @@ class LiveSessions:
             yield frame
 
     def _attach(self, coach: LiveCoach) -> None:
+        """A coach started (or restarted for a new track or car): log every event it marks as
+        logged, and note the session's start."""
         ws = Workspace(self.workspace)
         try:
             self._ref_driver = ws.ref_meta(coach.ctx.plan.ref_lap_id).get("driver")
@@ -267,6 +287,8 @@ class LiveSessions:
             self.note_answer(e.text or "(No answer: the coach said nothing)")
 
     def _log(self, event: dict) -> dict:
+        """Add an event to the session log (in memory and on disk), numbered and timestamped;
+        returns it."""
         event = {"seq": len(self._events), "wall": datetime.now(timezone.utc).isoformat(), **event}
         self._events.append(event)
         if self._log_path is not None:
@@ -282,6 +304,7 @@ class LiveSessions:
         return self._last_frame.session_time if self._last_frame else None
 
     def _voice(self, name: str) -> Voice:
+        """The voice called NAME, loaded once and reused across sessions."""
         if name not in self._voices:
             self._voices[name] = self._voice_factory(name)
         return self._voices[name]

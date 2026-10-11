@@ -19,6 +19,9 @@ logger = logging.getLogger("iagent.live")
 
 @dataclass(frozen=True)
 class Group:
+    """Limits shared by every rule in a group (the agent's share a line budget; the built-in ones
+    don't)."""
+
     max_lines_per_lap: int | None = None  # lines said a lap, all the group's rules together
     min_gap_s: float = 0.0  # between two of the group's lines (cues aside)
     report: bool = True  # firings go in the session log as `rule` events
@@ -29,6 +32,8 @@ GROUPS = {"agent": Group(max_lines_per_lap=6, min_gap_s=4.0), "builtin": Group(r
 
 @dataclass
 class RuleStats:
+    """How often a rule's event came, matched, fired or was held back, for backtests and the CLI."""
+
     occurrences: int = 0  # the event happened (and passed the filters)
     skipped: int = 0  # ... while not pushing (pushing_only)
     matched: int = 0  # ... and the condition held (in_a_row times)
@@ -38,6 +43,9 @@ class RuleStats:
 
 @dataclass
 class _RuleState:
+    """What the engine remembers about one rule: when it last fired, how often per lap, its streak,
+    and for edge rules whether it's armed."""
+
     last_fired_s: float | None = None
     last_fired_lap: int | None = None
     per_lap: dict[int, int] = field(default_factory=dict)
@@ -50,18 +58,26 @@ class _RuleState:
 
 @dataclass
 class _GroupState:
+    """Lines said per lap, and when the last one was, for a group's shared limits."""
+
     lines: dict[int, int] = field(default_factory=dict)  # line crossings -> lines said
     last_line_s: float = -1e9
 
 
 @dataclass
 class _Compiled:
+    """A rule with its `when` filters as sets, ready to match against an event."""
+
     rule: Rule
     filters: dict[str, set]
 
 
 class RuleEngine(EventHandler):
+    """The event handler that runs the rules: it sees every event, matches the rules for it, applies
+    their limits and runs their actions."""
+
     def start(self):
+        """Load the built-in rules and the agent's (`ctx.rules`)."""
         from iagent.live.rules.builtin import builtin_rules
 
         self.stats: dict[str, RuleStats] = {}
@@ -132,6 +148,8 @@ class RuleEngine(EventHandler):
 
     @on(Event)
     def evaluate(self, e: Event):
+        """Run the rules on event E: those whose filters, `where` and edge pass are counted as
+        occurring."""
         rules = self._by_event.get(e.name)
         if not rules:
             return
@@ -148,6 +166,8 @@ class RuleEngine(EventHandler):
             self._occur(c.rule, env, e)
 
     def _edge(self, rule: Rule, env: dict, now: float) -> bool:
+        """Whether an edge rule fires now: its condition has held for `for_s`, and it was re-armed
+        by being false for `rearm_s` since it last fired."""
         st = self._st[rule.id]
         holds = bool(rule.edge(env))
         for_s, rearm_s = float(rule.when.get("for_s", 0.0)), float(rule.when.get("rearm_s", 1.0))
@@ -165,6 +185,8 @@ class RuleEngine(EventHandler):
         return False
 
     def _occur(self, rule: Rule, env: dict, e: Event) -> None:
+        """Apply the rule's pushing gate, condition, `in_a_row` and limits; if it fires, run its
+        actions and report the firing."""
         stats, st = self.stats[rule.id], self._st[rule.id]
         stats.occurrences += 1
         if rule.pushing_only and e.judged and not env.get("pushing"):
@@ -204,6 +226,8 @@ class RuleEngine(EventHandler):
     # --- limits --------------------------------------------------------------------------------
 
     def group_held(self, rule: Rule, priority: int, now: float) -> str | None:
+        """Why the rule's group won't speak now (its lines this lap, or another of its lines just
+        now), or None."""
         g, gs = GROUPS[rule.group], self._groups[rule.group]
         lines = gs.lines.get(self.state.laps_driven, 0)
         if g.max_lines_per_lap is not None and lines >= g.max_lines_per_lap:
@@ -213,11 +237,14 @@ class RuleEngine(EventHandler):
         return None
 
     def said(self, rule: Rule, priority: int, now: float) -> None:
+        """Count a line said by the rule's group, for its limits."""
         gs, lap_no = self._groups[rule.group], self.state.laps_driven
         gs.lines[lap_no] = gs.lines.get(lap_no, 0) + 1
         gs.last_line_s = now
 
     def _held(self, rule: Rule, st: _RuleState, now: float) -> str | None:
+        """Which of the rule's own limits holds it back now (once, per session, per lap, cooldowns),
+        or None."""
         lim, lap_no = rule.limits, self.state.laps_driven
         if lim.get("once") and st.fired >= 1:
             return "once only"
@@ -241,6 +268,7 @@ class RuleEngine(EventHandler):
         return out
 
     def _report(self, rule: Rule, record: dict, at: float) -> None:
+        """Keep the firing for backtests and, for reported groups, emit it as a `RuleFired`."""
         self.firings.append({**record, "at": round(at, 2)})
         if GROUPS[rule.group].report:
             self.emit(RuleFired(**record))

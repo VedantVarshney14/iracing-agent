@@ -6,6 +6,7 @@ from iagent.laps.store import ParquetLapStore
 
 @pytest.fixture
 def store(tmp_path):
+    """An empty lap store in a temporary folder."""
     s = ParquetLapStore(tmp_path)
     yield s
     s.close()

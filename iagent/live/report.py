@@ -23,6 +23,7 @@ def sessions_dir(root: Path) -> Path:
 
 
 def read_log(root: Path, session_id: str) -> list[dict]:
+    """The session's logged events, in order. WorkspaceError for an unknown or malformed session id."""
     if not session_id.replace("-", "").isalnum():
         raise WorkspaceError(f"Unknown session {session_id!r}.")
     path = sessions_dir(root) / f"{session_id}.jsonl"
@@ -60,6 +61,8 @@ def list_sessions(root: Path) -> list[dict]:
 
 
 def session_report(ws: Workspace, session_id: str) -> dict:
+    """The review page for a coached session, from its log: the session at a glance, each lap, where
+    the time went, whether each focus worked, and what was said or held back."""
     events = read_log(ws.root, session_id)
     start = _start(events) or {}
     laps = [e for e in events if e["type"] == "lap"]
@@ -111,6 +114,7 @@ def session_report(ws: Workspace, session_id: str) -> dict:
 
 
 def _corner_marks(ws: Workspace, track: str | None) -> list[dict]:
+    """Each corner's id, name and apex, for the session map (none if the track has no map)."""
     if not track:
         return []
     try:
@@ -132,6 +136,8 @@ def _ref_meta(ws: Workspace, lap_id: str | None) -> dict:
 
 
 def _laps(ws: Workspace, start: dict, laps: list[dict], events: list[dict]) -> list[dict]:
+    """Each counted lap: time, gap, how it was driven, the focus, lines said and held back during
+    it, and the stored lap it matches."""
     stored = _stored_laps(ws, start)
     out = []
     for lap in laps:
@@ -162,6 +168,7 @@ def _stored_laps(ws: Workspace, start: dict) -> list:
 
 
 def _match(stored: list, lap_time: float | None) -> str | None:
+    """The stored lap with this lap time (to 5 ms), if exactly one matches."""
     if lap_time is None:
         return None
     near = [r for r in stored if abs(r.lap_time - lap_time) < 0.005]
@@ -188,6 +195,8 @@ def _corner_losses(laps: list[dict]) -> list[dict]:
 
 
 def _focus_outcomes(events: list[dict], laps: list[dict]) -> list[dict]:
+    """Each focus set in the session, with its cue's loss on the lap it was set and on each lap
+    after, and a verdict."""
     focuses = []
     for e in events:
         f = e.get("focus") if e["type"] in ("focus", "status") else None
@@ -239,6 +248,8 @@ def _advice_outcomes(events: list[dict], laps: list[dict]) -> list[dict]:
 
 
 def _verdict(before: float | None, after: list[float]) -> str:
+    """Whether a focus is working: every lap since clearly better (or matched), none better ("not
+    yet"), or mixed."""
     if before is None or not after:
         return "no laps since"
     if all(v <= before - IMPROVED_S or v < LOSS_S for v in after):
@@ -315,6 +326,7 @@ def read_debrief(root: Path, session_id: str) -> str | None:
 
 
 def save_debrief(root: Path, session_id: str, text: str) -> None:
+    """Save the written debrief for the session."""
     path = debrief_path(root, session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text.strip() + "\n")

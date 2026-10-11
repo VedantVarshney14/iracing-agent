@@ -2,6 +2,8 @@ import logging
 
 
 class LoggingFormatter(logging.Formatter):
+    """Log lines as `[time] [level] message`."""
+
     FORMAT = "[%(asctime)s] [%(levelname)s] %(message)s"
     DATEFMT = "%H:%M:%S"
 
@@ -10,6 +12,8 @@ class LoggingFormatter(logging.Formatter):
 
 
 def setup_logger(name, level: int = logging.INFO):
+    """The named logger at LEVEL, writing to stderr (so stdout stays clean for `--json`); safe to
+    call more than once."""
     logger = logging.getLogger(name)
     logger.setLevel(level)
 

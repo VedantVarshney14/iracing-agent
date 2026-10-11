@@ -39,6 +39,9 @@ BRAKE_LOOKBACK_M = 50  # braking often starts a few metres before the speed peak
 
 @dataclass
 class Corner:
+    """One corner on the map: direction, entry, apex and exit, its segment of the lap, the reference
+    minimum speed, whether it's flat, and its name with where the name came from."""
+
     id: int
     direction: str  # "L" or "R"
     entry_m: float
@@ -59,6 +62,8 @@ class Corner:
 
 @dataclass
 class CornerMap:
+    """A track's corners, derived from one car's representative laps; the segments tile the lap."""
+
     track_key: str
     car_key: str  # the car whose laps the map was derived from
     length_m: float
@@ -71,11 +76,13 @@ class CornerMap:
 
     @classmethod
     def from_json(cls, text: str) -> "CornerMap":
+        """A map from its saved JSON."""
         raw = json.loads(text)
         raw["corners"] = [Corner(**c) for c in raw["corners"]]
         return cls(**raw)
 
     def get(self, corner_id: int) -> Corner:
+        """The corner with this number; KeyError naming the corners there are."""
         for c in self.corners:
             if c.id == corner_id:
                 return c
@@ -92,6 +99,7 @@ def load_map(workspace: Path, track_key: str) -> CornerMap | None:
 
 
 def save_map(workspace: Path, cmap: CornerMap) -> Path:
+    """Write the map to the workspace; returns its path."""
     path = map_path(workspace, cmap.track_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(cmap.to_json() + "\n")
@@ -106,6 +114,8 @@ def _smooth(x: np.ndarray, n: int) -> np.ndarray:
 
 
 def _median_profile(grids: Sequence[pd.DataFrame], column: str, smooth: int = 1) -> np.ndarray:
+    """COLUMN's median across the gridded laps, point by point (each lap smoothed over SMOOTH metres
+    first)."""
     n = min(len(g) for g in grids)
     rows = [g[column].to_numpy(dtype=float)[:n] for g in grids]
     if smooth > 1:

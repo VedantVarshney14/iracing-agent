@@ -87,6 +87,7 @@ def laps(ws: Workspace, track: str, car: str) -> dict:
 
 
 def _references(ws: Workspace, track: str, car: str) -> list[dict]:
+    """Reference laps on this track and car, fastest first, with who drove them and when."""
     store = ws.refs()
     records = store.list(track=track, car=car) if store else []
     rows = []
@@ -203,6 +204,7 @@ def _list(values, places: int) -> list:
 
 
 def _clean(obj):
+    """OBJ with NaN and infinite floats as None, so it's valid JSON."""
     if isinstance(obj, float):
         return None if not math.isfinite(obj) else obj
     if isinstance(obj, dict):
