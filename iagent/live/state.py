@@ -12,7 +12,7 @@ from iagent.live.events import doc
 
 @dataclass(kw_only=True)
 class CoachState:
-    # the clock and the car (Clock, Track)
+    # the clock and the car (the Clock and Track handlers)
     time: float = doc("session time (s)", 0.0)
     since_start_s: float = doc("seconds since the coach started", 0.0)
     lap_dist: float | None = doc("distance from the line (m)")

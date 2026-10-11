@@ -3,12 +3,12 @@
 Where the time is over the last laps at pace (a habit, not one mistake), what to change and how,
 and how consistent the laps were. As the driver slows (`slowing`) the engineer is asked for its
 words; at `cool_down` they're said if they've come, else after up to `engineer_wait_s` more, else
-the template's. Each piece is a `DebriefLine`; saying it is a rule.
+the template's. Each piece is a `Say` (kind debrief); saying it is a rule.
 """
 
 from iagent.live import phrasing
-from iagent.live.events import (AskEngineer, CoolDown, DebriefGiven, DebriefLine, EngineerAsked, EngineerReply, Frame,
-                                Lap, PaceChanged, Slowing)
+from iagent.live.events import (AskEngineer, CoolDown, DebriefGiven, EngineerAsked, EngineerReply, Frame,
+                                Lap, PaceChanged, Say, Slowing)
 from iagent.live.pipeline import EventHandler, enrich, on
 
 CAUSE_MEANINGS = {c.name: c.doc for c in phrasing.CAUSES}
@@ -68,8 +68,8 @@ class Debrief(EventHandler):
             return
         self._done = True
         lines = phrasing.chunks(self._words) if self._words else self.lines()
-        for i, text in enumerate(lines):
-            self.emit(DebriefLine(text=text, index=i))
+        for text in lines:
+            self.emit(Say(text=text, kind="debrief"))
         if lines:
             self.emit(DebriefGiven(by="engineer" if self._words else "template", text=" ".join(lines)))
         self.state.debriefs += 1

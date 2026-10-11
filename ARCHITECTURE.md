@@ -277,14 +277,15 @@ itself: `Crossing` (every time the car crosses the line) and `Lap` (a counted la
 
 | Group | Events |
 | --- | --- |
-| The pipeline | `Frame`, `FrameDone`, `SessionStart`, `SessionEnd`, `Clock` |
+| The pipeline | `Frame`, `FrameDone`, `SessionStart`, `SessionEnd`, `Tick` |
 | The car | `Pit`, `PaceChanged`, `Slowing`, `CoolDown`, `Crossing`, `Lap` |
 | Corners | `CornerExit`, `Advice` |
 | Points on track | `Watch`, `Unwatch`, `Approach` |
 | The focus | `FocusChanged`, `SetFocus` |
 | Speech | `Line` (said, cut or dropped), `RuleFired` |
-| The debrief | `DebriefLine`, `DebriefGiven` |
-| From the driver and the browser | `Say`, `SetFocus`, `AskEngineer` (a question) |
+| The debrief | `DebriefGiven` (its pieces are `Say`) |
+| Words to say as they are | `Say` (an answer from the browser, a piece of the debrief) |
+| From the driver and the browser | `SetFocus`, `AskEngineer` (a question) |
 | The engineer | `AskEngineer`, `EngineerAsked`, `EngineerReply` |
 | Problems | `Error` |
 
@@ -304,7 +305,7 @@ class Summary(EventHandler):
 | --- | --- | --- | --- |
 | `Laps` | `Frame`, `Crossing` | lap, laps driven, line time, learning | `Crossing` (handled at once), `Lap` |
 | `Track` | `Frame`, `Crossing` | on track, car alongside, lap clean | `Pit` |
-| `Clock` | `Frame` | seconds since the start | `SessionStart`, `Clock` |
+| `Clock` | `Frame` | seconds since the start | `SessionStart`, `Tick` |
 | `Pace` | `Frame`, `Crossing`, `Lap` | pushing or not, slow stretches, best lap; a lap's pace, new best | `PaceChanged`, `Slowing`, `CoolDown` |
 | `Corners` | `Frame`, `Crossing`, `Lap` | a lap's corner results, its worst corner | `CornerExit` |
 | `Positions` | `Watch`, `Unwatch`, `Frame` | when the next timed point is due | `Approach` |
@@ -312,7 +313,7 @@ class Summary(EventHandler):
 | `Focus` | `SessionStart`, `SetFocus`, `Lap` | the focus; a lap's `focus_news` | `FocusChanged`, `Error` |
 | `History` | `CornerExit`, `Crossing` | struggling corners, hints; a corner exit's `feedback` | `Advice` |
 | `Summary` | `Lap` | a lap's `summary_text` | |
-| `Debrief` | `Lap`, `PaceChanged`, `Slowing`, `CoolDown`, `EngineerAsked`, `EngineerReply`, `Frame` | debriefs given | `AskEngineer`, `DebriefLine`, `DebriefGiven` |
+| `Debrief` | `Lap`, `PaceChanged`, `Slowing`, `CoolDown`, `EngineerAsked`, `EngineerReply`, `Frame` | debriefs given | `AskEngineer`, `Say`, `DebriefGiven` |
 | `EngineerLink` | `AskEngineer`, `Line`, `Lap`, `SessionStart`, `SessionEnd` | | `AskEngineer`, `EngineerAsked`; posts `EngineerReply` |
 | `RuleEngine` | every event | | `Watch`, `RuleFired`, `AskEngineer`; speaks through the arbiter |
 | `Speaking` | `FrameDone` | | `Line` |

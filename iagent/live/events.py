@@ -104,9 +104,9 @@ class SessionEnd(Event):
 
 
 @dataclass(kw_only=True)
-class Clock(Event):
-    """Once a second."""
-    name: ClassVar[str] = "clock"
+class Tick(Event):
+    """Once a second (schedules are rules on `tick`)."""
+    name: ClassVar[str] = "tick"
     since_start_s: int = doc("whole seconds since the coach started", 0)
 
 
@@ -329,14 +329,6 @@ class DebriefGiven(Event):
     text: str = doc("all of it", "")
 
 
-@dataclass(kw_only=True)
-class DebriefLine(Event):
-    """A piece of the debrief, to say."""
-    name: ClassVar[str] = "debrief_line"
-    text: str = doc("the words", "")
-    index: int = doc("which piece", 0)
-
-
 # --- speech -------------------------------------------------------------------------------------
 
 @dataclass(kw_only=True)
@@ -372,10 +364,10 @@ class RuleFired(Event):
 
 @dataclass(kw_only=True)
 class Say(Event):
-    """Say something (an answer to the driver)."""
+    """Words to say as they are: an answer typed in the browser, a piece of the debrief."""
     name: ClassVar[str] = "say"
     text: str = doc("the words", "")
-    kind: str = doc("what it is (answer, ...)", "answer")
+    kind: str = doc("what it is: answer, debrief", "answer")
 
 
 @dataclass(kw_only=True)

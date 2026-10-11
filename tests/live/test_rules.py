@@ -114,7 +114,7 @@ def test_rules_are_checked_when_added_with_messages_that_say_what_to_fix():
                                  **{"if": "speed_kph > 100"}, limits={"cooldown_laps": 1}).fingerprint
     corner = next(w for w in rule_schema()["properties"]["when"]["oneOf"] if w["properties"]["event"]["const"] == "corner_exit")
     assert corner["properties"]["corner"]["anyOf"][0] == {"type": "integer"}  # typed from the event's field
-    assert set(describe()["events"]) >= {"approach", "corner_exit", "lap", "pit", "frame", "clock", "pace", "focus"}
+    assert set(describe()["events"]) >= {"approach", "corner_exit", "lap", "pit", "frame", "tick", "pace", "focus"}
 
 
 def test_a_corner_exit_rule_sees_the_same_numbers_as_the_coach(root):
