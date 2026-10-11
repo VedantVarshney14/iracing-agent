@@ -44,7 +44,9 @@ with their working directory at the workspace's parent, which is the repo root b
 - **Simple over clever.** Fewer concepts, files and layers; one name per idea, saying what it does.
   Before adding a type, module or abstraction, check an existing one doesn't already cover it.
 - **Docstrings on every non-trivial class, function and method** (more than two statements), saying
-  what it is or does and anything a caller must know. `tests/test_docstrings.py` enforces it.
+  what it is or does and anything a caller must know.
+- **Tests earn their place.** A test checks behaviour that could plausibly break and that we'd care
+  about; no tests for style, structure or the obvious.
 
 ## Checking a change
 
