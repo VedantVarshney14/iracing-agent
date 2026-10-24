@@ -45,19 +45,26 @@ should change in SimHub's Properties list.
 
 ## The dashboard
 
-Build in Dash Studio (New dashboard, 800×268, the 300GT as the target device). Layout:
+The design is `simhub/dash-design.html` (open it in a browser). Build it in Dash Studio (New
+dashboard, 800×268, the 300GT as the target device). Each area has its own band of the screen, so
+nothing overlaps:
 
-| Area | Bind to |
-|---|---|
-| Gear, big, centre | `DataCorePlugin.GameData.Gear` |
-| Speed | `DataCorePlugin.GameData.SpeedKmh` |
-| RPM bar, top | `DataCorePlugin.GameData.CarSettings_RPMPercent` |
-| Lap time, delta | `DataCorePlugin.GameData.CurrentLapTime`, `PersistantTrackerPlugin.SessionBestLiveDeltaSeconds` |
-| Fuel | `DataCorePlugin.GameData.Fuel` |
-| Coach strip, bottom third, large text | `CoachPlugin.Cue`, falling back to `CoachPlugin.Focus` when empty |
+| Area (y, px) | What | Bind to |
+|---|---|---|
+| RPM bar (0–16) | 20 rounded segments | `DataCorePlugin.GameData.CarSettings_RPMPercent` |
+| Top left (18–122) | Next corner: number, name, brake/gear/direction chips, distance | not fed yet |
+| Top centre (18–122) | Gear, big; speed and brake bias under it | `DataCorePlugin.GameData.Gear`, `DataCorePlugin.GameData.SpeedMph` |
+| Top right (18–122) | Focus corner; last lap and delta | `CoachPlugin.Focus`, `DataCorePlugin.GameData.LastLapTime`, `PersistantTrackerPlugin.SessionBestLiveDeltaSeconds` |
+| Cue (128–156) | A few words in amber, e.g. "BRAKE 18 m LATER" | `CoachPlugin.Cue` |
+| Trace (160–244) | Next corner's brake and throttle: last lap as solid lines, the target as a soft band with a dotted centre line, an arrow for the change | not fed yet |
+| Lap strip (250–262) | Mini-sectors coloured by time gained or lost, car position, next and focus corners | not fed yet |
 
-Flash the strip for 3 s when `CoachPlugin.Seq` changes. Property names are SimHub's; check them in
+Flash the cue for 3 s when `CoachPlugin.Seq` changes. Property names are SimHub's; check them in
 its Properties list if one doesn't resolve. Save the dashboard export in `simhub/`.
+
+The "not fed yet" areas need the feed to send, per corner: the corner's name and cues, last lap's
+brake and throttle sampled by distance, the target traces, and the mini-sector times. The cue on
+the wheel should be a few words, not the coach's full spoken line.
 
 ## If the wheel screen won't take it
 
