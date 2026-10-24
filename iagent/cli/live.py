@@ -95,7 +95,13 @@ def live_run(
 
     from iagent.live import crewchief as cc
 
-    settings = Settings(learning_laps=learning_laps, crewchief=cc.resolve(crewchief))
+    from iagent.live.handlers.dash import DEFAULT_PATH
+
+    settings = Settings(
+        learning_laps=learning_laps,
+        crewchief=cc.resolve(crewchief),
+        dash_file=str(dash_file or DEFAULT_PATH),
+    )
     if print_only:
         out = PrintVoice()
     else:
@@ -109,10 +115,6 @@ def live_run(
         except RuntimeError as e:
             raise click.ClickException(str(e)) from e
         out = _SpokenToo(out)
-
-    from iagent.live.dash import DEFAULT_PATH, DashVoice
-
-    out = DashVoice(out, dash_file or DEFAULT_PATH)
 
     import shutil
 

@@ -19,6 +19,7 @@ from iagent.live.handlers.summary import Summary
 from iagent.live.handlers.debrief import Debrief
 from iagent.live.handlers.speaking import GATES, Gate, Speaking
 from iagent.live.handlers.engineer_link import EngineerLink
+from iagent.live.handlers.dash import Dash
 
 HANDLERS = [
     Laps,
@@ -33,6 +34,7 @@ HANDLERS = [
     Summary,
     Debrief,
     EngineerLink,
+    Dash,
 ]
 # The rule engine (iagent.live.rules) comes after these, and Speaking last.
 
@@ -41,6 +43,7 @@ __all__ = [
     "CornerResult",
     "CueCaller",
     "Corners",
+    "Dash",
     "Debrief",
     "Focus",
     "GATES",

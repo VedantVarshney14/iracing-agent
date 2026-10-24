@@ -17,22 +17,55 @@ If step 5 fails, stop and check Conspit's release notes or Discord; there's noth
 
 ## The coach feed
 
-`iagent live run` keeps the latest line of each kind in `~/.iagent/dash.json` (`--dash-file` to
-move it), written whole each time:
+A live session (`iagent live run`, or the Coaching tab in `iagent ui`) keeps
+`~/.iagent/dash.json` up to date (`--dash-file` moves it for `live run`). It's written whole, and
+only when something on it changes: a few times a lap.
 
 ```json
-{"cue": "La Source. Big stop.", "feedback": "Turn 5: brake later.",
- "summary": "2 27.0, 5 tenths down.", "focus": "Turns 15 and 16. Just a lift.", "seq": 12}
+{"length_m": 7004.0, "seq": 41,
+ "corner": {"id": 5, "name": "La Source", "direction": "R", "action": "BRAKE", "hard": true,
+            "gear": 2, "target_m": 6812.0},
+ "cue": "BRAKE 20 m LATER",
+ "focus": "FOCUS 8",
+ "trace": {"last_brake": [0, 0, 0.42, ...], "last_throttle": [...],
+           "target_brake": [...], "target_throttle": [...], "apex": 0.52, "arrow": [0.21, 0.27]},
+ "strip": {"sectors": [{"from": 0, "to": 0.06, "state": "gain"}, ...], "next": 0.62,
+           "focus": [[0.70, 0.76]]}}
 ```
 
-`seq` goes up with every line, so a dashboard can flash the strip when it changes. This works with
-`--replay` too, so you can build the dashboard without driving.
+- `corner` is the coming one, from the moment the car passes the previous corner's exit.
+  `action` is `BRAKE`, `LIFT` or `FLAT` on the reference lap, `target_m` where it brakes (or just
+  before turn-in).
+- `cue` is a few words on what to change, from the last time the corner was driven at pace;
+  empty when there's nothing to change.
+- `trace`: brake and throttle (0-1) through the corner, 96 points from 120 m before the reference
+  brake point to 60 m past the exit. `last_*` is the driver's last lap (null on the first), `target_*`
+  the reference lap's. `apex` and `arrow` (last lap's brake point, then the reference's; only when
+  they differ by 15 m or more) are 0-1 across the trace.
+- `strip`: each corner's share of the lap this lap: `gain`, `small` (lost under 0.08 s), `loss`,
+  or `todo` (not driven yet); the next corner's turn-in and the focus corners, 0-1 along the lap.
+
+This works with `--replay` too, so you can build the dashboard without driving.
 
 ## The SimHub plugin
 
-`simhub/CoachPlugin` reads that file and exposes `CoachPlugin.Cue`, `.Feedback`, `.Summary`,
-`.Focus` and `.Seq` as SimHub properties. On the sim PC (needs the .NET SDK; written against the
-SimHub plugin SDK but not yet built or run):
+`simhub/CoachPlugin` reads that file and gives SimHub:
+
+| Property | Value |
+|---|---|
+| `CoachPlugin.Corner`, `.CornerName` | the coming corner's number and name |
+| `CoachPlugin.Action`, `.Hard` | `BRAKE`, `LIFT` or `FLAT`; true for a hard stop (a red chip) |
+| `CoachPlugin.Gear`, `.Direction` | `G2`; `L` or `R` |
+| `CoachPlugin.ToGoM` | metres to the brake point, worked out every frame from the car's position |
+| `CoachPlugin.Cue`, `.Focus` | the few words; `FOCUS 8` |
+| `CoachPlugin.TraceImage`, `.StripImage` | paths to the pedal trace (776×84) and lap strip (776×12), drawn as in the design |
+| `CoachPlugin.Seq` | goes up with every change to the feed |
+
+The plugin draws the trace and strip itself because Dash Studio has no way to plot a list of
+values. It writes them to `~/.iagent/trace-0.png` / `trace-1.png` (and `strip-*`) in turn, so a
+dashboard that caches an image by its path still sees the new one.
+
+On the sim PC (needs the .NET SDK; written against the SimHub plugin SDK but not yet built or run):
 
 ```
 cd simhub\CoachPlugin
@@ -52,19 +85,17 @@ nothing overlaps:
 | Area (y, px) | What | Bind to |
 |---|---|---|
 | RPM bar (0–16) | 20 rounded segments | `DataCorePlugin.GameData.CarSettings_RPMPercent` |
-| Top left (18–122) | Next corner: number, name, brake/gear/direction chips, distance | not fed yet |
+| Top left (18–122) | Next corner: number, name, action/gear/direction chips, distance | `CoachPlugin.Corner`, `.CornerName`, `.Action` (red when `.Hard`), `.Gear`, `.Direction`, `.ToGoM` |
 | Top centre (18–122) | Gear, big; speed and brake bias under it | `DataCorePlugin.GameData.Gear`, `DataCorePlugin.GameData.SpeedMph` |
 | Top right (18–122) | Focus corner; last lap and delta | `CoachPlugin.Focus`, `DataCorePlugin.GameData.LastLapTime`, `PersistantTrackerPlugin.SessionBestLiveDeltaSeconds` |
-| Cue (128–156) | A few words in amber, e.g. "BRAKE 18 m LATER" | `CoachPlugin.Cue` |
-| Trace (160–244) | Next corner's brake and throttle: last lap as solid lines, the target as a soft band with a dotted centre line, an arrow for the change | not fed yet |
-| Lap strip (250–262) | Mini-sectors coloured by time gained or lost, car position, next and focus corners | not fed yet |
+| Cue (128–156) | A few words in amber | `CoachPlugin.Cue` |
+| Trace (160–244) | An "Image from file" item at x 12 | `CoachPlugin.TraceImage` |
+| Lap strip (250–262) | An "Image from file" item at x 12, with a white dot over it for the car | `CoachPlugin.StripImage`; the dot's left: `12 + 776 * DataCorePlugin.GameData.TrackPositionPercent` |
 
-Flash the cue for 3 s when `CoachPlugin.Seq` changes. Property names are SimHub's; check them in
-its Properties list if one doesn't resolve. Save the dashboard export in `simhub/`.
-
-The "not fed yet" areas need the feed to send, per corner: the corner's name and cues, last lap's
-brake and throttle sampled by distance, the target traces, and the mini-sector times. The cue on
-the wheel should be a few words, not the coach's full spoken line.
+Property names are SimHub's; check them in its Properties list if one doesn't resolve (in
+particular `TrackPositionPercent`, which the plugin also uses for `ToGoM`: if it runs 0–100
+rather than 0–1, divide by 100). Whether "Image from file" reloads when the file changes is
+unchecked; the two alternating files are there for that. Save the dashboard export in `simhub/`.
 
 ## If the wheel screen won't take it
 

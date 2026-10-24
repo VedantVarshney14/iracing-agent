@@ -80,14 +80,14 @@
   The trace shows the <b>next corner</b>, from the approach to the exit, as soon as the previous corner is done, so you read it on the straight before you get there.
   <ul>
     <li><b>Bright lines</b> are your brake (red) and throttle (green) from the last lap through this corner: the real recorded trace, not drawn live.</li>
-    <li><b>Wide soft bands with a dotted centre line</b> behind them are the target: your lap with the coach's one adjustment applied. Here the brake comes 18 m later, so the lift and the brake shift right and the rest stays the same. Lay your line on the band.</li>
+    <li><b>Wide soft bands with a dotted centre line</b> behind them are the target: the reference lap through the same corner. Here the reference brakes 18 m later. Lay your line on the band.</li>
     <li>The <b>arrow</b> above the plot runs from where you braked to where the target brakes. The dashed line marks the apex.</li>
     <li>The <b>cue</b> above the trace says the same thing in a few words, in amber. No sentences on the wheel.</li>
     <li>Curves are smoothed with no sharp corners, and a pedal at rest isn't drawn, so there's no line along the bottom. Every element has its own band of the screen: top row 18–122, cue 128–156, plot 160–244, lap strip 250–262.</li>
   </ul>
   The <b>lap strip</b> along the bottom: green gaining, amber losing a little, red losing a lot, grey not driven yet; the car moves left to right, a white notch marks the next corner, a purple bracket the focus corner.
-  <h4>What it needs</h4>
-  Per corner: last lap's brake and throttle sampled by distance (the recorder has them), the target trace (last lap with the adjustment applied, from the reference lap), and a cue of a few words. The feed would send the two traces as small arrays once per corner; the plugin exposes them as properties the dashboard plots.
+  <h4>Where it comes from</h4>
+  The live coach writes the corner, the cue, both traces and the strip to <code>~/.iagent/dash.json</code>, and the SimHub plugin draws the trace and strip as images: see <code>docs/conspit-dash.md</code>.
 </div>
 <script>
   const rpm = document.getElementById('rpm');
