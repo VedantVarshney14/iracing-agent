@@ -1,0 +1,164 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Conspit 300GT track learning dashboard</title>
+<style>
+  body { margin: 0; padding: 24px; background: #1b1b1f; color: #ccc; font: 14px system-ui; }
+  .dash { position: relative; width: 800px; height: 268px; background: #000; overflow: hidden; color: #fff;
+          font-family: "Bahnschrift", "DIN Alternate", system-ui, sans-serif; margin-bottom: 18px; }
+  .dash * { white-space: nowrap; }
+  .label { font-size: 14px; letter-spacing: .1em; color: #7a7a82; text-transform: uppercase; line-height: 16px; }
+  .rpm { position: absolute; top: 0; left: 0; right: 0; height: 16px; display: flex; gap: 3px; padding: 4px 8px 0; box-sizing: border-box; }
+  .rpm i { flex: 1; border-radius: 3px; background: #1c1c1c; }
+  .rpm i.g { background: #19c37d; } .rpm i.y { background: #ffc233; } .rpm i.r { background: #ff3b30; }
+
+  /* Top row, y 18 to 122: next corner | gear | lap */
+  .next { position: absolute; left: 14px; top: 22px; width: 270px; height: 100px; }
+  .next .num { font-size: 56px; font-weight: 800; line-height: 48px; }
+  .next .num small { font-size: 22px; line-height: 1; color: #bbb; font-weight: 600; margin-left: 6px; }
+  .chips { display: flex; gap: 6px; margin-top: 4px; height: 28px; align-items: center; }
+  .chip { font-size: 18px; font-weight: 700; padding: 0 8px; line-height: 26px; border-radius: 6px; background: #1d2a44; }
+  .chip.hard { background: #ff3b30; }
+  .m { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 28px; margin-left: 4px; }
+  .centre { position: absolute; left: 300px; top: 18px; width: 200px; height: 104px; text-align: center; }
+  .gear { font-size: 88px; font-weight: 800; line-height: 72px; }
+  .under { display: flex; justify-content: center; gap: 14px; align-items: baseline; margin-top: 2px; }
+  .speed { font-size: 24px; color: #ddd; font-weight: 700; }
+  .bb { font-size: 22px; font-weight: 800; background: #1c1c1c; border-radius: 6px; padding: 0 8px; }
+  .side { position: absolute; right: 14px; top: 22px; width: 270px; height: 100px; text-align: right; }
+  .focus { background: #8a5cd9; display: inline-block; font-size: 18px; font-weight: 800; padding: 1px 10px; border-radius: 6px; }
+  .pair { display: flex; justify-content: flex-end; gap: 22px; margin-top: 10px; }
+  .big { font-size: 36px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+  .green { color: #19c37d; }
+
+  /* Trace band, y 128 to 244: cue line, then the plot */
+  .cue { position: absolute; left: 14px; right: 14px; top: 128px; height: 28px; display: flex; align-items: center; gap: 12px; }
+  .cue b { font-size: 26px; font-weight: 800; color: #ffc233; letter-spacing: .02em; }
+  .key { margin-left: auto; display: flex; gap: 14px; align-items: center; }
+  .key span { display: inline-flex; align-items: center; gap: 6px; }
+  .key .line { width: 18px; height: 4px; border-radius: 2px; background: #fff; }
+  .key .band { width: 18px; height: 10px; border-radius: 5px; background: #ffffff50; display: flex; align-items: center; justify-content: space-evenly; }
+  .key .band i { width: 3px; height: 3px; border-radius: 50%; background: #fff; box-shadow: 6px 0 #fff, -6px 0 #fff; }
+  .trace { position: absolute; left: 12px; top: 160px; width: 776px; height: 84px; }
+  .strip { position: absolute; left: 12px; top: 250px; width: 776px; height: 12px; }
+  .note { max-width: 800px; line-height: 1.5; } h4 { margin: 14px 0 4px; }
+</style>
+<h3>Track learning dashboard: 800 × 268</h3>
+<div class="dash">
+  <div class="rpm" id="rpm"></div>
+
+  <div class="next">
+    <div class="label">Next corner</div>
+    <div class="num">5<small>La Source</small></div>
+    <div class="chips"><span class="chip hard">BRAKE</span><span class="chip">G2</span><span class="chip">R ↱</span><span class="m">142 m</span></div>
+  </div>
+
+  <div class="centre">
+    <div class="gear">4</div>
+    <div class="under">
+      <span class="speed">116<span class="label"> mph</span></span>
+      <span class="bb"><span class="label">BB</span> 56.5</span>
+    </div>
+  </div>
+
+  <div class="side">
+    <span class="focus">FOCUS 8</span>
+    <div class="pair">
+      <div><div class="label">Last lap</div><div class="big">2:27.0</div></div>
+      <div><div class="label">Delta</div><div class="big green">−0.21</div></div>
+    </div>
+  </div>
+
+  <div class="cue">
+    <b>BRAKE 18 m LATER</b>
+    <div class="key label"><span><i class="line"></i>Last lap</span><span><i class="band"><i></i></i>Target</span></div>
+  </div>
+  <svg class="trace" id="trace" viewBox="0 0 776 84"></svg>
+  <svg class="strip" id="strip" viewBox="0 0 776 12"></svg>
+</div>
+<div class="note">
+  <h4>The trace: last lap and the fix, for the coming corner</h4>
+  The trace shows the <b>next corner</b>, from the approach to the exit, as soon as the previous corner is done, so you read it on the straight before you get there.
+  <ul>
+    <li><b>Bright lines</b> are your brake (red) and throttle (green) from the last lap through this corner: the real recorded trace, not drawn live.</li>
+    <li><b>Wide soft bands with a dotted centre line</b> behind them are the target: the reference lap through the same corner. Here the reference brakes 18 m later. Lay your line on the band.</li>
+    <li>The <b>arrow</b> above the plot runs from where you braked to where the target brakes. The dashed line marks the apex.</li>
+    <li>The <b>cue</b> above the trace says the same thing in a few words, in amber. No sentences on the wheel.</li>
+    <li>Curves are smoothed with no sharp corners, and a pedal at rest isn't drawn, so there's no line along the bottom. Every element has its own band of the screen: top row 18–122, cue 128–156, plot 160–244, lap strip 250–262.</li>
+  </ul>
+  The <b>lap strip</b> along the bottom: green gaining, amber losing a little, red losing a lot, grey not driven yet; the car moves left to right, a white notch marks the next corner, a purple bracket the focus corner.
+  <h4>Where it comes from</h4>
+  The live coach writes the corner, the cue, both traces and the strip to <code>~/.iagent/dash.json</code>, and the SimHub plugin draws the trace and strip as images: see <code>docs/conspit-dash.md</code>.
+</div>
+<script>
+  const rpm = document.getElementById('rpm');
+  for (let i = 0; i < 20; i++) { const b = document.createElement('i'); b.className = i < 10 ? 'g' : i < 16 ? 'y' : ''; rpm.append(b); }
+
+  // Pedal traces over the corner, x from 0 (approach) to 1 (exit), pedal from 0 to 1.
+  const lastBrake = [[0,0],[.19,0],[.215,.6],[.24,.95],[.3,.82],[.4,.45],[.52,0],[1,0]];
+  const lastThr   = [[0,1],[.17,1],[.2,0],[.55,0],[.65,.35],[.8,1],[1,1]];
+  const tgtBrake  = [[0,0],[.26,0],[.285,.6],[.31,.97],[.37,.82],[.45,.45],[.54,0],[1,0]];
+  const tgtThr    = [[0,1],[.24,1],[.27,0],[.55,0],[.65,.35],[.8,1],[1,1]];
+  const apex = .5;
+
+  // Monotone cubic (Fritsch-Carlson): smooth, and never overshoots past 0 or 1.
+  const smooth = pts => {
+    const n = pts.length, d = [], m = [];
+    for (let i = 0; i < n - 1; i++) d.push((pts[i+1][1] - pts[i][1]) / (pts[i+1][0] - pts[i][0]));
+    for (let i = 0; i < n; i++) m.push(i === 0 ? d[0] : i === n - 1 ? d[n-2] : d[i-1] * d[i] <= 0 ? 0 : (d[i-1] + d[i]) / 2);
+    for (let i = 0; i < n - 1; i++) {
+      if (d[i] === 0) { m[i] = m[i+1] = 0; continue; }
+      const a = m[i] / d[i], b = m[i+1] / d[i], s = a*a + b*b;
+      if (s > 9) { const t = 3 / Math.sqrt(s); m[i] = t*a*d[i]; m[i+1] = t*b*d[i]; }
+    }
+    return x => {
+      let i = 0; while (i < n - 2 && x > pts[i+1][0]) i++;
+      const [x0,y0] = pts[i], [x1,y1] = pts[i+1], h = x1 - x0, t = (x - x0) / h;
+      return (2*t**3 - 3*t**2 + 1)*y0 + (t**3 - 2*t**2 + t)*h*m[i] + (-2*t**3 + 3*t**2)*y1 + (t**3 - t**2)*h*m[i+1];
+    };
+  };
+
+  // The top 22 px of the plot is kept clear for the arrow and the apex label;
+  // the bottom 8 px leaves room for the target band's rounded ends.
+  const W = 776, H = 84, padTop = 22, padBottom = 8;
+  const X = x => x * W, Y = v => H - padBottom - v * (H - padTop - padBottom);
+  // Only draw where the pedal is pressed, so idle pedals don't paint a line along the bottom.
+  const path = pts => {
+    const f = smooth(pts); let d = '', on = false;
+    for (let i = 0; i <= 400; i++) {
+      const x = i / 400, v = f(x);
+      if (v > .01) { d += (on ? 'L' : 'M') + X(x).toFixed(1) + ' ' + Y(v).toFixed(1); on = true; } else on = false;
+    }
+    return d;
+  };
+  const from = X(.19), to = X(.26), ay = 8;
+  document.getElementById('trace').innerHTML = `
+    <rect width="${W}" height="${H}" rx="8" fill="#0b0b0e"/>
+    <line x1="8" x2="${W-8}" y1="${Y(0)}" y2="${Y(0)}" stroke="#26262c" stroke-width="2" stroke-linecap="round"/>
+    <line x1="${X(apex)}" x2="${X(apex)}" y1="${padTop}" y2="${Y(0)}" stroke="#666" stroke-dasharray="4 4"/>
+    <text x="${X(apex)}" y="13" text-anchor="middle" fill="#888" font-size="12" font-family="Bahnschrift, system-ui" letter-spacing="1">APEX</text>
+    <g fill="none" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" opacity=".35">
+      <path d="${path(tgtThr)}" stroke="#19c37d"/>
+      <path d="${path(tgtBrake)}" stroke="#ff3b30"/>
+    </g>
+    <g fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="0 7">
+      <path d="${path(tgtThr)}" stroke="#8ff0c2"/>
+      <path d="${path(tgtBrake)}" stroke="#ff9d97"/>
+    </g>
+    <g fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="${path(lastThr)}" stroke="#19c37d"/>
+      <path d="${path(lastBrake)}" stroke="#ff3b30"/>
+    </g>
+    <g stroke="#ffc233" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <line x1="${from}" x2="${to - 2}" y1="${ay}" y2="${ay}"/>
+      <path d="M${to - 8} ${ay - 5}L${to - 1} ${ay}L${to - 8} ${ay + 5}"/>
+      <line x1="${from}" x2="${from}" y1="${ay - 4}" y2="${ay + 4}"/>
+    </g>`;
+
+  // Lap strip: 16 mini-sectors.
+  const cols = ["#19c37d","#19c37d","#ff3b30","#19c37d","#ffc233","#19c37d","#19c37d","#ff3b30","#ff3b30","#ffc233","#3a3a42","#3a3a42","#3a3a42","#3a3a42","#3a3a42","#3a3a42"];
+  const sw = W / cols.length;
+  document.getElementById('strip').innerHTML = cols.map((c, i) => `<rect x="${i*sw+1}" width="${sw-2}" height="12" rx="3" fill="${c}"/>`).join('')
+    + `<rect x="${12*sw+1}" y="1" width="${sw*1.2}" height="10" rx="3" fill="none" stroke="#8a5cd9" stroke-width="2"/>`
+    + `<rect x="${10.4*sw}" width="4" height="12" rx="2" fill="#fff"/>`
+    + `<circle cx="${9.4*sw}" cy="6" r="5" fill="#fff" stroke="#000" stroke-width="2"/>`;
+</script>

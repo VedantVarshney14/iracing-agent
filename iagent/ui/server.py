@@ -78,8 +78,11 @@ def create_app(
     )  # the coach agent: the chat, the engineer, debriefs
     if live is None:
         from iagent.live.engineer import Engineer
+        from iagent.live.handlers.dash import DEFAULT_PATH
 
-        live = LiveSessions(workspace, engineer=lambda: Engineer.over(agent))
+        live = LiveSessions(
+            workspace, engineer=lambda: Engineer.over(agent), dash_file=DEFAULT_PATH
+        )
     debriefing: set[str] = set()  # sessions whose debrief the coach is writing
     ghost_dir = (workspace / "reference" / "ghosts").resolve()
     g61_account: dict = {}  # Garage61's answer about the token, asked once

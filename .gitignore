@@ -195,3 +195,6 @@ workspace/
 # Web UI: dependencies, and the build `iagent ui` serves (made by `npm --prefix web run build`)
 web/node_modules/
 iagent/ui/static/
+
+simhub/**/bin/
+simhub/**/obj/

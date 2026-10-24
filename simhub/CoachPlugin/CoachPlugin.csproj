@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>CoachPlugin</AssemblyName>
+    <!-- Where SimHub is installed; override with: dotnet build -p:SimHubDir="D:\SimHub\" -->
+    <SimHubDir Condition="'$(SimHubDir)' == ''">C:\Program Files (x86)\SimHub\</SimHubDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Reference Include="SimHub.Plugins"><HintPath>$(SimHubDir)SimHub.Plugins.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="GameReaderCommon"><HintPath>$(SimHubDir)GameReaderCommon.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(SimHubDir)Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <!-- Copy straight into SimHub so a rebuild is all it takes (close SimHub first). -->
+  <Target Name="Install" AfterTargets="Build" Condition="Exists('$(SimHubDir)')">
+    <Copy SourceFiles="$(OutputPath)CoachPlugin.dll" DestinationFolder="$(SimHubDir)" />
+  </Target>
+</Project>

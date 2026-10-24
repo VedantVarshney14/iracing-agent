@@ -140,7 +140,8 @@ iagent/
     settings.py       Settings
     coach.py          LiveCoach: the pipeline with its handlers, and `load` (a coach from the workspace)
     handlers/         laps, track, clock, pace, corners, positions, cue_caller, focus, history,
-                      summary, debrief, engineer_link (to the engineer), speaking (and the gates)
+                      summary, debrief, engineer_link (to the engineer), dash (the wheel
+                      dashboard's feed), speaking (and the gates)
     rules/            schema (the rule format), expr (the language conditions are written in),
                       actions (Action subclasses), engine (RuleEngine), builtin (the coach's own
                       rules), store (rules on disk, activation), backtest
@@ -325,6 +326,7 @@ class Summary(EventHandler):
 | `Summary` | `Lap` | a lap's `summary_text` | |
 | `Debrief` | `Lap`, `PaceChanged`, `Slowing`, `CoolDown`, `EngineerAsked`, `EngineerReply`, `Frame` | debriefs given | `AskEngineer`, `Say`, `DebriefGiven` |
 | `EngineerLink` | `AskEngineer`, `Line`, `Lap`, `SessionStart`, `SessionEnd` | | `AskEngineer`, `EngineerAsked`; posts `EngineerReply` |
+| `Dash` | `Frame`, `Crossing`, `CornerExit`, `FocusChanged` | writes the wheel dashboard's feed (`settings.dash_file`): the coming corner, last lap's and the reference's pedals through it, what to change, the lap so far | |
 | `RuleEngine` | every event | | `Watch`, `RuleFired`, `AskEngineer`; speaks through the arbiter |
 | `Speaking` | `FrameDone` | | `Line` |
 
@@ -629,8 +631,8 @@ the library and coached sessions.
 - **Saved settings** in the workspace's `settings.json`, with per-run overrides.
 - **Analysis**: a theoretical best (the best corner segments stitched together), and importing
   other `.ibt` or CSV laps by hand.
-- **SimHub**: a small plugin exposing the current cue to dashboards and overlays, and wheel-button
-  actions (repeat the cue, mute, push-to-talk).
+- **SimHub**: wheel-button actions (repeat the cue, mute, push-to-talk) in the plugin that already
+  feeds the wheel dashboard ([docs/conspit-dash.md](docs/conspit-dash.md)).
 
 **Open questions and risks:**
 

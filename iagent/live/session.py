@@ -82,8 +82,10 @@ class LiveSessions:
         voice_factory: Callable[[str], Voice] | None = None,
         iracing: Callable[[], object] | None = None,
         engineer: Callable[[], object] | None = None,
+        dash_file: Path | None = None,
     ):
         self.workspace = workspace
+        self._dash_file = dash_file  # where the wheel dashboard's feed goes; None: no feed
         self._new_engineer = (
             engineer  # makes the session's Engineer; None: the coach's own words only
         )
@@ -289,6 +291,7 @@ class LiveSessions:
                 learning_laps=options.learning_laps,
                 focus=options.focus,
                 crewchief=crewchief.resolve(options.crewchief),
+                dash_file=str(self._dash_file) if self._dash_file else None,
             )
             self.engineer = (
                 self._new_engineer()

@@ -56,3 +56,6 @@ class Settings:
         False  # CrewChief is running: leave lap times to it, keep quiet after the line
     )
     crewchief_quiet_s: float = 5.0
+    dash_file: str | None = (
+        None  # where the wheel dashboard's feed is written (iagent.live.handlers.dash); none: no feed
+    )

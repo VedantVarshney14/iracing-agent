@@ -49,7 +49,8 @@ __all__ = ["CornerResult", "LiveCoach", "Settings"]
 @dataclass
 class Context:
     """What every event handler may read: the session, the cue plan, the corner map, the reference
-    lap, the voice, and the engineer if there is one."""
+    lap (its time by distance, and the whole lap in `ref_grid`), the voice, and the engineer if
+    there is one."""
 
     session: SessionInfo
     plan: CuePlan
@@ -68,6 +69,7 @@ class Context:
     radio_context: Callable[[], dict] | None = (
         None  # what the engineer is told about the session
     )
+    ref_grid: pd.DataFrame | None = None  # the reference lap on the 1 m grid, every channel
 
 
 class LiveCoach:
@@ -103,6 +105,7 @@ class LiveCoach:
             rules,
             engineer,
             radio_context,
+            ref_grid,
         )
         self.settings = settings or Settings()
         self.pipeline = Pipeline(

@@ -63,6 +63,10 @@ class Cause(ABC):
     def longer(self, who: str, amount: float, ref: dict, mine: dict) -> str:
         """The why and the how, for a driver with time to listen. WHO is "Pouhon: you" or "You"."""
 
+    @abstractmethod
+    def dash(self, amount: float, ref: dict) -> str:
+        """A few words for the wheel's screen, read on the approach: "BRAKE 20 m LATER"."""
+
 
 def _lift(ref: dict) -> bool:
     return (ref.get("min_throttle") or 1) < 0.9
@@ -91,6 +95,9 @@ class OffTrack(Cause):
             f"{who} ran wide, {round(a)} metres off track. That usually starts at the entry: brake a touch earlier, "
             "get the car turned before you go back to the throttle, and build up from there once it sticks."
         )
+
+    def dash(self, a, r):
+        return "TIDY THE ENTRY"
 
 
 class EarlyBrake(Cause):
@@ -122,6 +129,9 @@ class EarlyBrake(Cause):
             "feels: move the brake point a few metres a lap, same pressure, and let the car tell you when it's enough."
         )
 
+    def dash(self, a, r):
+        return f"BRAKE {round5(a)} m LATER"
+
 
 class LateBrake(Cause):
     """Braked later than the reference and was slower through the corner: the late stop cost the
@@ -147,6 +157,9 @@ class LateBrake(Cause):
             f"{who}'re braking about {round5(a)} metres late and it's costing the exit. Brake a little earlier, get "
             "it slowed and turned, and you'll be back on the power sooner. Exit speed is worth more than entry."
         )
+
+    def dash(self, a, r):
+        return f"BRAKE {round5(a)} m EARLIER"
 
 
 class NoBrakeNeeded(Cause):
@@ -174,6 +187,9 @@ class NoBrakeNeeded(Cause):
             f"{'just a lift' if lift else 'staying flat'} and trust the grip, a little more each lap."
         )
 
+    def dash(self, a, r):
+        return "JUST A LIFT" if _lift(r) else "STAY FLAT"
+
 
 class SlowApex(Cause):
     """Slower than the reference at the apex: carry more speed in."""
@@ -195,6 +211,9 @@ class SlowApex(Cause):
             f"{who}'re about {round(a)} kilometres an hour slower at the apex. Ease off the brake more gradually as "
             "you turn in and let the car roll more speed to the apex. Don't brake later, just release it smoother."
         )
+
+    def dash(self, a, r):
+        return "CARRY MORE SPEED"
 
 
 class LateThrottle(Cause):
@@ -225,6 +244,9 @@ class LateThrottle(Cause):
             f"{lead} about {round5(a)} metres later than the reference. Once you're past the apex, open the steering "
             "and commit to the throttle earlier, a bit more each lap."
         )
+
+    def dash(self, a, r):
+        return f"THROTTLE {round5(a)} m EARLIER"
 
 
 CAUSES: list[Cause] = [
