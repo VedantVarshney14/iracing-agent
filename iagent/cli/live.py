@@ -27,6 +27,12 @@ def live():
     "--start", "start_at", type=float, help="Replay from this session time (s)."
 )
 @click.option(
+    "--dash-file",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Where the wheel dashboard's feed is written (default ~/.iagent/dash.json).",
+)
+@click.option(
     "--voice",
     default="alba",
     show_default=True,
@@ -64,6 +70,7 @@ def live_run(
     replay: Path | None,
     speed: float,
     start_at: float | None,
+    dash_file: Path | None,
     voice: str,
     print_only: bool,
     ref_id: str | None,
@@ -102,6 +109,10 @@ def live_run(
         except RuntimeError as e:
             raise click.ClickException(str(e)) from e
         out = _SpokenToo(out)
+
+    from iagent.live.dash import DEFAULT_PATH, DashVoice
+
+    out = DashVoice(out, dash_file or DEFAULT_PATH)
 
     import shutil
 
