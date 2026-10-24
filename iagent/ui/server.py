@@ -392,12 +392,10 @@ def create_app(
         text = str((await request.json()).get("text") or "").strip()
         if not text:
             return JSONResponse({"error": "text is required"}, status_code=400)
-        if live.coach is None or live.engineer is None:
+        if not live.ask(text):
             return JSONResponse(
                 {"error": "No live session with an engineer to ask."}, status_code=409
             )
-        live.note_driver(text)
-        live.ask(text)
         return JSONResponse({"ok": True})
 
     # --- coached sessions, afterwards ------------------------------------------------------

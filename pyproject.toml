@@ -18,8 +18,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Spoken coaching (`iagent live run`): Pocket TTS on the CPU, plus audio output.
-voice = ["pocket-tts>=1.0", "sounddevice>=0.5"]
+# Spoken coaching (`iagent live run`): Pocket TTS on the CPU, plus audio output. Push-to-talk
+# listens with sounddevice and pynput (a global key) and transcribes with Moonshine.
+voice = [
+    "moonshine-voice>=0.1.5",
+    "pocket-tts>=1.0",
+    "pynput>=1.8.2",
+    "sounddevice>=0.5",
+]
 
 [dependency-groups]
 dev = [

@@ -58,6 +58,12 @@ def live():
     "cool-down debrief in its words, notes afterwards. "
     "Default: on if `claude` is found and the replay runs in real time.",
 )
+@click.option(
+    "--push-to-talk",
+    "key",
+    help="Hold this key (e.g. f9; map a wheel button to it in SimHub) to ask the engineer a "
+    "question. Needs the engineer.",
+)
 @click.pass_obj
 def live_run(
     ctx: Ctx,
@@ -71,6 +77,7 @@ def live_run(
     threads: int,
     crewchief: str,
     with_engineer: bool | None,
+    key: str | None,
 ):
     """Coach live: cue each corner on the approach, say what went wrong after it, sum up each lap.
 
@@ -109,6 +116,7 @@ def live_run(
     from iagent.live.engineer import Engineer
     from iagent.live.events import AskEngineer, EngineerReply, RuleFired
 
+    coaches = []
     runs = ClaudeCode(ctx.workspace)
     if with_engineer is None:
         with_engineer = shutil.which(runs.claude) is not None and (
@@ -117,6 +125,23 @@ def live_run(
     engineer = (
         Engineer.over(runs) if with_engineer else None
     )  # one conversation for the whole session
+    talk = None
+    if key:
+        if engineer is None:
+            raise click.UsageError("--push-to-talk needs the engineer.")
+        from iagent.live.push_to_talk import listen
+
+        def asked(text: str) -> None:
+            click.echo(f"[you] {text}")
+            if coaches:
+                coaches[-1].post(AskEngineer(kind="question", payload={"text": text}))
+
+        click.echo("Loading speech recognition...")
+        try:
+            talk = listen(key, ctx.workspace / "cache" / "speech", asked)
+        except (RuntimeError, ValueError) as e:
+            raise click.ClickException(str(e)) from e
+        click.echo(f"Hold {key} to ask the engineer a question.")
     # What the terminal shows besides the lines said: events, by name.
     shown = {
         RuleFired: lambda e: "; ".join(
@@ -131,7 +156,6 @@ def live_run(
     debug = DebugLog(
         debug_log_path(ctx.workspace, datetime.now().strftime("%Y%m%d-%H%M%S"))
     )
-    coaches = []
 
     def on_start(coach):
         coaches.append(coach)
@@ -192,6 +216,8 @@ def live_run(
     except KeyboardInterrupt:
         pass
     finally:
+        if talk is not None:
+            talk.close()
         if engineer is not None and not engineer.idle():
             click.echo("The engineer is writing up its notes (Ctrl+C to skip)...")
             try:

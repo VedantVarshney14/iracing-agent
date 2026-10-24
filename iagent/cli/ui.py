@@ -21,6 +21,12 @@ from iagent.laps.pace import group_of
     "UI, else IAGENT_TELEMETRY_DIR, else Documents/iRacing/telemetry).",
 )
 @click.option("--no-watch", is_flag=True, help="Don't watch the telemetry folder.")
+@click.option(
+    "--push-to-talk",
+    "key",
+    help="Hold this key (e.g. f9; map a wheel button to it in SimHub) to ask the engineer a "
+    "question in a live session.",
+)
 @click.pass_context
 def ui(
     click_ctx: click.Context,
@@ -29,6 +35,7 @@ def ui(
     no_browser: bool,
     telemetry_dir: Path | None,
     no_watch: bool,
+    key: str | None,
 ):
     """Open the lap analysis UI in your browser (runs until Ctrl+C)."""
     if click_ctx.invoked_subcommand is not None:
@@ -44,6 +51,9 @@ def ui(
         default_telemetry_dir,
         saved_telemetry_dir,
     )
+    from iagent.agent import ClaudeCode
+    from iagent.live.engineer import Engineer
+    from iagent.live.session import LiveSessions
     from iagent.ui.server import LOCAL_HOSTS, STATIC_DIR, create_app
 
     if not (STATIC_DIR / "index.html").exists():
@@ -67,12 +77,34 @@ def ui(
         click.echo(f"Watching {folder} for new recordings.")
     # Bound to the network on purpose (e.g. to open it from another machine): accept that Host.
     hosts = ["*"] if host in ("0.0.0.0", "::") else [*LOCAL_HOSTS, host]
-    uvicorn.run(
-        create_app(ctx.workspace, watcher=watcher, allowed_hosts=hosts),
-        host=host,
-        port=port,
-        log_level="warning",
-    )
+    agent = ClaudeCode(ctx.workspace)
+    live = LiveSessions(ctx.workspace, engineer=lambda: Engineer.over(agent))
+    talk = None
+    if key:
+        from iagent.live.push_to_talk import listen
+
+        click.echo("Loading speech recognition...")
+        try:
+            talk = listen(key, ctx.workspace / "cache" / "speech", live.ask)
+        except (RuntimeError, ValueError) as e:
+            raise click.ClickException(str(e)) from e
+        click.echo(f"Hold {key} to ask the engineer a question.")
+    try:
+        uvicorn.run(
+            create_app(
+                ctx.workspace,
+                agent=agent,
+                watcher=watcher,
+                allowed_hosts=hosts,
+                live=live,
+            ),
+            host=host,
+            port=port,
+            log_level="warning",
+        )
+    finally:
+        if talk is not None:
+            talk.close()
 
 
 @ui.command("show")
