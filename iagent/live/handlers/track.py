@@ -2,7 +2,13 @@
 
 from iagent.live.events import Crossing, Frame, Pit
 from iagent.live.pipeline import EventHandler, enrich, on
-from iagent.telemetry.frames import SURFACE_OFF_TRACK, SURFACE_ON_TRACK
+from iagent.telemetry.frames import (
+    SURFACE_APPROACHING_PITS,
+    SURFACE_IN_PIT_STALL,
+    SURFACE_NOT_IN_WORLD,
+    SURFACE_OFF_TRACK,
+    SURFACE_ON_TRACK,
+)
 
 CAR_ALONGSIDE = (
     2  # iRacing's CarLeftRight: 0 off, 1 clear, 2+ a car (or cars) alongside
@@ -29,6 +35,11 @@ class Track(EventHandler):
             and not f.get("OnPitRoad", 0)
             and st.lap_dist is not None
             and speed is not None
+        )
+        st.in_pits = bool(f.get("OnPitRoad", 0)) or surface in (
+            SURFACE_NOT_IN_WORLD,
+            SURFACE_IN_PIT_STALL,
+            SURFACE_APPROACHING_PITS,
         )
         st.alongside = (f.get("CarLeftRight") or 0) >= CAR_ALONGSIDE
         if not st.on_track:

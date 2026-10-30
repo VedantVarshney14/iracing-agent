@@ -167,6 +167,32 @@ def test_nothing_is_said_on_pit_road(ws):
     assert all(s.kind != "feedback" for s in voice.spoken)
 
 
+def test_an_answer_is_said_on_pit_road(ws):
+    """Asking "do you hear me?" from the pits gets an answer there, not 90 s later (or never)."""
+    from iagent.live.events import Say
+
+    source = SyntheticSource(n_laps=1, seed=3, kinds=[LapKind.OUT_LAP])
+    plan = build_plan(ws, TRACK, CAR)
+    voice = Where()
+    coach = LiveCoach(
+        source.session,
+        plan,
+        ws.corner_map(TRACK),
+        ws.load(plan.ref_lap_id),
+        Arbiter(voice),
+    )
+    voice.coach = coach
+    asked = False
+    for f in source.frames():
+        voice.frame = f
+        if not asked and f.get("OnPitRoad"):
+            coach.post(Say(text="Loud and clear.", kind="engineer"))
+            asked = True
+        coach.push(f)
+    said = [w for w in voice.at if w[0] == "Loud and clear."]
+    assert asked and said and said[0][1] <= 300.0  # still on pit road
+
+
 def test_cues_cli(ws, tmp_path):
     runner = CliRunner()
     args = ["--workspace", str(tmp_path), "cues"]
