@@ -46,7 +46,7 @@ class Options:
     start_at: float | None = None  # replay: session time to start from
     speed: float = 1.0
     ref: str | None = None
-    voice: str = "alba"  # a Pocket TTS voice, or "silent" (log only)
+    voice: str = "eponine"  # a Pocket TTS voice, or "silent" (log only)
     learning_laps: int = 2
     focus: bool = True
     crewchief: str = "auto"  # "auto" (detect it), "on" or "off"

@@ -28,7 +28,7 @@ def live():
 )
 @click.option(
     "--voice",
-    default="alba",
+    default="eponine",
     show_default=True,
     help="Pocket TTS voice, or a .wav to clone.",
 )

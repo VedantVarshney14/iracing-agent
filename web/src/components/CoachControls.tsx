@@ -5,7 +5,7 @@ import type { LiveStatus, Recording, SystemInfo } from "../types";
 
 // Starting the live coach (iRacing or a replay) and the strip shown while it runs.
 
-const VOICES = ["alba", "charles", "jane", "paul", "silent"];
+const VOICES = ["eponine", "alba", "charles", "jane", "paul", "silent"];
 export const ACTIVE = new Set(["starting", "waiting", "running", "stopping"]);
 
 export function StartForm({ system, onStarted, onError }: {
@@ -18,7 +18,7 @@ export function StartForm({ system, onStarted, onError }: {
   const [files, setFiles] = useState<Recording[]>([]);
   const [file, setFile] = useState("");
   const [speed, setSpeed] = useState(1);
-  const [voice, setVoice] = useState("alba");
+  const [voice, setVoice] = useState("eponine");
   const [learning, setLearning] = useState(2);
   const [focus, setFocus] = useState(true);
   const [busy, setBusy] = useState(false);
