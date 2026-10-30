@@ -38,6 +38,13 @@ def test_finds_the_drivers_own_car_not_the_first_listed():
     assert parse_session_yaml(SPA).car_name == "Porsche 911 GT3 R (992)"
 
 
+def test_finds_the_car_past_live_session_results():
+    # Live, the session's results come before DriverInfo and have their own CarIdx rows.
+    results = "SessionInfo:\n Sessions:\n - ResultsFastestLap:\n   - CarIdx: 3\n     FastestLap: 2\n"
+    info = parse_session_yaml(SPA.replace("DriverInfo:", results + "DriverInfo:"))
+    assert (info.car_key, info.car_id) == ("porsche992rgt3", 169)
+
+
 def test_missing_track_length_is_an_error():
     with pytest.raises(ValueError, match="TrackLength"):
         parse_session_yaml("WeekendInfo:\n TrackDisplayName: X\n")
