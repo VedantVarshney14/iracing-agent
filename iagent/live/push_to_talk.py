@@ -4,6 +4,8 @@ On the sim PC the key is a wheel button: SimHub's controls mapping turns the but
 keystroke, and this listens for that key anywhere (iRacing has the focus). The microphone is
 open all the time but only kept while the key is held; on release the audio is transcribed on
 another thread (Moonshine, on the CPU) and the text goes to `on_text`, which asks the engineer.
+Pressing and releasing crackle like a radio being keyed (`radio.Keyed`), so the driver hears the
+mic go live and go off.
 """
 
 import logging
@@ -12,6 +14,8 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
+
+from iagent.live import radio
 
 logger = logging.getLogger("iagent.live")
 
@@ -71,11 +75,13 @@ class PushToTalk:
         self, key: str, on_text: Callable[[str], None], transcribe: Transcribe
     ):
         self._key = parse_key(key)
+        self.radio = radio.Keyed(SAMPLE_RATE)
         self._on_text = on_text
         self._transcribe = transcribe
         self._chunks: list[np.ndarray] = []
         self._held = False
         self._stream = None
+        self._out = None
         self._listener = None
 
     def start(self) -> None:
@@ -90,9 +96,13 @@ class PushToTalk:
             callback=lambda data, *_: self.hear(data[:, 0]),
         )
         self._stream.start()
+        self._out = sounddevice.OutputStream(
+            samplerate=SAMPLE_RATE, channels=1, dtype="float32", callback=self._play
+        )
+        self._out.start()
+        # The callbacks return None: pynput stops listening when one returns False.
         self._listener = keyboard.Listener(
-            on_press=lambda k: k == self._key and self.press(),
-            on_release=lambda k: k == self._key and self.release(),
+            on_press=self._pressed, on_release=self._released
         )
         self._listener.start()
 
@@ -102,11 +112,27 @@ class PushToTalk:
             self._listener.stop()
         if self._stream is not None:
             self._stream.close()
+        if self._out is not None:
+            self._out.close()
+
+    def _play(self, out, frames, *_) -> None:
+        """The output stream's callback: a crackle after a press or release, else silence."""
+        out[:, 0] = self.radio.fill(frames)
+
+    def _pressed(self, key) -> None:
+        if key == self._key:
+            self.press()
+
+    def _released(self, key) -> None:
+        if key == self._key:
+            self.release()
 
     def press(self) -> None:
-        """The key went down (key repeat while held changes nothing): start keeping audio."""
+        """The key went down (key repeat while held changes nothing): crackle, and start keeping
+        audio."""
         if not self._held:
             self._chunks, self._held = [], True
+            self.radio.press()
 
     def hear(self, chunk: np.ndarray) -> None:
         """Audio from the microphone: kept while the key is held, up to MAX_S."""
@@ -118,6 +144,7 @@ class PushToTalk:
         if not self._held:
             return
         self._held = False
+        self.radio.release()
         audio = np.concatenate(self._chunks) if self._chunks else np.zeros(0, "float32")
         self._chunks = []
         if len(audio) >= MIN_S * SAMPLE_RATE:

@@ -53,6 +53,29 @@ def test_a_knock_on_the_button_or_silence_asks_nothing():
     assert not done.wait(0.2) and heard == []
 
 
+def test_pressing_and_releasing_crackle_like_a_radio():
+    ptt, *_ = talk()
+    assert not ptt.radio.fill(4000).any()  # silent until pressed
+    ptt.press()
+    assert ptt.radio.fill(4000).any()  # the key-up crackle
+    assert not ptt.radio.fill(4000).any()  # then nothing while held
+    ptt.press()  # key repeat: no second crackle
+    assert not ptt.radio.fill(4000).any()
+    ptt.release()
+    assert ptt.radio.fill(4000).any()  # the key-down crackle
+    assert not ptt.radio.fill(4000).any()
+
+
+def test_other_keys_never_stop_the_listener():
+    """pynput stops listening when a callback returns False: f3 worked once, then never again."""
+    from pynput import keyboard
+
+    ptt, *_ = talk()
+    assert ptt._pressed(keyboard.Key.f1) is None
+    assert ptt._released(keyboard.KeyCode.from_char("a")) is None
+    assert ptt._pressed(keyboard.Key.f9) is None and ptt._held
+
+
 def test_an_unknown_key_is_an_error_that_says_what_is_allowed():
     assert parse_key("f9") and parse_key("t")
     with pytest.raises(ValueError, match="f9, scroll_lock or pause"):
