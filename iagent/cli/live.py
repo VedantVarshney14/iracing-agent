@@ -247,6 +247,10 @@ class _SpokenToo:
         self._print.play(utterance, now)
         self._voice.play(utterance, now)
 
+    def stop(self):
+        self._print.stop()
+        self._voice.stop()
+
     def prepare(self, texts):
         return self._voice.prepare(texts)
 
