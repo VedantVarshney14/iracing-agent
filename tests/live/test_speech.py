@@ -76,3 +76,20 @@ def test_a_corner_cue_cuts_off_a_summary():
         ("Lap summary that goes on for a while.", True),
         ("Turn 1, hard brake.", False),
     ]
+
+
+def test_the_terminal_voice_can_be_cut_off():
+    """`iagent live run` speaks through `_SpokenToo`: a corner cue cutting a line off crashed it."""
+    from iagent.cli.live import _SpokenToo
+
+    inner = CapturedVoice()
+    voice = _SpokenToo(inner)
+    arb = Arbiter(voice)
+    arb.say(Utterance("A long summary of the lap.", SUMMARY, "summary", 0.0, 60.0))
+    arb.tick(0.0)
+    arb.say(Utterance("Turn 1.", APPROACH, "approach", 0.5, 2.0))
+    arb.tick(0.5)
+    assert [(s.text, s.cut) for s in inner.spoken] == [
+        ("A long summary of the lap.", True),
+        ("Turn 1.", False),
+    ]

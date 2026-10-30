@@ -145,6 +145,7 @@ iagent/
                       actions (Action subclasses), engine (RuleEngine), builtin (the coach's own
                       rules), store (rules on disk, activation), backtest
     speech.py         the speech arbiter and the voices (Pocket TTS, printed, captured)
+    push_to_talk.py   hold a key, speak: Moonshine turns it into the driver's question
     phrasing.py       every template; causes of lost time (Cause subclasses)
     crewchief.py      sharing the radio with CrewChief
     engineer.py       Engineer: the session's conversation, its prompts
@@ -502,6 +503,14 @@ The other conversations follow the same idea:
 | The lap review chat (`iagent/ui/chat.py`) | as long as the browser keeps it | the driver's questions about a lap |
 | The workspace notes (`notes/<track>.md`) | across sessions | what was worked on, what changed, what to start with |
 
+**Push-to-talk** ([`push_to_talk.py`](iagent/live/push_to_talk.py)). `--push-to-talk f9` on
+`iagent live run` or `iagent ui`. The key is a wheel button mapped to a keystroke in SimHub, so
+there's no plugin: a global key listener opens the microphone only while the key is held
+(an open microphone makes Windows turn the sim down, and a Bluetooth headset switch to call
+mode), with a radio crackle on press and release. On release, Moonshine (small English model, on the CPU, ~0.3 s for a short question) transcribes it
+on its own thread and the words are posted as the same `AskEngineer(kind="question")` the
+Coaching tab sends, so the answer arrives like any other. Presses under 0.4 s are ignored.
+
 ## 11. Between sessions: skills and the CLI
 
 The coach agent is Claude Code with the `coach` plugin, working on the workspace through the
@@ -622,8 +631,6 @@ the library and coached sessions.
   often the engineer may speak up, set by the engineer, overridden by the driver ("leave me
   alone", "talk to me") until the driver lifts it; every line gets an importance. It fits as
   driver command events, one field in `CoachState`, and one gate.
-- **Push-to-talk.** Local speech-to-text on the sim PC's CPU (faster-whisper `small`, Parakeet or
-  Moonshine) posting the same `AskEngineer` question the Coaching tab does.
 - **A standalone live service** on the sim PC owning the pipeline and the engineer, with the UI
   and CLI as its clients (today both build `LiveCoach` themselves through `run.py`).
 - **Saved settings** in the workspace's `settings.json`, with per-run overrides.

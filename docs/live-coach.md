@@ -6,7 +6,7 @@ recording: brief when you're busy, fuller when you have time. How it works insid
 [ARCHITECTURE.md](../ARCHITECTURE.md#7-the-live-pipeline).
 
 ```bash
-uv sync --extra voice                                    # Pocket TTS + audio output (PyTorch, CPU)
+uv sync --extra voice                                    # Pocket TTS, push-to-talk, audio (PyTorch, CPU)
 iagent cues build --track spa-2024-up --car formulair04  # see / rebuild the cues (built on first use)
 iagent cues set --track spa-2024-up --car formulair04 1 "La Source. Hairpin right. Big stop, second gear." \
   --short "La Source. Big stop."                         # the reminder once it's been heard
@@ -52,6 +52,12 @@ the plan as you head out (from its notes), hears every cue and lap time, answers
 and rules that ask it (`ask_engineer`), words the cool-down debrief, and writes up its notes
 (`workspace/notes/<track>.md`) when the session ends; the next session's engineer starts from
 them. It's given the numbers, not asked to work them out.
+
+**Push-to-talk.** `iagent live run --push-to-talk f9` (or `iagent ui --push-to-talk f9`): hold
+the key, ask your question, let go. Moonshine turns it into text on the CPU and the engineer
+answers on the radio like a typed question. On the sim PC, map a wheel button to that key in
+SimHub (Controls and events: the button sends a keystroke; it needs to be held, not tapped). The
+first run downloads the speech model into `workspace/cache/speech`.
 
 Corner cues stay fixed text, because they must be instant and exactly timed, but the coach can
 rewrite them between sessions (`iagent cues set`). No reply in time, or no `claude`: the coach's

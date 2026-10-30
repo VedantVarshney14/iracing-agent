@@ -17,11 +17,14 @@ import sys
 import threading
 import wave
 from contextlib import closing
+from itertools import chain
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Protocol
 
 import numpy as np
+
+from iagent.live import radio
 
 
 # Lower is more important.
@@ -248,7 +251,7 @@ class Arbiter:
 
 logger = logging.getLogger("iagent.voice")
 
-DEFAULT_VOICE = "alba"
+DEFAULT_VOICE = "eponine"
 BLOCK = 2048  # frames per write: big blocks and a high-latency stream ride out a busy coach loop
 PRIME_S = 0.3  # streamed speech: buffer this much before starting, so the stream never runs dry
 
@@ -263,6 +266,7 @@ class PocketVoice:
         voice: str = DEFAULT_VOICE,
         threads: int = 2,
         device: int | str | None = None,
+        crackle: bool = True,
     ):
         try:
             import sounddevice
@@ -278,6 +282,13 @@ class PocketVoice:
         self._model = TTSModel.load_model()
         self._voice = self._model.get_state_for_audio_prompt(voice)
         self.sample_rate = self._model.sample_rate
+        # Each line goes out like a radio call: a crackle as the mic is keyed, one as it's let go.
+        self._key_up, self._key_down = (
+            (radio.key_up(self.sample_rate), radio.key_down(self.sample_rate))
+            if crackle
+            else (np.zeros(0, np.float32), np.zeros(0, np.float32))
+        )
+        self._crackle_s = (len(self._key_up) + len(self._key_down)) / self.sample_rate
         self._cache = cache_dir / _safe(voice)
         self._cache.mkdir(parents=True, exist_ok=True)
         self._voice_name = voice
@@ -291,15 +302,15 @@ class PocketVoice:
     # --- the Voice protocol ----------------------------------------------------------------
 
     def duration(self, text: str) -> float | None:
-        """The line's exact length if its audio is already rendered (cached), else None."""
-        if text in self._durations:
-            return self._durations[text]
-        path = self._path(text)
-        if path.exists():
+        """The line's exact length, crackles included, if its audio is already rendered (cached),
+        else None."""
+        if text not in self._durations:
+            path = self._path(text)
+            if not path.exists():
+                return None
             with wave.open(str(path)) as w:
                 self._durations[text] = w.getnframes() / w.getframerate()
-            return self._durations[text]
-        return None
+        return self._durations[text] + self._crackle_s
 
     def play(self, utterance: Utterance, now: float) -> None:
         self._jobs.put(utterance.text)
@@ -374,9 +385,11 @@ class PocketVoice:
             worker.join()
 
     def _write_out(self, chunks: Iterable[np.ndarray]) -> None:
-        """Play audio with blocking writes from this thread (no Python callback to starve)."""
+        """Play audio, between the key-up and key-down crackles, with blocking writes from this
+        thread (no Python callback to starve)."""
+        chunks = chain([self._key_up], chunks, [self._key_down])
         pending = np.zeros(0, dtype=np.float32)
-        prime = int(PRIME_S * self.sample_rate)
+        prime = int(PRIME_S * self.sample_rate) + len(self._key_up)
         started = False
         with self._sd.OutputStream(
             samplerate=self.sample_rate,

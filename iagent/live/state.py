@@ -25,6 +25,7 @@ class CoachState:
     on_track: bool = doc(
         "on the racing surface (or just off it), not on pit road", False
     )
+    in_pits: bool = doc("in the garage, the pit stall or on pit road", False)
     alongside: bool = doc("a car alongside (CrewChief's spotter is talking)", False)
     lap_clean: bool = doc("this lap started at the line and stayed off pit road", False)
     # laps (Laps)

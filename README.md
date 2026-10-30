@@ -64,7 +64,7 @@ records in iRacing). On another machine, drop `.ibt` files onto the library or r
 | 4 | Live coach: cues, feedback, focus, speech, CrewChief, rules | **Done** |
 | 5 | Race engineer per session, debriefs, notes | **Done** |
 | 6 | Browser UI: library, lap review, corner view, session review, debug view | **Done** |
-| 7 | Control over how much the coach says, push-to-talk | Next |
+| 7 | Push-to-talk (done), control over how much the coach says | In progress |
 | 8 | Standalone service on the sim PC, saved settings, SimHub plugin | Planned |
 | 9 | Theoretical best lap, local-model evals, CPU load on the rig | Planned |
 

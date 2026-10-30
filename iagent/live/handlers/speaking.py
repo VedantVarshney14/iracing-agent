@@ -29,11 +29,17 @@ class Gate:
 
 GATES = [
     Gate(
+        "in the pits",
+        "in_pits",
+        clear=("approach", "feedback"),
+        why="you were in the pits",
+    ),  # but the engineer's answers, the debrief and the like can be said: a good time for them
+    Gate(
         "off track",
-        "not on_track",
+        "not on_track and not in_pits",
         hold=True,
         clear=("approach", "feedback"),
-        why="you were in the pits or off the racing surface",
+        why="you were off the racing surface",
     ),
     Gate("car alongside", "alongside", hold=True, why="a car was alongside"),
     Gate(
@@ -45,7 +51,7 @@ GATES = [
     ),
     Gate(
         "settling",
-        "mode == 'tranquille' and not settled",
+        "mode == 'tranquille' and not settled and not in_pits",
         hold=True,
         why="you'd just slowed down",
     ),

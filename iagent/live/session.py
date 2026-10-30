@@ -46,7 +46,7 @@ class Options:
     start_at: float | None = None  # replay: session time to start from
     speed: float = 1.0
     ref: str | None = None
-    voice: str = "alba"  # a Pocket TTS voice, or "silent" (log only)
+    voice: str = "eponine"  # a Pocket TTS voice, or "silent" (log only)
     learning_laps: int = 2
     focus: bool = True
     crewchief: str = "auto"  # "auto" (detect it), "on" or "off"
@@ -170,10 +170,12 @@ class LiveSessions:
         return self._log({"type": "driver", "at": self._now(), "text": text})
 
     def ask(self, text: str) -> bool:
-        """A question for the session's engineer (in its conversation; the answer is spoken).
-        False if there's no engineer to ask."""
+        """The driver's question for the session's engineer, typed or spoken: logged, then asked
+        in its conversation (the answer is spoken). False if there's no engineer to ask.
+        """
         if self.coach is None or self.engineer is None:
             return False
+        self.note_driver(text)
         self.coach.post(AskEngineer(kind="question", payload={"text": text}))
         return True
 
