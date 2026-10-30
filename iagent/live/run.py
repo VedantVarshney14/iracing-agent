@@ -10,12 +10,18 @@ import time
 from pathlib import Path
 from typing import Callable, Iterator, Sequence
 
+import httpx
+
+from iagent.laps.tracks import update_track_info
 from iagent.live.coach import LiveCoach, Settings
-from iagent.live.cues import use_next_plan
+from iagent.live.cues import load_plan, use_next_plan
 from iagent.live.rules.store import load_rules, signature
 from iagent.live.speech import Voice
+from iagent.references import garage61 as g61
+from iagent.references import imports
 from iagent.telemetry.frames import CORE_CHANNELS, Frame
 from iagent.telemetry.session import SessionInfo, parse_session_yaml
+from iagent.workspace import Workspace, WorkspaceError
 
 # The live coach also wants the spotter state (cars alongside).
 LIVE_CHANNELS: tuple[str, ...] = tuple(
@@ -123,6 +129,54 @@ class IrsdkSource:
 logger = logging.getLogger("iagent.live")
 
 
+def fetch_reference(
+    root: Path,
+    session: SessionInfo,
+    client_of: Callable[[], g61.Garage61Client] | None = None,
+) -> str | None:
+    """Import the fastest Garage61 lap for the session's track and car if it isn't already, so
+    the coach can follow a teammate's lap (or the driver's own from Garage61) without a manual
+    import, even on a track never driven. Returns that lap's id when the cue plan should be
+    rebuilt around it (newly imported and faster than the plan's reference), else None.
+
+    Garage61 not set up, unreachable or with no lap never stops the coach: it logs and goes on
+    with what the workspace has.
+    """
+    track, car = session.track_key, session.car_key
+    if session.track_id and session.car_id:  # Garage61 is searched by iRacing's ids
+        update_track_info(root, session)
+    ws = Workspace(root)
+    try:
+        client = (client_of or imports.client_from_env)()
+    except WorkspaceError as e:
+        logger.info("No Garage61 lookup: %s", e)
+        ws.close()
+        return None
+    try:
+        got = imports.import_fastest(ws, client, track, car)
+    except (WorkspaceError, g61.Garage61Error, httpx.HTTPError) as e:
+        logger.warning("Garage61 lookup for %s / %s failed: %s", track, car, e)
+        return None
+    finally:
+        client.close()
+        ws.close()
+    if got is None:
+        logger.info("Garage61 has no lap on %s in %s", track, car)
+        return None
+    if not got["imported"]:
+        return None
+    logger.info(
+        "Imported %s's %.3f from Garage61 as %s",
+        got["driver"],
+        got["lap_time"],
+        got["lap_id"],
+    )
+    plan = load_plan(root, track, car)
+    if plan is None or plan.ref_lap_time is None or got["lap_time"] < plan.ref_lap_time:
+        return got["lap_id"]
+    return None
+
+
 def start_coach(
     root: Path,
     session: SessionInfo,
@@ -133,7 +187,10 @@ def start_coach(
     radio_context=None,
 ) -> LiveCoach:
     """A coach for a live (or replayed) session: the active rules, a focus planned last session,
-    and the cues rendered by the voice up front so none costs time at a brake point."""
+    and the cues rendered by the voice up front so none costs time at a brake point. Without
+    REF_ID, Garage61 is checked first for a faster lap to follow (`fetch_reference`)."""
+    if ref_id is None:
+        ref_id = fetch_reference(root, session)
     rules = load_rules(root, session.track_key, session.car_key, "active")
     if rules:
         logger.info("Active rules: %s", ", ".join(r.id for r in rules))

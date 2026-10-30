@@ -196,6 +196,65 @@ def test_a_new_track_is_mapped_from_reference_laps(tmp_path):
         w.close()
 
 
+def garage61_with(tmp_path, monkeypatch, lap_time: float):
+    """Garage61 (a mock) with one teammate lap on the synthetic track: a clean synthetic lap,
+    timed at LAP_TIME."""
+    from iagent.references import imports
+    from iagent.references.garage61 import Garage61Client
+    from iagent.testing.garage61 import lap_meta, mock_api, to_garage61_csv
+
+    source = SyntheticSource(n_laps=3, seed=4)
+    store = ParquetLapStore(tmp_path / "teammate")
+    rec = record(source, store, "teammate")[1]
+    csv = to_garage61_csv(
+        store.load(rec.lap_id, grid=False), source.session.track_length_m
+    )
+    store.close()
+    meta = lap_meta("01TEAMMATE000001", lap_time, 9999, 999)
+    transport = mock_api(9999, 999, {"01TEAMMATE000001": (meta, csv)})
+    monkeypatch.setattr(
+        imports,
+        "client_from_env",
+        lambda: Garage61Client("test-token", "https://g61.test/api/v1", transport),
+    )
+
+
+def test_live_coach_follows_a_garage61_lap_on_a_track_never_driven(
+    tmp_path, monkeypatch
+):
+    from iagent.live.run import start_coach
+
+    garage61_with(tmp_path, monkeypatch, 80.0)
+    session = SyntheticSource(n_laps=1, seed=1).session
+    coach = start_coach(tmp_path / "ws", session, CapturedVoice())
+    assert coach.ctx.plan.ref_lap_id.startswith("g61-fast-friend")
+    assert len(coach.ctx.plan.cues) == 4
+
+
+def test_live_coach_switches_to_a_faster_garage61_lap(ws, tmp_path, monkeypatch):
+    from iagent.live.run import start_coach
+
+    session = SyntheticSource(n_laps=1, seed=1).session
+    own = start_coach(ws.root, session, CapturedVoice()).ctx.plan  # no Garage61
+    assert not own.ref_lap_id.startswith("g61-")
+
+    garage61_with(tmp_path, monkeypatch, own.ref_lap_time + 5)  # slower: keep the plan
+    assert (
+        start_coach(ws.root, session, CapturedVoice()).ctx.plan.ref_lap_id
+        == own.ref_lap_id
+    )
+
+    for path in (ws.root / "reference").rglob("*"):  # forget it was imported
+        if path.is_file():
+            path.unlink()
+    garage61_with(tmp_path, monkeypatch, own.ref_lap_time - 1)
+    faster = start_coach(ws.root, session, CapturedVoice()).ctx.plan
+    assert (
+        faster.ref_lap_id.startswith("g61-")
+        and load_plan(ws.root, TRACK, CAR).ref_lap_id == faster.ref_lap_id
+    )
+
+
 def advice(name, mine, ref, delta):
     """What the coach would say after a corner with these metrics, and the hint for its cue."""
     cause, amount = phrasing.cause_of(mine, ref, delta, Settings())

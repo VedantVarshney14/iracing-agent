@@ -65,10 +65,14 @@ def parse_session_yaml(text: str, session_id: str = "session") -> SessionInfo:
     car_name = "unknown"
     car_path = None
     car_id = None
-    idx = _first(r"^\s*DriverCarIdx:[ \t]*(\d+)", text, re.M)
+    # The driver's car is in DriverInfo's list; other sections (a session's results, live)
+    # also have "- CarIdx: N" rows, and come first.
+    section = re.search(r"^DriverInfo:\s*\n(.*?)(?=^\S|\Z)", text, re.M | re.S)
+    drivers = section.group(1) if section else text
+    idx = _first(r"^\s*DriverCarIdx:[ \t]*(\d+)", drivers, re.M)
     if idx is not None:
         block = re.search(
-            rf"-\s*CarIdx:\s*{idx}\s*\n(.*?)(?=\n\s*-\s*CarIdx:|\Z)", text, re.S
+            rf"-\s*CarIdx:\s*{idx}\s*\n(.*?)(?=\n\s*-\s*CarIdx:|\Z)", drivers, re.S
         )
         if block:
             car_name = (
