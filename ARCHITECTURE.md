@@ -505,8 +505,9 @@ The other conversations follow the same idea:
 
 **Push-to-talk** ([`push_to_talk.py`](iagent/live/push_to_talk.py)). `--push-to-talk f9` on
 `iagent live run` or `iagent ui`. The key is a wheel button mapped to a keystroke in SimHub, so
-there's no plugin: a global key listener keeps the microphone's audio while the key is held. On
-release, Moonshine (small English model, on the CPU, ~0.3 s for a short question) transcribes it
+there's no plugin: a global key listener opens the microphone only while the key is held
+(an open microphone makes Windows turn the sim down, and a Bluetooth headset switch to call
+mode), with a radio crackle on press and release. On release, Moonshine (small English model, on the CPU, ~0.3 s for a short question) transcribes it
 on its own thread and the words are posted as the same `AskEngineer(kind="question")` the
 Coaching tab sends, so the answer arrives like any other. Presses under 0.4 s are ignored.
 

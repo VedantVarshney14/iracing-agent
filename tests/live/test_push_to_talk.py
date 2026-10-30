@@ -73,7 +73,33 @@ def test_other_keys_never_stop_the_listener():
     ptt, *_ = talk()
     assert ptt._pressed(keyboard.Key.f1) is None
     assert ptt._released(keyboard.KeyCode.from_char("a")) is None
-    assert ptt._pressed(keyboard.Key.f9) is None and ptt._held
+    assert ptt._keys.empty()
+    assert ptt._pressed(keyboard.Key.f9) is None and ptt._keys.get_nowait() is True
+
+
+class Mic:
+    def __init__(self, ptt):
+        self.ptt, self.open = ptt, True
+        ptt.hear(seconds(1))  # what it hears while the key is held
+
+    def stop(self):
+        self.open = False
+
+    def close(self):
+        pass
+
+
+def test_the_microphone_is_open_only_while_the_key_is_held():
+    """An open microphone turns the sim down (Windows) or a Bluetooth headset to call mode."""
+    ptt, heard, done, audio_seen = talk()
+    mics = []
+    ptt._open_mic = lambda: mics.append(Mic(ptt)) or mics[-1]
+    ptt.key(True)
+    ptt.key(True)  # key repeat: still the one microphone
+    assert len(mics) == 1 and mics[0].open
+    ptt.key(False)
+    assert not mics[0].open and done.wait(2)
+    assert heard == ["where am I slow"] and audio_seen == [SAMPLE_RATE]
 
 
 def test_an_unknown_key_is_an_error_that_says_what_is_allowed():

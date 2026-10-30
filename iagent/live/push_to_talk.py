@@ -2,13 +2,16 @@
 
 On the sim PC the key is a wheel button: SimHub's controls mapping turns the button into a
 keystroke, and this listens for that key anywhere (iRacing has the focus). The microphone is
-open all the time but only kept while the key is held; on release the audio is transcribed on
-another thread (Moonshine, on the CPU) and the text goes to `on_text`, which asks the engineer.
+open only while the key is held: Windows turns other sounds (the sim) down while an app has a
+microphone open, and a Bluetooth headset drops to its call mode. On release the audio is
+transcribed on another thread (Moonshine, on the CPU) and the text goes to `on_text`, which asks
+the engineer.
 Pressing and releasing crackle like a radio being keyed (`radio.Keyed`), so the driver hears the
 mic go live and go off.
 """
 
 import logging
+import queue
 import threading
 from pathlib import Path
 from typing import Callable
@@ -67,9 +70,9 @@ def parse_key(name: str):
 
 
 class PushToTalk:
-    """Listens for the key and the microphone. While the key is held, audio is kept; on release
-    it is transcribed and the words go to ON_TEXT (on the transcribing thread, never on the
-    coach's)."""
+    """Listens for the key; while it's held the microphone is open and its audio kept, and on
+    release it is transcribed and the words go to ON_TEXT (on the transcribing thread, never on
+    the coach's)."""
 
     def __init__(
         self, key: str, on_text: Callable[[str], None], transcribe: Transcribe
@@ -80,22 +83,19 @@ class PushToTalk:
         self._transcribe = transcribe
         self._chunks: list[np.ndarray] = []
         self._held = False
-        self._stream = None
+        self._mic = None  # the microphone's stream, while the key is held
         self._out = None
         self._listener = None
+        # The keyboard hook only hands key changes to a worker, which opens and closes the
+        # microphone: Windows drops a hook that takes too long to return.
+        self._keys: queue.SimpleQueue[bool | None] = queue.SimpleQueue()
+        self._worker = None
 
     def start(self) -> None:
-        """Open the microphone and start listening for the key."""
+        """Start listening for the key (the microphone stays closed until it's pressed)."""
         import sounddevice
         from pynput import keyboard
 
-        self._stream = sounddevice.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            callback=lambda data, *_: self.hear(data[:, 0]),
-        )
-        self._stream.start()
         self._out = sounddevice.OutputStream(
             samplerate=SAMPLE_RATE, channels=1, dtype="float32", callback=self._play
         )
@@ -105,13 +105,19 @@ class PushToTalk:
             on_press=self._pressed, on_release=self._released
         )
         self._listener.start()
+        self._worker = threading.Thread(
+            target=self._work, name="push-to-talk-keys", daemon=True
+        )
+        self._worker.start()
 
     def close(self) -> None:
-        """Stop listening and close the microphone."""
+        """Stop listening and close the microphone if it's open."""
         if self._listener is not None:
             self._listener.stop()
-        if self._stream is not None:
-            self._stream.close()
+        if self._worker is not None:
+            self._keys.put(None)
+            self._worker.join(timeout=2)
+        self._close_mic()
         if self._out is not None:
             self._out.close()
 
@@ -121,11 +127,49 @@ class PushToTalk:
 
     def _pressed(self, key) -> None:
         if key == self._key:
-            self.press()
+            self._keys.put(True)
 
     def _released(self, key) -> None:
         if key == self._key:
+            self._keys.put(False)
+
+    def _work(self) -> None:
+        """The key worker: each key change in turn, until `close`."""
+        while (down := self._keys.get()) is not None:
+            try:
+                self.key(down)
+            except Exception:
+                logger.exception("Push-to-talk: the microphone failed")
+
+    def key(self, down: bool) -> None:
+        """The key went down (open the microphone, after the crackle) or came up (close it, then
+        transcribe)."""
+        if down:
+            if not self._held:
+                self.press()
+                self._mic = self._open_mic()
+        else:
+            self._close_mic()
             self.release()
+
+    def _open_mic(self):
+        import sounddevice
+
+        mic = sounddevice.InputStream(
+            samplerate=SAMPLE_RATE,
+            channels=1,
+            dtype="float32",
+            callback=lambda data, *_: self.hear(data[:, 0]),
+        )
+        mic.start()
+        return mic
+
+    def _close_mic(self) -> None:
+        """Close the microphone, once what it has heard is in (`stop` waits for that)."""
+        mic, self._mic = self._mic, None
+        if mic is not None:
+            mic.stop()
+            mic.close()
 
     def press(self) -> None:
         """The key went down (key repeat while held changes nothing): crackle, and start keeping
