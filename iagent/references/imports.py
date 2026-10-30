@@ -113,7 +113,12 @@ def find(
     team_slugs = list(teams) or [t["slug"] for t in client.teams() if t.get("slug")]
     found = client.find_laps(g_track, g_car, team_slugs, limit)
 
-    own_best = best_times(ws.store().list(track=track, car=car)).get((track, car))
+    own = (
+        ws.store().list(track=track, car=car)
+        if (ws.root / "index.sqlite").exists()
+        else []
+    )
+    own_best = best_times(own).get((track, car))
     already = imported(ws)
     rows = []
     for lap in found:
@@ -176,6 +181,23 @@ def import_lap(ws: Workspace, client: g61.Garage61Client, gid: str) -> dict:
         "valid": rec.valid,
         "same_car_as_yours": car_key is not None,
     }
+
+
+def import_fastest(
+    ws: Workspace, client: g61.Garage61Client, track: str, car: str, tries: int = 3
+) -> dict | None:
+    """The fastest Garage61 lap on this track and car (the driver's own or a teammate's) as a
+    reference lap, imported unless it already is (`imported` says which); None if Garage61 has
+    none. A lap whose telemetry won't download is passed over for the next fastest."""
+    timed = [r for r in find(ws, client, track, car)["laps"] if r["lap_time"]]
+    for row in sorted(timed, key=lambda r: r["lap_time"])[:tries]:
+        if row["lap_id"]:
+            return {**row, "imported": False}
+        try:
+            return {**import_lap(ws, client, row["garage61_id"]), "imported": True}
+        except WorkspaceError:
+            continue
+    return None
 
 
 def ghost(

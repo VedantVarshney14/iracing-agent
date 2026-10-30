@@ -65,7 +65,8 @@ class Workspace:
 
     def find(self, lap_id: str) -> Lap:
         """A lap by id: the driver's own laps first, then reference laps."""
-        for store in (self.store(), self.refs()):
+        own = self.store() if (self.root / "index.sqlite").exists() else None
+        for store in (own, self.refs()):
             if store is not None:
                 matches = [r for r in store.list() if r.lap_id == lap_id]
                 if matches:

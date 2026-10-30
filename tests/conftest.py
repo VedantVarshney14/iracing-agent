@@ -42,3 +42,16 @@ def no_audio(monkeypatch):
 
     for name in ("play", "OutputStream", "RawOutputStream", "Stream", "RawStream"):
         monkeypatch.setattr(sounddevice, name, refuse)
+
+
+@pytest.fixture(autouse=True)
+def no_garage61(monkeypatch):
+    """Tests never reach the real Garage61 (a token in `.env` would otherwise be found): tests that
+    want it pass a client on a mock transport."""
+    from iagent.references import imports
+    from iagent.workspace import WorkspaceError
+
+    def refuse():
+        raise WorkspaceError(imports.NO_TOKEN)
+
+    monkeypatch.setattr(imports, "client_from_env", refuse)
